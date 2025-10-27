@@ -1,0 +1,323 @@
+---
+apiVersion: v1
+kind: Template
+metadata:
+  name: insights-scheduler
+objects:
+
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdApp
+  metadata:
+    name: insights-scheduler
+  spec:
+    envName: ${ENV_NAME}
+    optionalDependencies:
+      - ingress
+      - export-service
+    testing:
+      iqePlugin: insights-scheduler
+    inMemoryDb: false
+    #database:
+    #   name: insights-scheduler
+    #   version: 12
+    kafkaTopics:
+    - replicas: 3
+      partitions: 16
+      topicName: platform.notifications.events
+    deployments:
+    - name: api
+      webServices:
+        private:
+          enabled: True
+        public:
+          enabled: False
+        metrics:
+          enabled: False
+      minReplicas: ${{API_REPLICAS}}
+      podSpec:
+        minReadySeconds: 15
+        progressDeadlineSeconds: 600
+        image: ${IMAGE}:${IMAGE_TAG}
+        command:
+          - ./scheduler
+        #livenessProbe:
+        #  failureThreshold: 3
+        #  httpGet:
+        #    path: /liveness
+        #    port: 10000
+        #    scheme: HTTP
+        #  periodSeconds: 10
+        #  successThreshold: 1
+        #  timeoutSeconds: 1
+        #readinessProbe:
+        #  failureThreshold: 3
+        #  httpGet:
+        #    path: /readiness
+        #    port: 10000
+        #    scheme: HTTP
+        #  periodSeconds: 10
+        #  successThreshold: 1
+        #  timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: ${CPU_LIMIT}
+            memory: ${MEMORY_LIMIT}
+          requests:
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
+        env:
+        - name: LOG_LEVEL
+          value: INFO
+        - name: EXPORT_SERVICE_TIMEOUT
+          value: 5m
+        - name: EXPORT_SERVICE_MAX_RETRIES
+          value: "3"
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "25"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "5"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 5m
+        - name: DB_PATH
+          value: "/tmp/jobs.db"
+        - name: KAFKA_CLIENT_ID
+          value: insights-scheduler
+        - name: KAFKA_TIMEOUT
+          value: 30s
+        - name: KAFKA_RETRIES
+          value: "5"
+        - name: KAFKA_COMPRESSION
+          value: snappy
+        - name: KAFKA_REQUIRED_ACKS
+          value: "-1"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: METRICS_NAMESPACE
+          value: insights
+        - name: METRICS_SUBSYSTEM
+          value: scheduler
+        - name: READ_TIMEOUT
+          value: 30s
+        - name: WRITE_TIMEOUT
+          value: 30s
+        - name: SHUTDOWN_TIMEOUT
+          value: 30s
+        - name: BOP_ENABLED
+          value: "true"
+        - name: BOP_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: backoffice
+              key: token
+        - name: BOP_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: backoffice
+              key: client-id
+        - name: BOP_INSIGHTS_ENV
+          value: ${ENV_NAME}
+        - name: BOP_URL
+          value: http://env-ephemeral-nfiuqo-mbop.ephemeral-nfiuqo.svc.cluster.local:8090
+
+parameters:
+- description: Initial amount of memory the insights-scheduler container will request.
+  displayName: Memory Request
+  name: MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the insights-scheduler.
+  displayName: Memory Limit
+  name: MEMORY_LIMIT
+  required: true
+  value: 512Mi
+- description: Initial amount of cpu the insights-scheduler container will request.
+  displayName: CPU Request
+  name: CPU_REQUEST
+  required: true
+  value: 200m
+- description: Maximum amount of cpu the insights-scheduler container can use.
+  displayName: CPU Limit
+  name: CPU_LIMIT
+  required: true
+  value: 500m
+- description: The log level to use for logging
+  displayName: The log level to use for logging
+  name: LOG_LEVEL
+  required: true
+  value: DEBUG
+- name: LOG_FORMAT
+  value: logstash
+- description: The number of replicas to use for the insights-scheduler api
+  name: API_REPLICAS
+  value: '1'
+- description: The number of replicas to use for the insights-scheduler api
+  name: MQTT_CONSUMER_REPLICAS
+  value: '1'
+- description: The number of replicas to use for the insights-scheduler api
+  name: KAFKA_CONSUMER_REPLICAS
+  value: '1'
+- description: Image
+  name: IMAGE
+  required: true
+  value: quay.io/dehort/insights-scheduler
+- description: Image tag
+  name: IMAGE_TAG
+  required: true
+- description : ClowdEnvironment name
+  name: ENV_NAME
+  required: true
+
+- name: MQTT_BROKER_ADDRESS
+  value: "ssl://mosquitto:8883/"
+  required: true
+- name: MQTT_TOPIC_PREFIX
+  value: "redhat"
+  required: true
+- name: MQTT_BROKER_TLS_SKIP_VERIFY
+  value: "false"
+  required: true
+- name: MQTT_BROKER_TLS_KEY_FILE
+  value: "/tmp/tls/key.pem"
+- name: MQTT_BROKER_TLS_CERT_FILE
+  value: "/tmp/tls/cert.pem"
+- name: MQTT_BROKER_AUTH_TYPE
+  value: "none"
+  required: true
+- name: MQTT_CONSUMER_MQTT_CLEAN_SESSION
+  value: "false"
+- name: KAFKA_CONSUMER_MQTT_CLEAN_SESSION
+  value: "true"
+- name: API_SERVER_MQTT_CLEAN_SESSION
+  value: "true"
+
+- name: MQTT_CONSUMER_SHUTDOWN_ON_MQTT_CONNECTION_LOST
+  value: "true"
+- name: KAFKA_CONSUMER_SHUTDOWN_ON_MQTT_CONNECTION_LOST
+  value: "false"
+- name: API_SERVER_SHUTDOWN_ON_MQTT_CONNECTION_LOST
+  value: "false"
+
+- name: INVALID_HANDSHAKE_RECONNECT_DELAY
+  value: "60"
+- name: MQTT_CONSUMER_SHUTDOWN_SLEEP_TIME
+  value: "2"
+
+- name: RHC_MESSAGE_KAFKA_TOPIC
+  required: true
+  value: platform.insights-scheduler.rhc-message-ingress
+- name: RHC_MESSAGE_KAFKA_CONSUMER_GROUP
+  required: true
+  value: insights-scheduler-rhc-message-consumer
+- name: INVENTORY_KAFKA_BATCH_SIZE
+  value: "1"
+- name: RHC_MESSAGE_KAFKA_BATCH_SIZE
+  value: "1"
+- name: RHC_MESSAGE_KAFKA_BATCH_BYTES
+  value: "1048576"
+
+- name: CONNECTED_CLIENT_RECORDER_IMPL
+  required: true
+  value: "inventory"
+
+- name: CLIENT_ID_TO_ACCOUNT_ID_IMPL
+  value: "bop_with_cache"
+  required: true
+- name: CLIENT_ID_TO_ACCOUNT_ID_CACHE_SIZE
+  value: "1000"
+- name: CLIENT_ID_TO_ACCOUNT_ID_CACHE_VALID_RESPONSE_TTL
+  value: "10m"
+- name: CLIENT_ID_TO_ACCOUNT_ID_CACHE_ERROR_RESPONSE_TTL
+  value: "10s"
+
+- name: AUTH_GATEWAY_URL
+  value: "fake"
+  required: true
+- name: AUTH_GATEWAY_HTTP_CLIENT_TIMEOUT
+  value: "5"
+  required: true
+
+- name: SOURCES_RECORDER_IMPL
+  value: "fake"
+  required: true
+
+- name: SOURCES_BASE_URL
+  value: "fake"
+  required: true
+
+- name: API_SERVER_CONNECTION_LOOKUP_IMPL
+  value: "relaxed"
+  required: true
+
+- name: CONNECTION_PER_ACCOUNT_REPORTER_SCHEDULE
+  value: "00 01 * * 1"
+- name: CONNECTION_PER_ACCOUNT_REPORTER_SUSPEND
+  value: "false"
+- name: CONNECTION_PER_ACCOUNT_REPORTER_LOG_FORMAT
+  value: "logstash"
+
+- name: STALE_TIMESTAMP_UPDATER_SCHEDULE
+  value: "*/10 * * * *"
+- name: STALE_TIMESTAMP_UPDATER_SUSPEND
+  value: "false"
+- name: STALE_TIMESTAMP_UPDATER_LOG_FORMAT
+  value: "logstash"
+
+- name: PENDO_API_ENDPOINT
+  value: "https://app.pendo.io/api/v1"
+- name: PENDO_REQUEST_TIMEOUT
+  value: "5"
+- name: PENDO_REQUEST_SIZE
+  value: "100"
+- name: CONNECTION_COUNT_PER_ACCOUNT_REPORT_OUTPUT_DESTINATION
+  value: "stdout"
+- name: CONNECTION_COUNT_PER_ACCOUNT_REPORT_ACCOUNT_EXCLUSION_LIST
+  value: "477931,6089719,540155"
+
+- name: TENANT_TRANSLATOR_HOST
+  value: 'apicast.3scale-dev.svc.cluster.local'
+- name: TENANT_TRANSLATOR_PORT
+  value: '8892'
+- name: TENANT_TRANSLATOR_PROTOCOL
+  value: 'http'
+
+- name: TENANT_TRANSLATOR_IMPL
+  value: 'translator-service'
+- name: TENANT_TRANSLATOR_MOCK_MAPPING
+  value: "{\"10001\": \"010101\", \"10000\": \"000000\", \"0002\": \"111000\", \"0001\": \"\", \"10002\": \"010102\", \"10003\": \"010103\", \"10004\": \"010104\"}"
+- name: TENANT_TRANSLATOR_TIMEOUT
+  value: "5"
+
+- name: PROMETHEUS_PUSHGATEWAY
+  value: prometheus-push.insights-push-stage.svc.cluster.local:9091
+
+- name: INVENTORY_STALE_TIMESTAMP_UPDATER_CHUNK_SIZE
+  value: "100"
+
+- name: TENANTLESS_CONNECTION_UPDATER_SCHEDULE
+  value: "*/10 * * * *"
+- name: TENANTLESS_CONNECTION_UPDATER_SUSPEND
+  value: "false"
+- name: TENANTLESS_CONNECTION_UPDATER_LOG_FORMAT
+  value: "logstash"
+- name: TENANTLESS_CONNECTION_UPDATER_CHUNK_SIZE
+  value: "100"
+- name: TENANTLESS_CONNECTION_MAX_LOOKUP_FAILURES
+  value: "30"
+
+# Used for floorist
+- name: FLOORIST_SUSPEND
+  description: Disable Floorist cronjob execution
+  required: true
+  value: 'true'
+- name: FLOORIST_DISABLED
+  description: Determines whether to build the Floorist Job.
+  value: 'false'
+- name: FLOORIST_DB_SECRET_NAME
+  description: database secret name
+  value: insights-scheduler-db
+- name: FLOORIST_HMS_BUCKET_SECRET_NAME
+  description: HMS bucket secret name
+  value: hms-floorist-bucket
+- name: FLOORIST_LOGLEVEL
+  description: Floorist loglevel config
+  value: 'INFO'

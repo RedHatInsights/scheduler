@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base resources
+resources:
+  - clowdapp.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: insights-scheduler
+  app.kubernetes.io/component: backend
+  app.kubernetes.io/part-of: insights-platform
+
+# Namespace (will be overridden by environment-specific overlays)
+namespace: insights-scheduler
+
+# Images
+images:
+  - name: ${IMAGE_TAG}
+    newName: quay.io/cloudservices/insights-scheduler
+    newTag: latest
+
+# ConfigMap generator for environment-specific settings
+configMapGenerator:
+  - name: insights-scheduler-config
+    literals:
+      - LOG_LEVEL=INFO
+      - METRICS_ENABLED=true
+      - KAFKA_COMPRESSION=snappy
+
+# Patches for environment-specific modifications
+patchesStrategicMerge: []
+
+# Variable substitutions
+replacements:
+  - source:
+      kind: ConfigMap
+      name: environment-config
+      fieldPath: data.ENV_NAME
+    targets:
+      - select:
+          kind: ClowdApp
+        fieldPaths:
+          - spec.envName
+  - source:
+      kind: ConfigMap
+      name: image-config
+      fieldPath: data.IMAGE_TAG
+    targets:
+      - select:
+          kind: ClowdApp
+        fieldPaths:
+          - spec.deployments.[name=service].podSpec.image
+          - spec.jobs.[name=migrate].podSpec.image

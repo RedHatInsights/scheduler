@@ -1,0 +1,52 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference to base
+resources:
+  - ../../
+
+# Namespace for production environment
+namespace: insights-scheduler-prod
+
+# Environment-specific labels
+commonLabels:
+  app.kubernetes.io/instance: prod
+  environment: prod
+
+# Environment-specific configuration
+configMapGenerator:
+  - name: environment-config
+    literals:
+      - ENV_NAME=insights-prod
+  - name: image-config
+    literals:
+      - IMAGE_TAG=quay.io/cloudservices/insights-scheduler:prod-latest
+
+# Production-specific patches
+patchesStrategicMerge:
+  - prod-patches.yaml
+
+# Production resource scaling
+patches:
+  - target:
+      kind: ClowdApp
+      name: insights-scheduler
+    patch: |-
+      - op: replace
+        path: /spec/deployments/0/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/deployments/0/maxReplicas
+        value: 20
+      - op: replace
+        path: /spec/deployments/0/podSpec/resources/limits/cpu
+        value: 1000m
+      - op: replace
+        path: /spec/deployments/0/podSpec/resources/limits/memory
+        value: 1Gi
+      - op: replace
+        path: /spec/deployments/0/podSpec/resources/requests/cpu
+        value: 200m
+      - op: replace
+        path: /spec/deployments/0/podSpec/resources/requests/memory
+        value: 512Mi

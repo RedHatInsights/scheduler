@@ -1,0 +1,166 @@
+package domain
+
+import (
+	"testing"
+)
+
+func TestIsValidSchedule(t *testing.T) {
+	tests := []struct {
+		name     string
+		schedule string
+		expected bool
+	}{
+		{
+			name:     "Valid predefined 10 minutes",
+			schedule: string(Schedule10Minutes),
+			expected: true,
+		},
+		{
+			name:     "Valid predefined 1 hour",
+			schedule: string(Schedule1Hour),
+			expected: true,
+		},
+		{
+			name:     "Valid predefined 1 day",
+			schedule: string(Schedule1Day),
+			expected: true,
+		},
+		{
+			name:     "Valid predefined 1 month",
+			schedule: string(Schedule1Month),
+			expected: true,
+		},
+		{
+			name:     "Valid custom cron expression",
+			schedule: "30 0 * * *", // Every day at 30 minutes past midnight (minute hour dom month dow)
+			expected: true,
+		},
+		{
+			name:     "Valid custom cron expression with seconds",
+			schedule: "0 0 12 * * *", // Every day at noon
+			expected: true,
+		},
+		{
+			name:     "Invalid cron expression",
+			schedule: "invalid cron",
+			expected: false,
+		},
+		{
+			name:     "Empty schedule",
+			schedule: "",
+			expected: false,
+		},
+		{
+			name:     "Legacy format should fail",
+			schedule: "10m",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsValidSchedule(tt.schedule)
+			if result != tt.expected {
+				t.Errorf("IsValidSchedule(%q) = %v; expected %v", tt.schedule, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestScheduleConstants(t *testing.T) {
+	// Verify our predefined schedules are valid cron expressions
+	schedules := []Schedule{
+		Schedule10Minutes,
+		Schedule1Hour,
+		Schedule1Day,
+		Schedule1Month,
+	}
+
+	for _, schedule := range schedules {
+		if !IsValidSchedule(string(schedule)) {
+			t.Errorf("Predefined schedule %q should be valid", schedule)
+		}
+	}
+}
+
+func TestNewJob(t *testing.T) {
+	payload := JobPayload{
+		Type: PayloadMessage,
+		Details: map[string]interface{}{
+			"message": "test message",
+		},
+	}
+
+	job := NewJob("Test Job", "org-123", "testuser", Schedule1Hour, payload)
+
+	if job.ID == "" {
+		t.Error("Job ID should not be empty")
+	}
+
+	if job.Name != "Test Job" {
+		t.Errorf("Expected name 'Test Job', got %s", job.Name)
+	}
+
+	if job.OrgID != "org-123" {
+		t.Errorf("Expected org_id 'org-123', got %s", job.OrgID)
+	}
+
+	if job.Username != "testuser" {
+		t.Errorf("Expected username 'testuser', got %s", job.Username)
+	}
+
+	if job.Schedule != Schedule1Hour {
+		t.Errorf("Expected schedule %s, got %s", Schedule1Hour, job.Schedule)
+	}
+
+	if job.Status != StatusScheduled {
+		t.Errorf("Expected status %s, got %s", StatusScheduled, job.Status)
+	}
+
+	if job.LastRun != nil {
+		t.Error("LastRun should be nil for new job")
+	}
+}
+
+func TestJobUpdateFields(t *testing.T) {
+	job := NewJob("Original Job", "org-123", "originaluser", Schedule1Hour, JobPayload{
+		Type:    PayloadMessage,
+		Details: map[string]interface{}{"msg": "original"},
+	})
+
+	newName := "Updated Job"
+	newOrgID := "org-456"
+	newUsername := "updateduser"
+	newSchedule := Schedule1Day
+	newPayload := JobPayload{
+		Type:    PayloadCommand,
+		Details: map[string]interface{}{"cmd": "ls"},
+	}
+	newStatus := StatusPaused
+
+	updatedJob := job.UpdateFields(&newName, &newOrgID, &newUsername, &newSchedule, &newPayload, &newStatus)
+
+	if updatedJob.ID != job.ID {
+		t.Error("Job ID should not change")
+	}
+
+	if updatedJob.Name != newName {
+		t.Errorf("Expected name %s, got %s", newName, updatedJob.Name)
+	}
+
+	if updatedJob.OrgID != newOrgID {
+		t.Errorf("Expected org_id %s, got %s", newOrgID, updatedJob.OrgID)
+	}
+
+	if updatedJob.Username != newUsername {
+		t.Errorf("Expected username %s, got %s", newUsername, updatedJob.Username)
+	}
+
+	if updatedJob.Schedule != newSchedule {
+		t.Errorf("Expected schedule %s, got %s", newSchedule, updatedJob.Schedule)
+	}
+
+	if updatedJob.Status != newStatus {
+		t.Errorf("Expected status %s, got %s", newStatus, updatedJob.Status)
+	}
+}

@@ -1,0 +1,356 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: insights-scheduler
+  labels:
+    name: insights-scheduler
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-config
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+data:
+  # Server configuration
+  HOST: "0.0.0.0"
+  PORT: "5000"
+  PRIVATE_PORT: "9090"
+  READ_TIMEOUT: "30s"
+  WRITE_TIMEOUT: "30s"
+  SHUTDOWN_TIMEOUT: "10s"
+  
+  # Database configuration
+  DB_TYPE: "sqlite"
+  DB_PATH: "/data/jobs.db"
+  
+  # Kafka configuration (set these values as needed)
+  KAFKA_BROKERS: ""  # e.g., "kafka1:9092,kafka2:9092"
+  KAFKA_TOPIC: "export-completions"
+  KAFKA_CLIENT_ID: "insights-scheduler"
+  KAFKA_TIMEOUT: "30s"
+  KAFKA_RETRIES: "5"
+  KAFKA_COMPRESSION: "snappy"
+  KAFKA_REQUIRED_ACKS: "-1"
+  
+  # Metrics configuration
+  METRICS_PORT: "8080"
+  METRICS_PATH: "/metrics"
+  METRICS_ENABLED: "true"
+  METRICS_NAMESPACE: "insights"
+  METRICS_SUBSYSTEM: "scheduler"
+  
+  # Export service configuration
+  EXPORT_SERVICE_URL: "http://localhost:9000/api/export/v1"
+  EXPORT_SERVICE_TIMEOUT: "5m"
+  EXPORT_SERVICE_MAX_RETRIES: "3"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insights-scheduler-secrets
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+type: Opaque
+data:
+  # Base64 encoded values - update these for your environment
+  # To encode: echo -n "your-value" | base64
+  EXPORT_SERVICE_ACCOUNT: "MDAwMDAy"  # "000002" in base64
+  EXPORT_SERVICE_ORG_ID: "MDAwMDAx"   # "000001" in base64
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: insights-scheduler-data
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: gp2  # Adjust based on your cluster's storage classes
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insights-scheduler
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+    version: v1
+spec:
+  replicas: 1  # SQLite doesn't support multiple writers, so keep this at 1
+  selector:
+    matchLabels:
+      app: insights-scheduler
+  template:
+    metadata:
+      labels:
+        app: insights-scheduler
+        version: v1
+    spec:
+      containers:
+      - name: scheduler
+        image: quay.io/your-org/insights-scheduler:latest  # Update with your image
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 9090
+          name: private
+          protocol: TCP
+        env:
+        # Server configuration
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: HOST
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: PORT
+        - name: PRIVATE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: PRIVATE_PORT
+        - name: READ_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: READ_TIMEOUT
+        - name: WRITE_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: WRITE_TIMEOUT
+        - name: SHUTDOWN_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: SHUTDOWN_TIMEOUT
+        # Database configuration
+        - name: DB_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: DB_TYPE
+        - name: DB_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: DB_PATH
+        # Kafka configuration
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_BROKERS
+        - name: KAFKA_TOPIC
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_TOPIC
+        - name: KAFKA_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_CLIENT_ID
+        - name: KAFKA_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_TIMEOUT
+        - name: KAFKA_RETRIES
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_RETRIES
+        - name: KAFKA_COMPRESSION
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_COMPRESSION
+        - name: KAFKA_REQUIRED_ACKS
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: KAFKA_REQUIRED_ACKS
+        # Metrics configuration
+        - name: METRICS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: METRICS_PORT
+        - name: METRICS_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: METRICS_PATH
+        - name: METRICS_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: METRICS_ENABLED
+        - name: METRICS_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: METRICS_NAMESPACE
+        - name: METRICS_SUBSYSTEM
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: METRICS_SUBSYSTEM
+        # Export service configuration
+        - name: EXPORT_SERVICE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: EXPORT_SERVICE_URL
+        - name: EXPORT_SERVICE_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: EXPORT_SERVICE_TIMEOUT
+        - name: EXPORT_SERVICE_MAX_RETRIES
+          valueFrom:
+            configMapKeyRef:
+              name: insights-scheduler-config
+              key: EXPORT_SERVICE_MAX_RETRIES
+        # Export service secrets
+        - name: EXPORT_SERVICE_ACCOUNT
+          valueFrom:
+            secretKeyRef:
+              name: insights-scheduler-secrets
+              key: EXPORT_SERVICE_ACCOUNT
+        - name: EXPORT_SERVICE_ORG_ID
+          valueFrom:
+            secretKeyRef:
+              name: insights-scheduler-secrets
+              key: EXPORT_SERVICE_ORG_ID
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/jobs
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/jobs
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: insights-scheduler-data
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: insights-scheduler-service
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: insights-scheduler
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: insights-scheduler-route
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+  annotations:
+    haproxy.router.openshift.io/timeout: "300s"
+spec:
+  to:
+    kind: Service
+    name: insights-scheduler-service
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: insights-scheduler-sa
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: insights-scheduler-role
+  namespace: insights-scheduler
+rules:
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: insights-scheduler-rolebinding
+  namespace: insights-scheduler
+subjects:
+- kind: ServiceAccount
+  name: insights-scheduler-sa
+  namespace: insights-scheduler
+roleRef:
+  kind: Role
+  name: insights-scheduler-role
+  apiGroup: rbac.authorization.k8s.io

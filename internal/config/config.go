@@ -1,0 +1,605 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	clowder "github.com/redhatinsights/app-common-go/pkg/api/v1"
+)
+
+// Config holds all application configuration
+type Config struct {
+	// Clowder configuration (loaded from app-common-go)
+	Clowder *clowder.AppConfig `json:"clowder,omitempty"`
+
+	// Server configuration (with Clowder integration)
+	Server ServerConfig `json:"server"`
+
+	// Database configuration (uses Clowder when available)
+	Database DatabaseConfig `json:"database"`
+
+	// Kafka configuration (uses Clowder when available)
+	Kafka KafkaConfig `json:"kafka"`
+
+	// Metrics configuration (uses Clowder when available)
+	Metrics MetricsConfig `json:"metrics"`
+
+	// Export service configuration
+	ExportService ExportServiceConfig `json:"export_service"`
+
+	// BOP service configuration
+	Bop BopConfig `json:"bop"`
+}
+
+// ServerConfig contains HTTP server settings
+type ServerConfig struct {
+	// Port is the main HTTP server port
+	Port int `json:"port"`
+
+	// PrivatePort is the port for internal/admin endpoints
+	PrivatePort int `json:"private_port"`
+
+	// Host is the server bind address
+	Host string `json:"host"`
+
+	// ReadTimeout for HTTP requests
+	ReadTimeout time.Duration `json:"read_timeout"`
+
+	// WriteTimeout for HTTP responses
+	WriteTimeout time.Duration `json:"write_timeout"`
+
+	// ShutdownTimeout for graceful shutdown
+	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
+}
+
+// DatabaseConfig contains database connection settings
+type DatabaseConfig struct {
+	// Type of database (sqlite, postgres, mysql)
+	Type string `json:"type"`
+
+	// Path to SQLite database file
+	Path string `json:"path"`
+
+	// Host for external databases (postgres, mysql)
+	Host string `json:"host"`
+
+	// Port for external databases
+	Port int `json:"port"`
+
+	// Name of the database
+	Name string `json:"name"`
+
+	// Username for database authentication
+	Username string `json:"username"`
+
+	// Password for database authentication
+	Password string `json:"password"`
+
+	// SSLMode for database connections (disable, require, verify-ca, verify-full)
+	SSLMode string `json:"ssl_mode"`
+
+	// MaxOpenConnections for connection pooling
+	MaxOpenConnections int `json:"max_open_connections"`
+
+	// MaxIdleConnections for connection pooling
+	MaxIdleConnections int `json:"max_idle_connections"`
+
+	// ConnectionMaxLifetime for connection recycling
+	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
+}
+
+// KafkaConfig contains Kafka connection settings
+type KafkaConfig struct {
+	// Enabled indicates if Kafka integration is active
+	Enabled bool `json:"enabled"`
+
+	// Brokers is a list of Kafka broker addresses
+	Brokers []string `json:"brokers"`
+
+	// Topic for export completion messages
+	Topic string `json:"topic"`
+
+	// ClientID for Kafka producer identification
+	ClientID string `json:"client_id"`
+
+	// Timeout for Kafka operations
+	Timeout time.Duration `json:"timeout"`
+
+	// Retries for failed message sends
+	Retries int `json:"retries"`
+
+	// BatchSize for batching messages
+	BatchSize int `json:"batch_size"`
+
+	// CompressionType (none, gzip, snappy, lz4, zstd)
+	CompressionType string `json:"compression_type"`
+
+	// RequiredAcks (0=no ack, 1=leader ack, -1=all replicas ack)
+	RequiredAcks int `json:"required_acks"`
+
+	// SASL configuration for authentication
+	SASL SASLConfig `json:"sasl"`
+
+	// TLS configuration
+	TLS TLSConfig `json:"tls"`
+}
+
+// SASLConfig contains SASL authentication settings
+type SASLConfig struct {
+	// Enabled indicates if SASL is active
+	Enabled bool `json:"enabled"`
+
+	// Mechanism (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
+	Mechanism string `json:"mechanism"`
+
+	// Username for SASL authentication
+	Username string `json:"username"`
+
+	// Password for SASL authentication
+	Password string `json:"password"`
+}
+
+// TLSConfig contains TLS settings
+type TLSConfig struct {
+	// Enabled indicates if TLS is active
+	Enabled bool `json:"enabled"`
+
+	// InsecureSkipVerify skips certificate verification
+	InsecureSkipVerify bool `json:"insecure_skip_verify"`
+
+	// CertFile path to client certificate
+	CertFile string `json:"cert_file"`
+
+	// KeyFile path to client private key
+	KeyFile string `json:"key_file"`
+
+	// CAFile path to CA certificate
+	CAFile string `json:"ca_file"`
+}
+
+// MetricsConfig contains metrics and monitoring settings
+type MetricsConfig struct {
+	// Port for metrics endpoint
+	Port int `json:"port"`
+
+	// Path for metrics endpoint
+	Path string `json:"path"`
+
+	// Enabled indicates if metrics are active
+	Enabled bool `json:"enabled"`
+
+	// Namespace for metric names
+	Namespace string `json:"namespace"`
+
+	// Subsystem for metric names
+	Subsystem string `json:"subsystem"`
+}
+
+// ExportServiceConfig contains export service client settings
+type ExportServiceConfig struct {
+	// BaseURL for the export service API
+	BaseURL string `json:"base_url"`
+
+	// AccountNumber for authentication
+	AccountNumber string `json:"account_number"`
+
+	// OrgID for the organization
+	OrgID string `json:"org_id"`
+
+	// Timeout for export service requests
+	Timeout time.Duration `json:"timeout"`
+
+	// MaxRetries for failed requests
+	MaxRetries int `json:"max_retries"`
+}
+
+// BopConfig contains BOP (Back Office Portal) service settings
+type BopConfig struct {
+	// BaseURL for the BOP API
+	BaseURL string `json:"base_url"`
+
+	// APIToken for BOP authentication
+	APIToken string `json:"api_token"`
+
+	// ClientID for BOP client identification
+	ClientID string `json:"client_id"`
+
+	// InsightsEnv specifies the environment (dev, stage, prod)
+	InsightsEnv string `json:"insights_env"`
+
+	// Enabled indicates if BOP integration is active
+	Enabled bool `json:"enabled"`
+}
+
+// LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
+func LoadConfig() (*Config, error) {
+	var clowderConfig *clowder.AppConfig
+
+	// Try to load Clowder configuration first
+	if clowder.IsClowderEnabled() {
+
+		fmt.Println("Clowder enabled!!")
+
+		clowderConfig = clowder.LoadedConfig
+		if clowderConfig == nil {
+			return nil, fmt.Errorf("failed to load Clowder configuration (nil)")
+		}
+
+		/* FIXME:  this look weird!!
+		var err error
+			clowderConfig, err = clowder.LoadConfig("")
+			if err != nil {
+				return nil, fmt.Errorf("failed to load Clowder configuration: %w", err)
+			}
+		*/
+	}
+
+	config := &Config{
+		Clowder: clowderConfig,
+	}
+
+	// Load server configuration with Clowder integration
+	config.Server = loadServerConfig(clowderConfig)
+
+	// Load database configuration with Clowder integration
+	config.Database = loadDatabaseConfig(clowderConfig)
+
+	// Load Kafka configuration with Clowder integration
+	config.Kafka = loadKafkaConfig(clowderConfig)
+
+	// Load metrics configuration with Clowder integration
+	config.Metrics = loadMetricsConfig(clowderConfig)
+
+	// Load export service configuration (no Clowder integration needed)
+	config.ExportService = loadExportServiceConfig()
+
+	// Load BOP configuration
+	config.Bop = loadBopConfig()
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	return config, nil
+}
+
+// loadServerConfig loads server configuration with Clowder integration
+func loadServerConfig(clowderConfig *clowder.AppConfig) ServerConfig {
+	// Default values
+	port := getEnvAsInt("PORT", 5000)
+	privatePort := getEnvAsInt("PRIVATE_PORT", 9090)
+	host := getEnv("HOST", "0.0.0.0")
+
+	// Override with Clowder values if available
+	if clowderConfig != nil {
+		if clowderConfig.PublicPort != nil {
+			port = *clowderConfig.PublicPort
+		}
+		if clowderConfig.PrivatePort != nil {
+			privatePort = *clowderConfig.PrivatePort
+		}
+	}
+
+	return ServerConfig{
+		Port:            port,
+		PrivatePort:     privatePort,
+		Host:            host,
+		ReadTimeout:     getEnvAsDuration("READ_TIMEOUT", 30*time.Second),
+		WriteTimeout:    getEnvAsDuration("WRITE_TIMEOUT", 30*time.Second),
+		ShutdownTimeout: getEnvAsDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
+	}
+}
+
+// loadDatabaseConfig loads database configuration with Clowder integration
+func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
+	// Default values
+	dbType := getEnv("DB_TYPE", "sqlite")
+	dbPath := getEnv("DB_PATH", "./jobs.db")
+	host := getEnv("DB_HOST", "localhost")
+	port := getEnvAsInt("DB_PORT", 5432)
+	name := getEnv("DB_NAME", "insights_scheduler")
+	username := getEnv("DB_USERNAME", "")
+	password := getEnv("DB_PASSWORD", "")
+	sslMode := getEnv("DB_SSL_MODE", "disable")
+
+	// Override with Clowder values if available
+	if clowderConfig != nil && clowderConfig.Database != nil {
+		dbType = "postgres" // Clowder always provides PostgreSQL
+		host = clowderConfig.Database.Hostname
+		port = clowderConfig.Database.Port
+		name = clowderConfig.Database.Name
+		username = clowderConfig.Database.Username
+		password = clowderConfig.Database.Password
+		sslMode = clowderConfig.Database.SslMode
+	}
+
+	return DatabaseConfig{
+		Type:                  dbType,
+		Path:                  dbPath,
+		Host:                  host,
+		Port:                  port,
+		Name:                  name,
+		Username:              username,
+		Password:              password,
+		SSLMode:               sslMode,
+		MaxOpenConnections:    getEnvAsInt("DB_MAX_OPEN_CONNECTIONS", 25),
+		MaxIdleConnections:    getEnvAsInt("DB_MAX_IDLE_CONNECTIONS", 5),
+		ConnectionMaxLifetime: getEnvAsDuration("DB_CONNECTION_MAX_LIFETIME", 5*time.Minute),
+	}
+}
+
+// loadKafkaConfig loads Kafka configuration with Clowder integration
+func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
+	// Default values from environment
+	brokers := getEnvAsStringSlice("KAFKA_BROKERS", []string{})
+	topic := getEnv("KAFKA_TOPIC", "platform.notifications.ingress")
+	enabled := len(brokers) > 0
+
+	// SASL and TLS config from environment
+	saslConfig := SASLConfig{
+		Enabled:   getEnvAsBool("KAFKA_SASL_ENABLED", false),
+		Mechanism: getEnv("KAFKA_SASL_MECHANISM", "PLAIN"),
+		Username:  getEnv("KAFKA_SASL_USERNAME", ""),
+		Password:  getEnv("KAFKA_SASL_PASSWORD", ""),
+	}
+
+	tlsConfig := TLSConfig{
+		Enabled:            getEnvAsBool("KAFKA_TLS_ENABLED", false),
+		InsecureSkipVerify: getEnvAsBool("KAFKA_TLS_INSECURE_SKIP_VERIFY", false),
+		CertFile:           getEnv("KAFKA_TLS_CERT_FILE", ""),
+		KeyFile:            getEnv("KAFKA_TLS_KEY_FILE", ""),
+		CAFile:             getEnv("KAFKA_TLS_CA_FILE", ""),
+	}
+
+	fmt.Println("clowderConfig: ", clowderConfig)
+	// Override with Clowder values if available
+	if clowderConfig != nil && clowderConfig.Kafka != nil {
+		enabled = true
+		brokers = []string{}
+
+		// Convert Clowder broker configs to string list
+		for _, broker := range clowderConfig.Kafka.Brokers {
+			brokers = append(brokers, fmt.Sprintf("%s:%d", broker.Hostname, *broker.Port))
+		}
+
+		// Find the export topic from Clowder config
+		for _, topicConfig := range clowderConfig.Kafka.Topics {
+			if topicConfig.RequestedName == topic || topicConfig.Name == topic {
+				topic = topicConfig.Name
+				break
+			}
+		}
+
+		// Configure SASL if available in Clowder
+		if len(clowderConfig.Kafka.Brokers) > 0 && clowderConfig.Kafka.Brokers[0].Sasl != nil {
+			saslConfig.Enabled = true
+			if clowderConfig.Kafka.Brokers[0].Sasl.SaslMechanism != nil {
+				saslConfig.Mechanism = *clowderConfig.Kafka.Brokers[0].Sasl.SaslMechanism
+			}
+			if clowderConfig.Kafka.Brokers[0].Sasl.Username != nil {
+				saslConfig.Username = *clowderConfig.Kafka.Brokers[0].Sasl.Username
+			}
+			if clowderConfig.Kafka.Brokers[0].Sasl.Password != nil {
+				saslConfig.Password = *clowderConfig.Kafka.Brokers[0].Sasl.Password
+			}
+		}
+	}
+
+	return KafkaConfig{
+		Enabled:         enabled,
+		Brokers:         brokers,
+		Topic:           topic,
+		ClientID:        getEnv("KAFKA_CLIENT_ID", "insights-scheduler"),
+		Timeout:         getEnvAsDuration("KAFKA_TIMEOUT", 30*time.Second),
+		Retries:         getEnvAsInt("KAFKA_RETRIES", 5),
+		BatchSize:       getEnvAsInt("KAFKA_BATCH_SIZE", 100),
+		CompressionType: getEnv("KAFKA_COMPRESSION", "snappy"),
+		RequiredAcks:    getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
+		SASL:            saslConfig,
+		TLS:             tlsConfig,
+	}
+}
+
+// loadMetricsConfig loads metrics configuration with Clowder integration
+func loadMetricsConfig(clowderConfig *clowder.AppConfig) MetricsConfig {
+	// Default values
+	port := getEnvAsInt("METRICS_PORT", 8080)
+	path := getEnv("METRICS_PATH", "/metrics")
+
+	// Override with Clowder values if available
+	if clowderConfig != nil {
+		port = clowderConfig.MetricsPort
+		path = clowderConfig.MetricsPath
+	}
+
+	return MetricsConfig{
+		Port:      port,
+		Path:      path,
+		Enabled:   getEnvAsBool("METRICS_ENABLED", true),
+		Namespace: getEnv("METRICS_NAMESPACE", "insights"),
+		Subsystem: getEnv("METRICS_SUBSYSTEM", "scheduler"),
+	}
+}
+
+// loadExportServiceConfig loads export service configuration from environment
+func loadExportServiceConfig() ExportServiceConfig {
+	return ExportServiceConfig{
+		BaseURL:       getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1"),
+		AccountNumber: getEnv("EXPORT_SERVICE_ACCOUNT", "000002"),
+		OrgID:         getEnv("EXPORT_SERVICE_ORG_ID", "000001"),
+		Timeout:       getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
+		MaxRetries:    getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
+	}
+}
+
+// loadBopConfig loads BOP configuration from environment
+func loadBopConfig() BopConfig {
+	apiToken := getEnv("BOP_API_TOKEN", "")
+	enabled := apiToken != "" && getEnvAsBool("BOP_ENABLED", true)
+
+	return BopConfig{
+		BaseURL:     getEnv("BOP_URL", "https://backoffice.apps.ext.spoke.preprod.us-east-1.aws.paas.redhat.com"),
+		APIToken:    apiToken,
+		ClientID:    getEnv("BOP_CLIENT_ID", "insights-scheduler"),
+		InsightsEnv: getEnv("BOP_INSIGHTS_ENV", "preprod"),
+		Enabled:     enabled,
+	}
+}
+
+// Validate checks if the configuration is valid
+func (c *Config) Validate() error {
+	// Validate server ports
+	if c.Server.Port < 1 || c.Server.Port > 65535 {
+		return fmt.Errorf("invalid server port: %d", c.Server.Port)
+	}
+	if c.Metrics.Port < 1 || c.Metrics.Port > 65535 {
+		return fmt.Errorf("invalid metrics port: %d", c.Metrics.Port)
+	}
+	if c.Server.PrivatePort < 1 || c.Server.PrivatePort > 65535 {
+		return fmt.Errorf("invalid private port: %d", c.Server.PrivatePort)
+	}
+
+	// Validate database configuration
+	if c.Database.Type == "" {
+		return fmt.Errorf("database type is required")
+	}
+	if c.Database.Type == "sqlite" && c.Database.Path == "" {
+		return fmt.Errorf("database path is required for SQLite")
+	}
+	if c.Database.Type != "sqlite" && c.Database.Host == "" {
+		return fmt.Errorf("database host is required for %s", c.Database.Type)
+	}
+
+	// Validate Kafka configuration
+	if c.Kafka.Enabled {
+		if len(c.Kafka.Brokers) == 0 {
+			return fmt.Errorf("kafka brokers are required when kafka is enabled")
+		}
+		if c.Kafka.Topic == "" {
+			return fmt.Errorf("kafka topic is required when kafka is enabled")
+		}
+	}
+
+	// Validate export service configuration
+	if c.ExportService.BaseURL == "" {
+		return fmt.Errorf("export service base URL is required")
+	}
+	if c.ExportService.AccountNumber == "" {
+		return fmt.Errorf("export service account number is required")
+	}
+	if c.ExportService.OrgID == "" {
+		return fmt.Errorf("export service org ID is required")
+	}
+
+	// Validate BOP configuration (only if enabled)
+	if c.Bop.Enabled {
+		if c.Bop.BaseURL == "" {
+			return fmt.Errorf("BOP base URL is required when BOP is enabled")
+		}
+		if c.Bop.APIToken == "" {
+			return fmt.Errorf("BOP API token is required when BOP is enabled")
+		}
+		if c.Bop.ClientID == "" {
+			return fmt.Errorf("BOP client ID is required when BOP is enabled")
+		}
+		if c.Bop.InsightsEnv == "" {
+			return fmt.Errorf("BOP insights environment is required when BOP is enabled")
+		}
+	}
+
+	return nil
+}
+
+// GetDatabaseConnectionString returns a connection string for the database
+func (c *Config) GetDatabaseConnectionString() string {
+	switch c.Database.Type {
+	case "sqlite":
+		return c.Database.Path
+	case "postgres":
+		return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			c.Database.Host, c.Database.Port, c.Database.Username,
+			c.Database.Password, c.Database.Name, c.Database.SSLMode)
+	case "mysql":
+		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+			c.Database.Username, c.Database.Password,
+			c.Database.Host, c.Database.Port, c.Database.Name)
+	default:
+		return ""
+	}
+}
+
+// Helper functions for environment variable parsing
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsStringSlice(key string, defaultValue []string) []string {
+	if value := os.Getenv(key); value != "" {
+		return strings.Split(value, ",")
+	}
+	return defaultValue
+}
+
+// IsClowderEnabled returns true if running in a Clowder environment
+func (c *Config) IsClowderEnabled() bool {
+	return c.Clowder != nil
+}
+
+// GetKafkaBrokers returns a slice of Kafka broker addresses
+func (c *Config) GetKafkaBrokers() []string {
+	return c.Kafka.Brokers
+}
+
+// GetKafkaTopic returns the Kafka topic name for export completions
+func (c *Config) GetKafkaTopic() string {
+	return c.Kafka.Topic
+}
+
+// GetKafkaTopicByName returns the Kafka topic configuration by name (for Clowder)
+func (c *Config) GetKafkaTopicByName(topicName string) *clowder.TopicConfig {
+	if c.Clowder == nil || c.Clowder.Kafka == nil {
+		return nil
+	}
+
+	for _, topic := range c.Clowder.Kafka.Topics {
+		if topic.Name == topicName || topic.RequestedName == topicName {
+			return &topic
+		}
+	}
+	return nil
+}

@@ -1,0 +1,221 @@
+# ServiceMonitor for Prometheus monitoring (requires Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: insights-scheduler-metrics
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+    monitoring: "true"
+spec:
+  selector:
+    matchLabels:
+      app: insights-scheduler
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+---
+# PodMonitor for direct pod monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: insights-scheduler-pod-metrics
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+spec:
+  selector:
+    matchLabels:
+      app: insights-scheduler
+  podMetricsEndpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: insights-scheduler-alerts
+  namespace: insights-scheduler
+  labels:
+    app: insights-scheduler
+spec:
+  groups:
+  - name: insights-scheduler
+    rules:
+    - alert: InsightsSchedulerDown
+      expr: up{job="insights-scheduler"} == 0
+      for: 5m
+      labels:
+        severity: critical
+        service: insights-scheduler
+      annotations:
+        summary: "Insights Scheduler is down"
+        description: "Insights Scheduler has been down for more than 5 minutes"
+    
+    - alert: InsightsSchedulerHighMemoryUsage
+      expr: container_memory_usage_bytes{pod=~"insights-scheduler-.*"} / container_spec_memory_limit_bytes > 0.8
+      for: 10m
+      labels:
+        severity: warning
+        service: insights-scheduler
+      annotations:
+        summary: "High memory usage for Insights Scheduler"
+        description: "Memory usage is above 80% for more than 10 minutes"
+    
+    - alert: InsightsSchedulerHighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{pod=~"insights-scheduler-.*"}[5m]) > 0.8
+      for: 10m
+      labels:
+        severity: warning
+        service: insights-scheduler
+      annotations:
+        summary: "High CPU usage for Insights Scheduler"
+        description: "CPU usage is above 80% for more than 10 minutes"
+    
+    - alert: InsightsSchedulerJobFailures
+      expr: increase(insights_scheduler_job_failures_total[1h]) > 5
+      for: 5m
+      labels:
+        severity: warning
+        service: insights-scheduler
+      annotations:
+        summary: "High number of job failures"
+        description: "More than 5 job failures in the last hour"
+    
+    - alert: InsightsSchedulerKafkaErrors
+      expr: increase(insights_scheduler_kafka_errors_total[30m]) > 3
+      for: 5m
+      labels:
+        severity: warning
+        service: insights-scheduler
+      annotations:
+        summary: "Kafka message sending errors"
+        description: "More than 3 Kafka errors in the last 30 minutes"
+---
+# Grafana Dashboard ConfigMap (JSON format)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-dashboard
+  namespace: insights-scheduler
+  labels:
+    grafana_dashboard: "true"
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Insights Scheduler Dashboard",
+        "tags": ["insights", "scheduler"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Service Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "up{job=\"insights-scheduler\"}",
+                "legendFormat": "Service Up"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "mappings": [
+                  {
+                    "options": {
+                      "0": {"text": "DOWN", "color": "red"},
+                      "1": {"text": "UP", "color": "green"}
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            },
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Memory Usage",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "container_memory_usage_bytes{pod=~\"insights-scheduler-.*\"} / 1024 / 1024",
+                "legendFormat": "Memory Usage (MB)"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+          },
+          {
+            "id": 3,
+            "title": "CPU Usage",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(container_cpu_usage_seconds_total{pod=~\"insights-scheduler-.*\"}[5m]) * 100",
+                "legendFormat": "CPU Usage (%)"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+          },
+          {
+            "id": 4,
+            "title": "Job Statistics",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "insights_scheduler_jobs_total",
+                "legendFormat": "Total Jobs"
+              },
+              {
+                "expr": "insights_scheduler_jobs_running",
+                "legendFormat": "Running Jobs"
+              },
+              {
+                "expr": "insights_scheduler_jobs_failed_total",
+                "legendFormat": "Failed Jobs"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 24, "x": 0, "y": 12}
+          },
+          {
+            "id": 5,
+            "title": "HTTP Requests",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{job=\"insights-scheduler\"}[5m])",
+                "legendFormat": "HTTP Requests/sec"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+          },
+          {
+            "id": 6,
+            "title": "Kafka Messages",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(insights_scheduler_kafka_messages_sent_total[5m])",
+                "legendFormat": "Messages Sent/sec"
+              },
+              {
+                "expr": "rate(insights_scheduler_kafka_errors_total[5m])",
+                "legendFormat": "Errors/sec"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }

@@ -1,0 +1,29 @@
+apiVersion: cloud.redhat.com/v1alpha1
+kind: ClowdApp
+metadata:
+  name: insights-scheduler
+spec:
+  deployments:
+    - name: service
+      podSpec:
+        # Stage-specific environment variables
+        env:
+          - name: LOG_LEVEL
+            value: DEBUG
+          - name: EXPORT_SERVICE_TIMEOUT
+            value: 2m
+          - name: EXPORT_SERVICE_MAX_RETRIES
+            value: "2"
+          - name: KAFKA_RETRIES
+            value: "3"
+          - name: SHUTDOWN_TIMEOUT
+            value: 15s
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insights-scheduler-secrets
+stringData:
+  EXPORT_SERVICE_ACCOUNT: "stage-account"
+  EXPORT_SERVICE_ORG_ID: "stage-org"

@@ -1,0 +1,165 @@
+package domain
+
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
+)
+
+type JobStatus string
+
+const (
+	StatusScheduled JobStatus = "scheduled"
+	StatusRunning   JobStatus = "running"
+	StatusPaused    JobStatus = "paused"
+	StatusFailed    JobStatus = "failed"
+)
+
+type PayloadType string
+
+const (
+	PayloadMessage     PayloadType = "message"
+	PayloadHTTPRequest PayloadType = "http_request"
+	PayloadCommand     PayloadType = "command"
+	PayloadExport      PayloadType = "export"
+)
+
+type Schedule string
+
+const (
+	Schedule10Minutes Schedule = "0 */10 * * * *" // Every 10 minutes
+	Schedule1Hour     Schedule = "0 0 * * * *"    // Every hour at minute 0
+	Schedule1Day      Schedule = "0 0 0 * * *"    // Every day at midnight
+	Schedule1Month    Schedule = "0 0 0 1 * *"    // Every month on the 1st at midnight
+)
+
+type JobPayload struct {
+	Type    PayloadType            `json:"type"`
+	Details map[string]interface{} `json:"details"`
+}
+
+type Job struct {
+	ID       string     `json:"id"`
+	Name     string     `json:"name"`
+	OrgID    string     `json:"org_id"`
+	Username string     `json:"username"`
+	Schedule Schedule   `json:"schedule"`
+	Payload  JobPayload `json:"payload"`
+	Status   JobStatus  `json:"status"`
+	LastRun  *time.Time `json:"last_run,omitempty"`
+}
+
+func NewJob(name string, orgID string, username string, schedule Schedule, payload JobPayload) Job {
+	return Job{
+		ID:       uuid.New().String(),
+		Name:     name,
+		OrgID:    orgID,
+		Username: username,
+		Schedule: schedule,
+		Payload:  payload,
+		Status:   StatusScheduled,
+		LastRun:  nil,
+	}
+}
+
+func (j Job) WithStatus(status JobStatus) Job {
+	return Job{
+		ID:       j.ID,
+		Name:     j.Name,
+		OrgID:    j.OrgID,
+		Username: j.Username,
+		Schedule: j.Schedule,
+		Payload:  j.Payload,
+		Status:   status,
+		LastRun:  j.LastRun,
+	}
+}
+
+func (j Job) WithLastRun(lastRun time.Time) Job {
+	return Job{
+		ID:       j.ID,
+		Name:     j.Name,
+		OrgID:    j.OrgID,
+		Username: j.Username,
+		Schedule: j.Schedule,
+		Payload:  j.Payload,
+		Status:   j.Status,
+		LastRun:  &lastRun,
+	}
+}
+
+func (j Job) UpdateFields(name *string, orgID *string, username *string, schedule *Schedule, payload *JobPayload, status *JobStatus) Job {
+	updated := j
+
+	if name != nil {
+		updated.Name = *name
+	}
+	if orgID != nil {
+		updated.OrgID = *orgID
+	}
+	if username != nil {
+		updated.Username = *username
+	}
+	if schedule != nil {
+		updated.Schedule = *schedule
+	}
+	if payload != nil {
+		updated.Payload = *payload
+	}
+	if status != nil {
+		updated.Status = *status
+	}
+
+	return updated
+}
+
+func (j Job) ToJSON() ([]byte, error) {
+	return json.Marshal(j)
+}
+
+func JobFromJSON(data []byte) (Job, error) {
+	var job Job
+	err := json.Unmarshal(data, &job)
+	return job, err
+}
+
+func IsValidSchedule(s string) bool {
+	// Check if it's one of our predefined schedules
+	switch Schedule(s) {
+	case Schedule10Minutes, Schedule1Hour, Schedule1Day, Schedule1Month:
+		return true
+	}
+
+	// If not predefined, validate as a cron expression
+	// Try with standard 5-field format first (minute hour dom month dow)
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	_, err := parser.Parse(s)
+	if err == nil {
+		return true
+	}
+
+	// Try with 6-field format (second minute hour dom month dow)
+	parser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	_, err = parser.Parse(s)
+	return err == nil
+}
+
+func IsValidPayloadType(pt string) bool {
+	switch PayloadType(pt) {
+	case PayloadMessage, PayloadHTTPRequest, PayloadCommand, PayloadExport:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidStatus(s string) bool {
+	switch JobStatus(s) {
+	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed:
+		return true
+	default:
+		return false
+	}
+}

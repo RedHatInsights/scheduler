@@ -1,0 +1,283 @@
+---
+apiVersion: v1
+kind: Template
+metadata:
+  name: cloud-connector
+objects:
+
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdApp
+  metadata:
+    name: insights-scheduler
+    labels:
+      app: insights-scheduler
+      component: backend
+  spec:
+    # Environment name - should match your Clowder environment
+    envName: ${ENV_NAME}
+    
+    # Application metadata
+    metadata:
+      name: insights-scheduler
+      
+    # Dependencies on other services
+    dependencies:
+      - export-service
+      
+    # Database configuration
+    database:
+      name: scheduler
+      version: 13
+      
+    # Kafka configuration
+    kafka:
+      topics:
+        - topicName: platform.notifications.ingress
+          partitions: 3
+          replicas: 3
+          config:
+            cleanup.policy: delete
+            retention.ms: "604800000"  # 7 days
+            
+    # Web service configuration
+    web: true
+    
+    # Metrics configuration
+    metrics:
+      port: 8080
+      path: /metrics
+      
+    # Deployments
+    deployments:
+      - name: service
+        minReplicas: 2
+        maxReplicas: 10
+        
+        # Pod specification
+        podSpec:
+          image: ${IMAGE_TAG}
+          
+          # Resource requirements
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              
+          # Environment variables (in addition to Clowder-provided ones)
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: EXPORT_SERVICE_TIMEOUT
+              value: 5m
+            - name: EXPORT_SERVICE_MAX_RETRIES
+              value: "3"
+            - name: DB_MAX_OPEN_CONNECTIONS
+              value: "25"
+            - name: DB_MAX_IDLE_CONNECTIONS
+              value: "5"
+            - name: DB_CONNECTION_MAX_LIFETIME
+              value: 5m
+            - name: KAFKA_CLIENT_ID
+              value: insights-scheduler
+            - name: KAFKA_TIMEOUT
+              value: 30s
+            - name: KAFKA_RETRIES
+              value: "5"
+            - name: KAFKA_COMPRESSION
+              value: snappy
+            - name: KAFKA_REQUIRED_ACKS
+              value: "-1"
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: METRICS_NAMESPACE
+              value: insights
+            - name: METRICS_SUBSYSTEM
+              value: scheduler
+            - name: READ_TIMEOUT
+              value: 30s
+            - name: WRITE_TIMEOUT
+              value: 30s
+            - name: SHUTDOWN_TIMEOUT
+              value: 30s
+              
+          # Environment variables from secrets
+          envFrom:
+            - secretRef:
+                name: insights-scheduler-secrets
+                optional: true
+                
+          # Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            
+          # Readiness probe  
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            
+          # Startup probe
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+            
+          # Volume mounts (if needed for persistent storage)
+          volumes:
+            - name: scheduler-data
+              emptyDir: {}
+              
+          volumeMounts:
+            - name: scheduler-data
+              mountPath: /app/data
+              
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+              
+    # Jobs (for database migrations, maintenance tasks, etc.)
+    jobs:
+      - name: migrate
+        podSpec:
+          image: ${IMAGE_TAG}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Running database migrations..."
+              # Add migration commands here if needed
+              echo "Migrations completed"
+          restartPolicy: OnFailure
+          
+          # Environment variables for migration job
+          env:
+            - name: LOG_LEVEL
+              value: DEBUG
+              
+          envFrom:
+            - secretRef:
+                name: insights-scheduler-secrets
+                optional: true
+                
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+
+  ---
+  # Additional Secret for non-Clowder configuration
+  apiVersion: v1
+  kind: Secret
+  metadata:
+    name: insights-scheduler-secrets
+    labels:
+      app: insights-scheduler
+  type: Opaque
+  stringData:
+    EXPORT_SERVICE_ACCOUNT: "${EXPORT_SERVICE_ACCOUNT}"
+    EXPORT_SERVICE_ORG_ID: "${EXPORT_SERVICE_ORG_ID}"
+    # Add other sensitive configuration here
+    
+  ---
+  # Service Monitor for Prometheus metrics
+  apiVersion: monitoring.coreos.com/v1
+  kind: ServiceMonitor
+  metadata:
+    name: insights-scheduler
+    labels:
+      app: insights-scheduler
+  spec:
+    selector:
+      matchLabels:
+        app: insights-scheduler
+    endpoints:
+      - port: metrics
+        path: /metrics
+        interval: 30s
+        scrapeTimeout: 10s
+
+  ---
+  # HorizontalPodAutoscaler for auto-scaling
+  apiVersion: autoscaling/v2
+  kind: HorizontalPodAutoscaler
+  metadata:
+    name: insights-scheduler
+    labels:
+      app: insights-scheduler
+  spec:
+    scaleTargetRef:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: insights-scheduler-service
+    minReplicas: 2
+    maxReplicas: 10
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 70
+      - type: Resource
+        resource:
+          name: memory
+          target:
+            type: Utilization
+            averageUtilization: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 10
+            periodSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+          - type: Pods
+            value: 2
+            periodSeconds: 60
+        selectPolicy: Max

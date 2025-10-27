@@ -1,0 +1,74 @@
+# Example configuration values for different environments
+
+# Development Environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-config-dev
+  namespace: insights-scheduler-dev
+data:
+  DB_PATH: "/data/jobs.db"
+  KAFKA_BROKERS: ""  # Disabled for development
+  KAFKA_TOPIC: "export-completions-dev"
+  PORT: "5000"
+  LOG_LEVEL: "DEBUG"
+---
+# Staging Environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-config-staging
+  namespace: insights-scheduler-staging
+data:
+  DB_PATH: "/data/jobs.db"
+  KAFKA_BROKERS: "kafka-staging.example.com:9092"
+  KAFKA_TOPIC: "export-completions-staging"
+  PORT: "5000"
+  LOG_LEVEL: "INFO"
+---
+# Production Environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-config-prod
+  namespace: insights-scheduler-prod
+data:
+  DB_PATH: "/data/jobs.db"
+  KAFKA_BROKERS: "kafka1.prod.example.com:9092,kafka2.prod.example.com:9092,kafka3.prod.example.com:9092"
+  KAFKA_TOPIC: "insights-export-completions"
+  PORT: "5000"
+  LOG_LEVEL: "INFO"
+---
+# Example with external database (future enhancement)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-config-postgres
+  namespace: insights-scheduler
+data:
+  # For future PostgreSQL support
+  DB_TYPE: "postgres"
+  DB_HOST: "postgres.example.com"
+  DB_PORT: "5432"
+  DB_NAME: "insights_scheduler"
+  DB_SSL_MODE: "require"
+  KAFKA_BROKERS: "kafka1.example.com:9092,kafka2.example.com:9092"
+  KAFKA_TOPIC: "insights-export-completions"
+  PORT: "5000"
+  LOG_LEVEL: "INFO"
+---
+# High availability configuration example
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-scheduler-config-ha
+  namespace: insights-scheduler-ha
+data:
+  DB_PATH: "/data/jobs.db"
+  KAFKA_BROKERS: "kafka1.ha.example.com:9092,kafka2.ha.example.com:9092,kafka3.ha.example.com:9092"
+  KAFKA_TOPIC: "insights-export-completions"
+  KAFKA_RETRIES: "5"
+  KAFKA_TIMEOUT: "30s"
+  PORT: "5000"
+  LOG_LEVEL: "INFO"
+  HEALTH_CHECK_INTERVAL: "10s"
