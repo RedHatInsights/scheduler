@@ -1,5 +1,7 @@
 # Insights Scheduler Service
 
+(WORK IN PROGRESS)
+
 A Go REST API service for programmatic job scheduling using the declarative shell functional core design pattern.
 
 ## Features
@@ -26,7 +28,7 @@ go run cmd/server/main.go
 
 The service will start on `http://localhost:5000` with the scheduler running in the background.
 
-## API Endpoints
+## API Endpoints (Work In Progress)
 
 ### Job Management
 
