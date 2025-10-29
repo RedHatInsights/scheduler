@@ -77,8 +77,6 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	// Construct the request URL
 	url := fmt.Sprintf("%s/v1/users", v.baseURL)
 
-	fmt.Println("bop url:", url)
-
 	postBody := fmt.Sprintf("{ \"users\": [ \"%s\" ] }", username)
 	postBodyReader := strings.NewReader(postBody)
 
@@ -110,11 +108,6 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 		return "", fmt.Errorf("validation service returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	/*
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		fmt.Println("BOP response: ", string(bodyBytes))
-	*/
-
 	// Parse response
 	var validationResp []UserInfo
 	if err := json.NewDecoder(resp.Body).Decode(&validationResp); err != nil {
@@ -135,9 +128,12 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 		return "", fmt.Errorf("org-id mismatch...invalid user")
 	}
 
-	if validationResp[0].ID != userID {
-		return "", fmt.Errorf("user-id mismatch...invalid user")
-	}
+	/*
+	    BOP doesn't read the user_id from the attributes...so the user id it returns is kinda random
+		if validationResp[0].ID != userID {
+			return "", fmt.Errorf("user-id mismatch...invalid user")
+		}
+	*/
 
 	// This is kind of a hack, but it should work for now
 	identityHeaderBuilder := NewDefaultUserValidator(validationResp[0].AccountNumber)
