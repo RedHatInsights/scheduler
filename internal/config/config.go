@@ -212,6 +212,8 @@ type BopConfig struct {
 
 	// Enabled indicates if BOP integration is active
 	Enabled bool `json:"enabled"`
+
+	EphemeralMode bool `json:"ephemeral_mode"`
 }
 
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
@@ -441,13 +443,41 @@ func loadBopConfig() BopConfig {
 	apiToken := getEnv("BOP_API_TOKEN", "")
 	enabled := apiToken != "" && getEnvAsBool("BOP_ENABLED", true)
 
+	var baseUrl string
+	ephemeralMode := getEnvAsBool("BOP_EPHEMERAL_MODE", false)
+	if ephemeralMode {
+		namespace, err := getOpenshiftNamespace()
+		if err != nil {
+			panic("Running in BOP ephemeral mode but cannot determine OpenShift namespace")
+		}
+		baseUrl = fmt.Sprintf("http://env-%s-mbop.%s.svc.cluster.local:8090", namespace, namespace)
+	} else {
+		baseUrl = getEnv("BOP_URL", "https://backoffice.apps.ext.spoke.preprod.us-east-1.aws.paas.redhat.com")
+	}
+
 	return BopConfig{
-		BaseURL:     getEnv("BOP_URL", "https://backoffice.apps.ext.spoke.preprod.us-east-1.aws.paas.redhat.com"),
+		BaseURL:     baseUrl,
 		APIToken:    apiToken,
 		ClientID:    getEnv("BOP_CLIENT_ID", "insights-scheduler"),
 		InsightsEnv: getEnv("BOP_INSIGHTS_ENV", "preprod"),
 		Enabled:     enabled,
 	}
+}
+
+func getOpenshiftNamespace() (string, error) {
+	filePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+	contentBytes, err := os.ReadFile(filePath)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %v", err)
+	}
+
+	namespace := string(contentBytes)
+
+	fmt.Println("namesapce:", namespace)
+
+	return namespace, nil
 }
 
 // Validate checks if the configuration is valid

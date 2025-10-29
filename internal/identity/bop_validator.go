@@ -77,6 +77,8 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	// Construct the request URL
 	url := fmt.Sprintf("%s/v1/users", v.baseURL)
 
+	fmt.Println("bop url:", url)
+
 	postBody := fmt.Sprintf("{ \"users\": [ \"%s\" ] }", username)
 	postBodyReader := strings.NewReader(postBody)
 
