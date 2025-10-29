@@ -119,6 +119,8 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	fmt.Printf("valdationResp: %+v\n", validationResp)
+
 	if len(validationResp) != 1 {
 		return "", fmt.Errorf("invalid response: %w", err)
 	}
@@ -127,8 +129,12 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 		return "", fmt.Errorf("inactive user")
 	}
 
-	if orgID != validationResp[0].OrgID {
+	if validationResp[0].OrgID != orgID {
 		return "", fmt.Errorf("org-id mismatch...invalid user")
+	}
+
+	if validationResp[0].ID != userID {
+		return "", fmt.Errorf("user-id mismatch...invalid user")
 	}
 
 	// This is kind of a hack, but it should work for now
