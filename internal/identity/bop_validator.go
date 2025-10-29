@@ -50,7 +50,7 @@ type UserValidationRequest struct {
 }
 
 type UserInfo struct {
-	ID            int    `json:"id"`
+	ID            string `json:"id"`
 	Username      string `json:"username"`
 	AccountNumber string `json:"account_number"`
 	OrgID         string `json:"org_id"`

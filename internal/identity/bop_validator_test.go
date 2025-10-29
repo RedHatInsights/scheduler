@@ -24,7 +24,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			mockResponse: UserValidationResponse{
 				Users: []UserInfo{
 					{
-						ID:            1,
+						ID:            "1",
 						Username:      "testuser",
 						AccountNumber: "000001",
 						OrgID:         "123456",
@@ -42,7 +42,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			mockResponse: UserValidationResponse{
 				Users: []UserInfo{
 					{
-						ID:            2,
+						ID:            "2",
 						Username:      "inactiveuser",
 						AccountNumber: "000002",
 						OrgID:         "123456",
@@ -70,14 +70,14 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			mockResponse: UserValidationResponse{
 				Users: []UserInfo{
 					{
-						ID:            1,
+						ID:            "1",
 						Username:      "duplicateuser",
 						AccountNumber: "000001",
 						OrgID:         "123456",
 						IsActive:      true,
 					},
 					{
-						ID:            2,
+						ID:            "2",
 						Username:      "duplicateuser",
 						AccountNumber: "000002",
 						OrgID:         "123456",
