@@ -117,7 +117,7 @@ objects:
         - name: BOP_INSIGHTS_ENV
           value: ${ENV_NAME}
         - name: BOP_URL
-          value: http://env-ephemeral-nfiuqo-mbop.ephemeral-nfiuqo.svc.cluster.local:8090
+          value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
 
 parameters:
 - description: Initial amount of memory the insights-scheduler container will request.

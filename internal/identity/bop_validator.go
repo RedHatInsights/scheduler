@@ -105,8 +105,10 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username string) (strin
 		return "", fmt.Errorf("validation service returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
-	fmt.Println("BOP response: ", string(bodyBytes))
+	/*
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		fmt.Println("BOP response: ", string(bodyBytes))
+	*/
 
 	// Parse response
 	var validationResp []UserInfo
