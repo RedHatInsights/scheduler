@@ -13,31 +13,42 @@ func TestDefaultUserValidator_GenerateIdentityHeader(t *testing.T) {
 		name     string
 		orgID    string
 		username string
+		userID   string
 		wantErr  bool
 	}{
 		{
 			name:     "Valid org and user",
 			orgID:    "test-org",
 			username: "testuser",
+			userID:   "test-user-id",
 			wantErr:  false,
 		},
 		{
 			name:     "Empty orgID",
 			orgID:    "",
 			username: "testuser",
+			userID:   "test-user-id",
 			wantErr:  true,
 		},
 		{
 			name:     "Empty username",
 			orgID:    "test-org",
 			username: "",
+			userID:   "test-user-id",
+			wantErr:  true,
+		},
+		{
+			name:     "Empty userID",
+			orgID:    "test-org",
+			username: "testuser",
+			userID:   "",
 			wantErr:  true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			identityHeader, err := validator.GenerateIdentityHeader(tt.orgID, tt.username)
+			identityHeader, err := validator.GenerateIdentityHeader(tt.orgID, tt.username, tt.userID)
 
 			if tt.wantErr {
 				if err == nil {
@@ -91,9 +102,8 @@ func TestDefaultUserValidator_GenerateIdentityHeader(t *testing.T) {
 				t.Errorf("Expected Internal.OrgID '%s', got '%s'", tt.orgID, identity.Identity.Internal.OrgID)
 			}
 
-			expectedUserID := tt.username + "-id"
-			if identity.Identity.User.UserID != expectedUserID {
-				t.Errorf("Expected UserID '%s', got '%s'", expectedUserID, identity.Identity.User.UserID)
+			if identity.Identity.User.UserID != tt.userID {
+				t.Errorf("Expected UserID '%s', got '%s'", tt.userID, identity.Identity.User.UserID)
 			}
 		})
 	}

@@ -45,18 +45,20 @@ type Job struct {
 	Name     string     `json:"name"`
 	OrgID    string     `json:"org_id"`
 	Username string     `json:"username"`
+	UserID   string     `json:"user_id"`
 	Schedule Schedule   `json:"schedule"`
 	Payload  JobPayload `json:"payload"`
 	Status   JobStatus  `json:"status"`
 	LastRun  *time.Time `json:"last_run,omitempty"`
 }
 
-func NewJob(name string, orgID string, username string, schedule Schedule, payload JobPayload) Job {
+func NewJob(name string, orgID string, username string, userID string, schedule Schedule, payload JobPayload) Job {
 	return Job{
 		ID:       uuid.New().String(),
 		Name:     name,
 		OrgID:    orgID,
 		Username: username,
+		UserID:   userID,
 		Schedule: schedule,
 		Payload:  payload,
 		Status:   StatusScheduled,
@@ -70,6 +72,7 @@ func (j Job) WithStatus(status JobStatus) Job {
 		Name:     j.Name,
 		OrgID:    j.OrgID,
 		Username: j.Username,
+		UserID:   j.UserID,
 		Schedule: j.Schedule,
 		Payload:  j.Payload,
 		Status:   status,
@@ -83,6 +86,7 @@ func (j Job) WithLastRun(lastRun time.Time) Job {
 		Name:     j.Name,
 		OrgID:    j.OrgID,
 		Username: j.Username,
+		UserID:   j.UserID,
 		Schedule: j.Schedule,
 		Payload:  j.Payload,
 		Status:   j.Status,
@@ -90,7 +94,7 @@ func (j Job) WithLastRun(lastRun time.Time) Job {
 	}
 }
 
-func (j Job) UpdateFields(name *string, orgID *string, username *string, schedule *Schedule, payload *JobPayload, status *JobStatus) Job {
+func (j Job) UpdateFields(name *string, orgID *string, username *string, userID *string, schedule *Schedule, payload *JobPayload, status *JobStatus) Job {
 	updated := j
 
 	if name != nil {
@@ -101,6 +105,9 @@ func (j Job) UpdateFields(name *string, orgID *string, username *string, schedul
 	}
 	if username != nil {
 		updated.Username = *username
+	}
+	if userID != nil {
+		updated.UserID = *userID
 	}
 	if schedule != nil {
 		updated.Schedule = *schedule

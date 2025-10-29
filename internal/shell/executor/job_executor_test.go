@@ -39,7 +39,7 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 		},
 	}
 
-	job := domain.NewJob("Test Job", "test-org-123", "testuser", "0 */15 * * * *", payload)
+	job := domain.NewJob("Test Job", "test-org-123", "testuser", "test-user-id", "0 */15 * * * *", payload)
 
 	// Test executing a message job (should not trigger Kafka)
 	err := executor.Execute(job)

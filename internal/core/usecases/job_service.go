@@ -49,8 +49,8 @@ func (s *JobService) SetCronScheduler(cronScheduler CronScheduler) {
 	s.cronScheduler = cronScheduler
 }
 
-func (s *JobService) CreateJob(name string, orgID string, username string, schedule string, payload domain.JobPayload) (domain.Job, error) {
-	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, schedule: %s, payload type: %s", name, orgID, username, schedule, payload.Type)
+func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, payload domain.JobPayload) (domain.Job, error) {
+	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, payload type: %s", name, orgID, username, userID, schedule, payload.Type)
 
 	// Validate org_id
 	if orgID == "" {
@@ -71,7 +71,7 @@ func (s *JobService) CreateJob(name string, orgID string, username string, sched
 	}
 	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payload.Type)
 
-	job := domain.NewJob(name, orgID, username, domain.Schedule(schedule), payload)
+	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), payload)
 	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s", job.ID, job.Status)
 
 	err := s.repo.Save(job)
@@ -162,7 +162,7 @@ func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter strin
 	return filtered, nil
 }
 
-func (s *JobService) UpdateJob(id string, name string, orgID string, username string, schedule string, payload domain.JobPayload, status string) (domain.Job, error) {
+func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payload domain.JobPayload, status string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -193,7 +193,7 @@ func (s *JobService) UpdateJob(id string, name string, orgID string, username st
 	scheduleVal := domain.Schedule(schedule)
 	statusVal := domain.JobStatus(status)
 
-	updatedJob := job.UpdateFields(&name, &orgID, &username, &scheduleVal, &payload, &statusVal)
+	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payload, &statusVal)
 
 	err = s.repo.Save(updatedJob)
 	if err != nil {
@@ -227,6 +227,7 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	var name *string
 	var orgID *string
 	var username *string
+	var userID *string
 	var schedule *domain.Schedule
 	var payload *domain.JobPayload
 	var status *domain.JobStatus
@@ -251,6 +252,12 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	if v, ok := updates["username"]; ok {
 		if usernameStr, ok := v.(string); ok {
 			username = &usernameStr
+		}
+	}
+
+	if v, ok := updates["user_id"]; ok {
+		if userIDStr, ok := v.(string); ok {
+			userID = &userIDStr
 		}
 	}
 
@@ -292,7 +299,7 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 		}
 	}
 
-	updatedJob := job.UpdateFields(name, orgID, username, schedule, payload, status)
+	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payload, status)
 
 	err = s.repo.Save(updatedJob)
 	if err != nil {

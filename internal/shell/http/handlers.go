@@ -56,7 +56,14 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, schedule=%s, payload_type=%s", req.Name, ident.Identity.OrgID, username, req.Schedule, req.Payload.Type)
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		log.Printf("[DEBUG] HTTP CreateJob failed - missing user_id in identity")
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, payload_type=%s", req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Payload.Type)
 
 	if req.Name == "" || req.Schedule == "" {
 		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields: name=%s, schedule=%s", req.Name, req.Schedule)
@@ -66,7 +73,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
-	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, username, req.Schedule, req.Payload)
+	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
@@ -160,6 +167,12 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+		return
+	}
+
 	var req struct {
 		Name     string            `json:"name"`
 		Schedule string            `json:"schedule"`
@@ -177,7 +190,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, username, req.Schedule, req.Payload, req.Status)
+	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Payload, req.Status)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)

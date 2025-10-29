@@ -63,12 +63,15 @@ type UserValidationResponse struct {
 }
 
 // GenerateIdentityHeader calls an HTTP service to generate the identity header
-func (v *BopUserValidator) GenerateIdentityHeader(orgID, username string) (string, error) {
+func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string) (string, error) {
 	if orgID == "" {
 		return "", fmt.Errorf("orgID cannot be empty")
 	}
 	if username == "" {
 		return "", fmt.Errorf("username cannot be empty")
+	}
+	if userID == "" {
+		return "", fmt.Errorf("userID cannot be empty")
 	}
 
 	// Construct the request URL
@@ -124,8 +127,12 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username string) (strin
 		return "", fmt.Errorf("inactive user")
 	}
 
+	if orgID != validationResp[0].OrgID {
+		return "", fmt.Errorf("org-id mismatch...invalid user")
+	}
+
 	// This is kind of a hack, but it should work for now
 	identityHeaderBuilder := NewDefaultUserValidator(validationResp[0].AccountNumber)
 
-	return identityHeaderBuilder.GenerateIdentityHeader(validationResp[0].OrgID, validationResp[0].Username)
+	return identityHeaderBuilder.GenerateIdentityHeader(validationResp[0].OrgID, validationResp[0].Username, validationResp[0].ID)
 }
