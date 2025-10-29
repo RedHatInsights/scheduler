@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     name TEXT NOT NULL,
     org_id TEXT NOT NULL,
     username TEXT NOT NULL,
+    user_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL, -- JSON string
@@ -70,11 +71,12 @@ CREATE INDEX IF NOT EXISTS idx_jobs_org_status ON jobs(org_id, status);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_name ON jobs(name);
 CREATE INDEX IF NOT EXISTS idx_jobs_username ON jobs(username);
+CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_last_run ON jobs(last_run);
 
 -- Trigger to update updated_at timestamp
-CREATE TRIGGER IF NOT EXISTS update_jobs_updated_at 
+CREATE TRIGGER IF NOT EXISTS update_jobs_updated_at
     AFTER UPDATE ON jobs
     FOR EACH ROW
 BEGIN
@@ -179,6 +181,39 @@ func (r *SQLiteJobRepository) migrateToOrgID() error {
 		log.Printf("[DEBUG] SQLiteJobRepository - username column already exists")
 	}
 
+	// Check if user_id column exists
+	query = `SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name='user_id'`
+	row = r.db.QueryRow(query)
+	var userIDCount int
+	if err := row.Scan(&userIDCount); err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository - error checking user_id column existence: %v", err)
+		return err
+	}
+
+	userIDExists := userIDCount > 0
+
+	if !userIDExists {
+		log.Printf("[DEBUG] SQLiteJobRepository - adding user_id column to existing table")
+
+		// Add user_id column with default value
+		_, err := r.db.Exec(`ALTER TABLE jobs ADD COLUMN user_id TEXT DEFAULT 'unknown-id'`)
+		if err != nil {
+			log.Printf("[DEBUG] SQLiteJobRepository - error adding user_id column: %v", err)
+			return err
+		}
+
+		// Update existing records to have user_id = 'unknown-id'
+		_, err = r.db.Exec(`UPDATE jobs SET user_id = 'unknown-id' WHERE user_id IS NULL`)
+		if err != nil {
+			log.Printf("[DEBUG] SQLiteJobRepository - error updating existing records with user_id: %v", err)
+			return err
+		}
+
+		log.Printf("[DEBUG] SQLiteJobRepository - user_id migration completed")
+	} else {
+		log.Printf("[DEBUG] SQLiteJobRepository - user_id column already exists")
+	}
+
 	return nil
 }
 
@@ -200,14 +235,14 @@ func (r *SQLiteJobRepository) Save(job domain.Job) error {
 
 	// Use UPSERT (INSERT OR REPLACE)
 	query := `
-		INSERT OR REPLACE INTO jobs (id, name, org_id, username, schedule, payload_type, payload_details, status, last_run, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 
+		INSERT OR REPLACE INTO jobs (id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			COALESCE((SELECT created_at FROM jobs WHERE id = ?), CURRENT_TIMESTAMP),
 			CURRENT_TIMESTAMP
 		)
 	`
 
-	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.Username, string(job.Schedule), string(job.Payload.Type),
+	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.Username, job.UserID, string(job.Schedule), string(job.Payload.Type),
 		string(payloadJSON), string(job.Status), lastRun, job.ID)
 
 	if err != nil {
@@ -223,8 +258,8 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindByID - searching for job: %s", id)
 
 	query := `
-		SELECT id, name, org_id, username, schedule, payload_type, payload_details, status, last_run
-		FROM jobs 
+		SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
+		FROM jobs
 		WHERE id = ?
 	`
 
@@ -234,7 +269,7 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 	var payloadJSON string
 	var lastRunStr sql.NullString
 
-	err := row.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.Schedule, &job.Payload.Type,
+	err := row.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Payload.Type,
 		&payloadJSON, &job.Status, &lastRunStr)
 
 	if err != nil {
@@ -267,8 +302,8 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindAll - retrieving all jobs")
 
 	query := `
-		SELECT id, name, org_id, username, schedule, payload_type, payload_details, status, last_run
-		FROM jobs 
+		SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
+		FROM jobs
 		ORDER BY created_at DESC
 	`
 
@@ -286,7 +321,7 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 		var payloadJSON string
 		var lastRunStr sql.NullString
 
-		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.Schedule, &job.Payload.Type,
+		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Payload.Type,
 			&payloadJSON, &job.Status, &lastRunStr)
 
 		if err != nil {
@@ -323,8 +358,8 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindByOrgID - retrieving jobs for org: %s", orgID)
 
 	query := `
-		SELECT id, name, org_id, username, schedule, payload_type, payload_details, status, last_run
-		FROM jobs 
+		SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
+		FROM jobs
 		WHERE org_id = ?
 		ORDER BY created_at DESC
 	`
@@ -343,7 +378,7 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 		var payloadJSON string
 		var lastRunStr sql.NullString
 
-		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.Schedule, &job.Payload.Type,
+		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Payload.Type,
 			&payloadJSON, &job.Status, &lastRunStr)
 
 		if err != nil {

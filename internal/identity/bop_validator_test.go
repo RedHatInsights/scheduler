@@ -114,7 +114,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			// Skip server setup for validation errors
 			if tt.orgID == "" || tt.username == "" {
 				validator := NewBopUserValidator("http://test.example.com", "test-token", "test-client", "test-env")
-				_, err := validator.GenerateIdentityHeader(tt.orgID, tt.username)
+				_, err := validator.GenerateIdentityHeader(tt.orgID, tt.username, "test-user-id")
 				if (err != nil) != tt.wantErr {
 					t.Errorf("GenerateIdentityHeader() error = %v, wantErr %v", err, tt.wantErr)
 				}
@@ -176,7 +176,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			validator := NewBopUserValidator(server.URL, "test-token", "test-client", "test-env")
 
 			// Call the method
-			_, err := validator.GenerateIdentityHeader(tt.orgID, tt.username)
+			_, err := validator.GenerateIdentityHeader(tt.orgID, tt.username, "test-user-id")
 
 			// Check error
 			if (err != nil) != tt.wantErr {

@@ -8,8 +8,8 @@ import (
 
 // UserValidator defines the interface for validating users and generating identity headers
 type UserValidator interface {
-	// GenerateIdentityHeader creates a Red Hat identity header from org-id and username
-	GenerateIdentityHeader(orgID, username string) (string, error)
+	// GenerateIdentityHeader creates a Red Hat identity header from org-id, username, and userID
+	GenerateIdentityHeader(orgID, username, userID string) (string, error)
 }
 
 // Identity represents the Red Hat identity structure
@@ -49,13 +49,16 @@ func NewDefaultUserValidator(defaultAccountNumber string) *DefaultUserValidator 
 	}
 }
 
-// GenerateIdentityHeader creates an identity header from org-id and username
-func (v *DefaultUserValidator) GenerateIdentityHeader(orgID, username string) (string, error) {
+// GenerateIdentityHeader creates an identity header from org-id, username, and userID
+func (v *DefaultUserValidator) GenerateIdentityHeader(orgID, username, userID string) (string, error) {
 	if orgID == "" {
 		return "", fmt.Errorf("orgID cannot be empty")
 	}
 	if username == "" {
 		return "", fmt.Errorf("username cannot be empty")
+	}
+	if userID == "" {
+		return "", fmt.Errorf("userID cannot be empty")
 	}
 
 	identity := IdentityHeader{
@@ -74,7 +77,7 @@ func (v *DefaultUserValidator) GenerateIdentityHeader(orgID, username string) (s
 				UserID   string `json:"user_id"`
 			}{
 				Username: username,
-				UserID:   username + "-id",
+				UserID:   userID,
 			},
 		},
 	}

@@ -49,7 +49,7 @@ func ExampleUsage() {
 
 	// Generate identity header using UserValidator
 	userValidator := identity.NewDefaultUserValidator("123456") // Use client's account number
-	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user")
+	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user", "user-123")
 	if err != nil {
 		log.Fatalf("Failed to generate identity header: %v", err)
 	}
@@ -129,7 +129,7 @@ func CreateAdvisorExport(client *Client, ctx context.Context) (*ExportStatusResp
 
 	// Generate identity header using UserValidator
 	userValidator := identity.NewDefaultUserValidator("123456") // Use client's account number
-	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user")
+	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user", "user-123")
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func CreateComplianceExport(client *Client, ctx context.Context) (*ExportStatusR
 
 	// Generate identity header using UserValidator
 	userValidator := identity.NewDefaultUserValidator("123456") // Use client's account number
-	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user")
+	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user", "user-123")
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func CreateInventoryExport(client *Client, ctx context.Context) (*ExportStatusRe
 
 	// Generate identity header using UserValidator
 	userValidator := identity.NewDefaultUserValidator("123456") // Use client's account number
-	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user")
+	identityHeader, err := userValidator.GenerateIdentityHeader("000001", "example-user", "user-123")
 	if err != nil {
 		return nil, err
 	}
