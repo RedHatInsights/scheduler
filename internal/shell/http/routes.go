@@ -4,7 +4,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/redhatinsights/platform-go-middlewares/identity"
 
-	"insights-scheduler-part-2/internal/core/usecases"
+	"insights-scheduler/internal/core/usecases"
 )
 
 func SetupRoutes(jobService *usecases.JobService) *mux.Router {

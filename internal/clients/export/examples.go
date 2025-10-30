@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"insights-scheduler-part-2/internal/identity"
+	"insights-scheduler/internal/identity"
 )
 
 // ExampleUsage demonstrates how to use the export service client

@@ -1,4 +1,4 @@
-module insights-scheduler-part-2
+module insights-scheduler
 
 go 1.24
 

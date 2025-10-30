@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/robfig/cron/v3"
-	"insights-scheduler-part-2/internal/core/domain"
-	"insights-scheduler-part-2/internal/core/usecases"
+	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/usecases"
 )
 
 type CronScheduler struct {

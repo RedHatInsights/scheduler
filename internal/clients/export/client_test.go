@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"insights-scheduler-part-2/internal/identity"
+	"insights-scheduler/internal/identity"
 )
 
 func TestClient_CreateExport(t *testing.T) {

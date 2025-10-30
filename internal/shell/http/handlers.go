@@ -8,8 +8,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/redhatinsights/platform-go-middlewares/identity"
 
-	"insights-scheduler-part-2/internal/core/domain"
-	"insights-scheduler-part-2/internal/core/usecases"
+	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/usecases"
 )
 
 type JobHandler struct {

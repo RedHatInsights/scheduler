@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"insights-scheduler-part-2/internal/clients/export"
+	"insights-scheduler/internal/clients/export"
 )
 
 func main() {

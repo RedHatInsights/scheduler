@@ -7,7 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"insights-scheduler-part-2/internal/core/domain"
+	"insights-scheduler/internal/core/domain"
 )
 
 type SQLiteJobRepository struct {

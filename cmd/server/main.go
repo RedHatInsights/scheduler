@@ -9,13 +9,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"insights-scheduler-part-2/internal/config"
-	"insights-scheduler-part-2/internal/core/usecases"
-	"insights-scheduler-part-2/internal/shell/executor"
-	httpShell "insights-scheduler-part-2/internal/shell/http"
-	"insights-scheduler-part-2/internal/shell/messaging"
-	"insights-scheduler-part-2/internal/shell/scheduler"
-	"insights-scheduler-part-2/internal/shell/storage"
+	"insights-scheduler/internal/config"
+	"insights-scheduler/internal/core/usecases"
+	"insights-scheduler/internal/shell/executor"
+	httpShell "insights-scheduler/internal/shell/http"
+	"insights-scheduler/internal/shell/messaging"
+	"insights-scheduler/internal/shell/scheduler"
+	"insights-scheduler/internal/shell/storage"
 )
 
 func main() {

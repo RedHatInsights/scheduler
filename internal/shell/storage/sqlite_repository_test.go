@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"insights-scheduler-part-2/internal/core/domain"
+	"insights-scheduler/internal/core/domain"
 )
 
 func TestSQLiteJobRepository(t *testing.T) {

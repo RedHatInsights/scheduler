@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"insights-scheduler-part-2/internal/config"
-	"insights-scheduler-part-2/internal/core/domain"
-	"insights-scheduler-part-2/internal/identity"
-	"insights-scheduler-part-2/internal/shell/messaging"
+	"insights-scheduler/internal/config"
+	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/identity"
+	"insights-scheduler/internal/shell/messaging"
 )
 
 func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {

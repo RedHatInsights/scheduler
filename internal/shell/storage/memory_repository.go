@@ -3,7 +3,7 @@ package storage
 import (
 	"sync"
 
-	"insights-scheduler-part-2/internal/core/domain"
+	"insights-scheduler/internal/core/domain"
 )
 
 type MemoryJobRepository struct {

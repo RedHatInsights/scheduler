@@ -5,7 +5,7 @@ import (
 
 	"github.com/IBM/sarama"
 
-	"insights-scheduler-part-2/internal/config"
+	"insights-scheduler/internal/config"
 )
 
 func main() {

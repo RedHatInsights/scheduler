@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"insights-scheduler-part-2/internal/core/domain"
+	"insights-scheduler/internal/core/domain"
 )
 
 const baseURL = "http://localhost:5000/api/v1"
