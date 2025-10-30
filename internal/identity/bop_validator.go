@@ -129,10 +129,10 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	}
 
 	/*
-	    BOP doesn't read the user_id from the attributes...so the user id it returns is kinda random
-		if validationResp[0].ID != userID {
-			return "", fmt.Errorf("user-id mismatch...invalid user")
-		}
+		    BOP doesn't read the user_id from the attributes...so the user id it returns is kinda random
+			if validationResp[0].ID != userID {
+				return "", fmt.Errorf("user-id mismatch...invalid user")
+			}
 	*/
 
 	// This is kind of a hack, but it should work for now

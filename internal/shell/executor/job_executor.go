@@ -133,19 +133,23 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 		format = export.FormatJSON
 	}
 
-	subscriptionsFilters := map[string]interface{}{
-		"product_id": "RHEL for x86",
-	}
+	/*
+		subscriptionsFilters := map[string]interface{}{
+			"product_id": "RHEL for x86",
+		}
+	*/
 
 	req := export.ExportRequest{
 		Name:   exportName,
 		Format: export.FormatJSON,
 		Sources: []export.Source{
-			{
-				Application: export.Application("subscriptions"),
-				Resource:    "instances",
-				Filters:     subscriptionsFilters,
-			},
+			/*
+				{
+					Application: export.Application("subscriptions"),
+					Resource:    "instances",
+					Filters:     subscriptionsFilters,
+				},
+			*/
 			{
 				Application: export.Application("urn:redhat:application:inventory"),
 				Resource:    "urn:redhat:application:inventory:export:systems",
