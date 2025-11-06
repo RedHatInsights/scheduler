@@ -14,15 +14,13 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	// Create test config
 	cfg := &config.Config{
 		ExportService: config.ExportServiceConfig{
-			BaseURL:       "http://localhost:9000/api/export/v1",
-			AccountNumber: "test-account",
-			OrgID:         "test-org",
+			BaseURL: "http://localhost:9000/api/export/v1",
 		},
 	}
 
 	// Create a mock Kafka producer (in a real test, you'd use a mock)
 	// For this test, we'll use nil to test the nil check
-	userValidator := identity.NewDefaultUserValidator(cfg.ExportService.AccountNumber)
+	userValidator := identity.NewDefaultUserValidator("account-123")
 
 	executor := &DefaultJobExecutor{
 		exportClient:  nil, // We won't actually execute exports in this test
@@ -46,42 +44,6 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
-}
-
-func TestKafkaProducerInitialization(t *testing.T) {
-	// Create test config
-	cfg := &config.Config{
-		ExportService: config.ExportServiceConfig{
-			BaseURL:       "http://localhost:9000/api/export/v1",
-			AccountNumber: "test-account",
-			OrgID:         "test-org",
-		},
-	}
-
-	// Test creating executor with Kafka producer
-	// This will fail if Kafka is not available, which is expected in unit tests
-	brokers := []string{"localhost:9092"}
-	topic := "test-export-completions"
-
-	kafkaProducer, err := messaging.NewKafkaProducer(brokers, topic)
-	if err != nil {
-		t.Logf("Expected error when Kafka is not available: %v", err)
-		// Test creating executor without Kafka producer
-		executor := NewDefaultJobExecutor(cfg)
-		if executor == nil {
-			t.Error("Failed to create executor without Kafka")
-		}
-		return
-	}
-
-	// If we somehow connected, test the executor creation
-	executor := NewDefaultJobExecutorWithKafka(kafkaProducer, cfg)
-	if executor == nil {
-		t.Error("Failed to create executor with Kafka producer")
-	}
-
-	// Clean up
-	defer kafkaProducer.Close()
 }
 
 func TestExportCompletionMessageStructure(t *testing.T) {

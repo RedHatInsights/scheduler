@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"insights-scheduler/internal/clients/export"
+	"insights-scheduler/internal/identity"
 )
 
 func main() {
@@ -30,20 +31,27 @@ func main() {
 		log.Fatal("Account number and organization ID are required")
 	}
 
-	client := export.NewClient(*baseURL, *accountNumber, *orgID)
+	// Generate identity header for the test using UserValidator
+	userValidator := identity.NewDefaultUserValidator("123456")
+	identityHeader, err := userValidator.GenerateIdentityHeader(*orgID, "testuser", "test-user-id")
+	if err != nil {
+		log.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
+
+	client := export.NewClient(*baseURL)
 	ctx := context.Background()
 
 	switch *command {
 	case "list":
-		listExports(client, ctx, *application)
+		listExports(client, ctx, identityHeader, *application)
 	case "create":
-		createExport(client, ctx, *name, *format)
+		createExport(client, ctx, identityHeader, *name, *format)
 	case "status":
-		getStatus(client, ctx, *exportID)
+		getStatus(client, ctx, identityHeader, *exportID)
 	case "download":
-		downloadExport(client, ctx, *exportID, *output)
+		downloadExport(client, ctx, identityHeader, *exportID, *output)
 	case "delete":
-		deleteExport(client, ctx, *exportID)
+		deleteExport(client, ctx, identityHeader, *exportID)
 	default:
 		fmt.Printf("Unknown command: %s\n", *command)
 		flag.Usage()
@@ -51,7 +59,7 @@ func main() {
 	}
 }
 
-func listExports(client *export.Client, ctx context.Context, appFilter string) {
+func listExports(client *export.Client, ctx context.Context, identityHeader string, appFilter string) {
 	params := &export.ListParams{}
 
 	if appFilter != "" {
@@ -59,7 +67,7 @@ func listExports(client *export.Client, ctx context.Context, appFilter string) {
 		params.Application = &app
 	}
 
-	result, err := client.ListExports(ctx, params)
+	result, err := client.ListExports(ctx, params, identityHeader)
 	if err != nil {
 		log.Fatalf("Failed to list exports: %v", err)
 	}
@@ -77,7 +85,7 @@ func listExports(client *export.Client, ctx context.Context, appFilter string) {
 	}
 }
 
-func createExport(client *export.Client, ctx context.Context, name, format string) {
+func createExport(client *export.Client, ctx context.Context, identityHeader string, name, format string) {
 	if name == "" {
 		name = fmt.Sprintf("CLI Export %s", time.Now().Format("2006-01-02 15:04:05"))
 	}
@@ -106,7 +114,7 @@ func createExport(client *export.Client, ctx context.Context, name, format strin
 		},
 	}
 
-	result, err := client.CreateExport(ctx, req, "FIXME")
+	result, err := client.CreateExport(ctx, req, identityHeader)
 	if err != nil {
 		log.Fatalf("Failed to create export: %v", err)
 	}
@@ -115,12 +123,12 @@ func createExport(client *export.Client, ctx context.Context, name, format strin
 	printExportStatus(result)
 }
 
-func getStatus(client *export.Client, ctx context.Context, exportID string) {
+func getStatus(client *export.Client, ctx context.Context, identityHeader string, exportID string) {
 	if exportID == "" {
 		log.Fatal("Export ID is required for status command")
 	}
 
-	status, err := client.GetExportStatus(ctx, exportID)
+	status, err := client.GetExportStatus(ctx, exportID, identityHeader)
 	if err != nil {
 		log.Fatalf("Failed to get export status: %v", err)
 	}
@@ -128,13 +136,13 @@ func getStatus(client *export.Client, ctx context.Context, exportID string) {
 	printExportStatus(status)
 }
 
-func downloadExport(client *export.Client, ctx context.Context, exportID, output string) {
+func downloadExport(client *export.Client, ctx context.Context, identityHeader string, exportID, output string) {
 	if exportID == "" {
 		log.Fatal("Export ID is required for download command")
 	}
 
 	// Check if export is ready
-	status, err := client.GetExportStatus(ctx, exportID)
+	status, err := client.GetExportStatus(ctx, exportID, identityHeader)
 	if err != nil {
 		log.Fatalf("Failed to get export status: %v", err)
 	}
@@ -143,7 +151,7 @@ func downloadExport(client *export.Client, ctx context.Context, exportID, output
 		log.Fatalf("Export is not ready for download. Status: %s", status.Status)
 	}
 
-	data, err := client.DownloadExport(ctx, exportID)
+	data, err := client.DownloadExport(ctx, exportID, identityHeader)
 	if err != nil {
 		log.Fatalf("Failed to download export: %v", err)
 	}
@@ -159,12 +167,12 @@ func downloadExport(client *export.Client, ctx context.Context, exportID, output
 	fmt.Printf("Export downloaded to %s (%d bytes)\n", output, len(data))
 }
 
-func deleteExport(client *export.Client, ctx context.Context, exportID string) {
+func deleteExport(client *export.Client, ctx context.Context, identityHeader string, exportID string) {
 	if exportID == "" {
 		log.Fatal("Export ID is required for delete command")
 	}
 
-	if err := client.DeleteExport(ctx, exportID); err != nil {
+	if err := client.DeleteExport(ctx, exportID, identityHeader); err != nil {
 		log.Fatalf("Failed to delete export: %v", err)
 	}
 

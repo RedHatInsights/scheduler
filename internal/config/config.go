@@ -32,6 +32,8 @@ type Config struct {
 
 	// BOP service configuration
 	Bop BopConfig `json:"bop"`
+
+	UserValidatorImpl string
 }
 
 // ServerConfig contains HTTP server settings
@@ -183,12 +185,6 @@ type ExportServiceConfig struct {
 	// BaseURL for the export service API
 	BaseURL string `json:"base_url"`
 
-	// AccountNumber for authentication
-	AccountNumber string `json:"account_number"`
-
-	// OrgID for the organization
-	OrgID string `json:"org_id"`
-
 	// Timeout for export service requests
 	Timeout time.Duration `json:"timeout"`
 
@@ -260,6 +256,8 @@ func LoadConfig() (*Config, error) {
 
 	// Load BOP configuration
 	config.Bop = loadBopConfig()
+
+	config.UserValidatorImpl = getEnv("UserValidatorImpl", "bop")
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
@@ -430,11 +428,9 @@ func loadMetricsConfig(clowderConfig *clowder.AppConfig) MetricsConfig {
 // loadExportServiceConfig loads export service configuration from environment
 func loadExportServiceConfig() ExportServiceConfig {
 	return ExportServiceConfig{
-		BaseURL:       getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1"),
-		AccountNumber: getEnv("EXPORT_SERVICE_ACCOUNT", "000002"),
-		OrgID:         getEnv("EXPORT_SERVICE_ORG_ID", "000001"),
-		Timeout:       getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
-		MaxRetries:    getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
+		BaseURL:    getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1"),
+		Timeout:    getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
+		MaxRetries: getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
 	}
 }
 
@@ -517,12 +513,6 @@ func (c *Config) Validate() error {
 	// Validate export service configuration
 	if c.ExportService.BaseURL == "" {
 		return fmt.Errorf("export service base URL is required")
-	}
-	if c.ExportService.AccountNumber == "" {
-		return fmt.Errorf("export service account number is required")
-	}
-	if c.ExportService.OrgID == "" {
-		return fmt.Errorf("export service org ID is required")
 	}
 
 	// Validate BOP configuration (only if enabled)

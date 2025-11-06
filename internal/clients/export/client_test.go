@@ -50,7 +50,7 @@ func TestClient_CreateExport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "123456", "org123")
+	client := NewClient(server.URL)
 
 	req := ExportRequest{
 		Name:   "Test Export",
@@ -122,14 +122,21 @@ func TestClient_ListExports(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "123456", "org123")
+	// Generate identity header for the test using UserValidator
+	userValidator := identity.NewDefaultUserValidator("123456")
+	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
+
+	client := NewClient(server.URL)
 
 	app := AppAdvisor
 	params := &ListParams{
 		Application: &app,
 	}
 
-	result, err := client.ListExports(context.Background(), params)
+	result, err := client.ListExports(context.Background(), params, identityHeader)
 	if err != nil {
 		t.Fatalf("ListExports failed: %v", err)
 	}
@@ -166,9 +173,16 @@ func TestClient_GetExportStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "123456", "org123")
+	// Generate identity header for the test using UserValidator
+	userValidator := identity.NewDefaultUserValidator("123456")
+	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
 
-	result, err := client.GetExportStatus(context.Background(), "test-123")
+	client := NewClient(server.URL)
+
+	result, err := client.GetExportStatus(context.Background(), "test-123", identityHeader)
 	if err != nil {
 		t.Fatalf("GetExportStatus failed: %v", err)
 	}
@@ -199,9 +213,16 @@ func TestClient_DownloadExport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "123456", "org123")
+	// Generate identity header for the test using UserValidator
+	userValidator := identity.NewDefaultUserValidator("123456")
+	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
 
-	data, err := client.DownloadExport(context.Background(), "test-123")
+	client := NewClient(server.URL)
+
+	data, err := client.DownloadExport(context.Background(), "test-123", identityHeader)
 	if err != nil {
 		t.Fatalf("DownloadExport failed: %v", err)
 	}
@@ -221,9 +242,16 @@ func TestClient_DeleteExport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "123456", "org123")
+	// Generate identity header for the test using UserValidator
+	userValidator := identity.NewDefaultUserValidator("123456")
+	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
 
-	err := client.DeleteExport(context.Background(), "test-123")
+	client := NewClient(server.URL)
+
+	err = client.DeleteExport(context.Background(), "test-123", identityHeader)
 	if err != nil {
 		t.Fatalf("DeleteExport failed: %v", err)
 	}
@@ -239,7 +267,7 @@ func TestClient_ErrorHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "123456", "org123")
+	client := NewClient(server.URL)
 
 	req := ExportRequest{
 		Format: FormatJSON,
@@ -306,7 +334,7 @@ func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
 }
 
 func TestClient_GetExportDownloadURL(t *testing.T) {
-	client := NewClient("https://example.com/api/v1", "123456", "org123")
+	client := NewClient("https://example.com/api/v1")
 
 	url := client.GetExportDownloadURL("test-export-123")
 	expected := "https://example.com/api/v1/exports/test-export-123"

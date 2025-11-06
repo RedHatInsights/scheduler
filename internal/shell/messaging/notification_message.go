@@ -21,7 +21,7 @@ type NotificationMessage struct {
 }
 
 // NewExportCompletionNotification creates a notification message for export completion
-func NewExportCompletionNotification(exportID, jobID, accountID, orgID, status, downloadURL, errorMsg string) *NotificationMessage {
+func NewExportCompletionNotification(exportID, jobID, orgID, status, downloadURL, errorMsg string) *NotificationMessage {
 	context := map[string]interface{}{
 		"export_id":    exportID,
 		"job_id":       jobID,
@@ -47,11 +47,11 @@ func NewExportCompletionNotification(exportID, jobID, accountID, orgID, status, 
 		Application: "my-app",
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
-		AccountID:   accountID,
-		OrgID:       orgID,
-		Context:     context,
-		Events:      []interface{}{},
-		Recipients:  []interface{}{},
+		//		AccountID:   accountID,
+		OrgID:      orgID,
+		Context:    context,
+		Events:     []interface{}{},
+		Recipients: []interface{}{},
 	}
 }
 

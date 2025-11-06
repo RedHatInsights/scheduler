@@ -11,6 +11,7 @@ import (
 
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/usecases"
+	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
 	httpShell "insights-scheduler/internal/shell/http"
 	"insights-scheduler/internal/shell/messaging"
@@ -50,7 +51,26 @@ func main() {
 	}
 	log.Printf("Database initialized successfully")
 
+	var userValidator identity.UserValidator
+	switch cfg.UserValidatorImpl {
+	case "bop":
+		fmt.Println("Intializing BOP User Validator")
+		userValidator = identity.NewBopUserValidator(
+			cfg.Bop.BaseURL,
+			cfg.Bop.APIToken,
+			cfg.Bop.ClientID,
+			cfg.Bop.InsightsEnv,
+		)
+	case "fake":
+		fmt.Println("Intializing FAKE User Validator")
+		userValidator = identity.NewDefaultUserValidator("account-123")
+	default:
+		log.Fatalf("Unsupported UserValidator type: %s", cfg.UserValidatorImpl)
+	}
+
 	schedulingService := usecases.NewDefaultSchedulingService()
+
+	var kafkaProducer messaging.KafkaProducer
 
 	// Initialize job executor with optional Kafka producer
 	var jobExecutor usecases.JobExecutor
@@ -59,24 +79,20 @@ func main() {
 
 		kafkaProducer, err := messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 		if err != nil {
-			log.Printf("Failed to initialize Kafka producer: %v", err)
-			log.Printf("Continuing without Kafka producer")
-			jobExecutor = executor.NewDefaultJobExecutor(cfg)
-		} else {
-			log.Printf("Kafka producer initialized successfully")
-			jobExecutor = executor.NewDefaultJobExecutorWithKafka(kafkaProducer, cfg)
-
-			// Ensure Kafka producer is closed on shutdown
-			defer func() {
-				if closeErr := kafkaProducer.Close(); closeErr != nil {
-					log.Printf("Error closing Kafka producer: %v", closeErr)
-				}
-			}()
+			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
+
+		// Ensure Kafka producer is closed on shutdown
+		defer func() {
+			if closeErr := kafkaProducer.Close(); closeErr != nil {
+				log.Printf("Error closing Kafka producer: %v", closeErr)
+			}
+		}()
 	} else {
 		log.Printf("Kafka disabled, running without Kafka producer")
-		jobExecutor = executor.NewDefaultJobExecutor(cfg)
 	}
+
+	jobExecutor = executor.NewJobExecutor(cfg, userValidator, &kafkaProducer)
 
 	// Create functional core service
 	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)

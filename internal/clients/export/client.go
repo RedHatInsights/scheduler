@@ -3,7 +3,6 @@ package export
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 IDENTITY := $(shell echo -n '{"identity": {"account_number": "000202", "internal": {"org_id": "000101"}, "type": "User", "org_id": "000101", "auth_type": "jwt-auth", "user":{"username": "wilma", "user_id": "wilma-1"}}}' | base64 -w 0)
 */
 
+/*
 // Identity represents the Red Hat identity structure
 type Identity struct {
 	AccountNumber string `json:"account_number"`
@@ -40,41 +40,20 @@ type Identity struct {
 type IdentityHeader struct {
 	Identity Identity `json:"identity"`
 }
+*/
 
 // Client represents the export service REST client
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
-	identity   IdentityHeader
 }
 
 // NewClient creates a new export service client
-func NewClient(baseURL string, accountNumber string, orgID string) *Client {
+func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
-		},
-
-		identity: IdentityHeader{
-			Identity: Identity{
-				AccountNumber: accountNumber,
-				OrgID:         orgID,
-				Type:          "User",
-				AuthType:      "jwt-auth",
-				Internal: struct {
-					OrgID string `json:"org_id"`
-				}{
-					OrgID: orgID,
-				},
-				User: struct {
-					Username string `json:"username"`
-					UserID   string `json:"user_id"`
-				}{
-					Username: "fred.flintstone",
-					UserID:   "4321-34-32",
-				},
-			},
 		},
 	}
 }
@@ -84,6 +63,7 @@ func (c *Client) SetHTTPClient(client *http.Client) {
 	c.httpClient = client
 }
 
+/*
 // createRequest creates an HTTP request with proper headers using default identity
 func (c *Client) createRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Request, error) {
 	var reqBody io.Reader
@@ -117,6 +97,7 @@ func (c *Client) createRequest(ctx context.Context, method, endpoint string, bod
 
 	return req, nil
 }
+*/
 
 // createRequestWithIdentity creates an HTTP request with a custom identity header
 func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint string, body interface{}, identityHeader string) (*http.Request, error) {
@@ -193,7 +174,7 @@ func (c *Client) CreateExport(ctx context.Context, req ExportRequest, identityHe
 }
 
 // ListExports retrieves a list of export requests
-func (c *Client) ListExports(ctx context.Context, params *ListParams) (*ExportListResponse, error) {
+func (c *Client) ListExports(ctx context.Context, params *ListParams, identityHeader string) (*ExportListResponse, error) {
 	endpoint := "/exports"
 
 	if params != nil {
@@ -223,7 +204,7 @@ func (c *Client) ListExports(ctx context.Context, params *ListParams) (*ExportLi
 		}
 	}
 
-	req, err := c.createRequest(ctx, "GET", endpoint, nil)
+	req, err := c.createRequestWithIdentity(ctx, "GET", endpoint, nil, identityHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -237,10 +218,10 @@ func (c *Client) ListExports(ctx context.Context, params *ListParams) (*ExportLi
 }
 
 // GetExportStatus retrieves the status of a specific export
-func (c *Client) GetExportStatus(ctx context.Context, exportID string) (*ExportStatusResponse, error) {
+func (c *Client) GetExportStatus(ctx context.Context, exportID string, identityHeader string) (*ExportStatusResponse, error) {
 	endpoint := fmt.Sprintf("/exports/%s/status", exportID)
 
-	req, err := c.createRequest(ctx, "GET", endpoint, nil)
+	req, err := c.createRequestWithIdentity(ctx, "GET", endpoint, nil, identityHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -254,10 +235,10 @@ func (c *Client) GetExportStatus(ctx context.Context, exportID string) (*ExportS
 }
 
 // DownloadExport downloads the exported data as a zip file
-func (c *Client) DownloadExport(ctx context.Context, exportID string) ([]byte, error) {
+func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHeader string) ([]byte, error) {
 	endpoint := fmt.Sprintf("/exports/%s", exportID)
 
-	req, err := c.createRequest(ctx, "GET", endpoint, nil)
+	req, err := c.createRequestWithIdentity(ctx, "GET", endpoint, nil, identityHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -291,10 +272,10 @@ func (c *Client) GetExportDownloadURL(exportID string) string {
 }
 
 // DeleteExport deletes an export request
-func (c *Client) DeleteExport(ctx context.Context, exportID string) error {
+func (c *Client) DeleteExport(ctx context.Context, exportID string, identityHeader string) error {
 	endpoint := fmt.Sprintf("/exports/%s", exportID)
 
-	req, err := c.createRequest(ctx, "DELETE", endpoint, nil)
+	req, err := c.createRequestWithIdentity(ctx, "DELETE", endpoint, nil, identityHeader)
 	if err != nil {
 		return err
 	}

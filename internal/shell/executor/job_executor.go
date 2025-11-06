@@ -20,58 +20,10 @@ type DefaultJobExecutor struct {
 	config        *config.Config
 }
 
-func NewDefaultJobExecutor(cfg *config.Config) *DefaultJobExecutor {
+func NewJobExecutor(cfg *config.Config, userValidator identity.UserValidator, kafkaProducer *messaging.KafkaProducer) *DefaultJobExecutor {
 	exportClient := export.NewClient(
 		cfg.ExportService.BaseURL,
-		cfg.ExportService.AccountNumber,
-		cfg.ExportService.OrgID,
 	)
-
-	var userValidator identity.UserValidator
-
-	if cfg.Bop.Enabled == true {
-		fmt.Println("Intializing BOP User Validator")
-		userValidator = identity.NewBopUserValidator(
-			cfg.Bop.BaseURL,
-			cfg.Bop.APIToken,
-			cfg.Bop.ClientID,
-			cfg.Bop.InsightsEnv,
-		)
-	} else {
-		fmt.Println("Intializing FAKE User Validator")
-		userValidator = identity.NewDefaultUserValidator(cfg.ExportService.AccountNumber)
-	}
-
-	return &DefaultJobExecutor{
-		exportClient:  exportClient,
-		kafkaProducer: nil, // No Kafka producer by default
-		userValidator: userValidator,
-		config:        cfg,
-	}
-}
-
-func NewDefaultJobExecutorWithExportClient(exportClient *export.Client, cfg *config.Config) *DefaultJobExecutor {
-	userValidator := identity.NewDefaultUserValidator(cfg.ExportService.AccountNumber)
-
-	return &DefaultJobExecutor{
-		exportClient:  exportClient,
-		kafkaProducer: nil, // No Kafka producer by default
-		userValidator: userValidator,
-		config:        cfg,
-	}
-}
-
-func NewDefaultJobExecutorWithKafka(kafkaProducer *messaging.KafkaProducer, cfg *config.Config) *DefaultJobExecutor {
-
-	jobExecutor := NewDefaultJobExecutor(cfg)
-
-	jobExecutor.kafkaProducer = kafkaProducer
-
-	return jobExecutor
-}
-
-func NewDefaultJobExecutorWithClients(exportClient *export.Client, kafkaProducer *messaging.KafkaProducer, cfg *config.Config) *DefaultJobExecutor {
-	userValidator := identity.NewDefaultUserValidator(cfg.ExportService.AccountNumber)
 
 	return &DefaultJobExecutor{
 		exportClient:  exportClient,
@@ -184,7 +136,7 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 		}
 	}
 
-	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, result.ID, timeout)
+	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, result.ID, identityHeader, timeout)
 	if err != nil {
 		return fmt.Errorf("export failed or timed out: %w", err)
 	}
@@ -213,7 +165,6 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 		notification := messaging.NewExportCompletionNotification(
 			result.ID,
 			job.ID,
-			e.config.ExportService.AccountNumber,
 			job.OrgID,
 			string(finalStatus.Status),
 			downloadURL,

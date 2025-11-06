@@ -227,22 +227,6 @@ func TestConfigValidation(t *testing.T) {
 			expectError:   true,
 			errorContains: "export service base URL is required",
 		},
-		{
-			name: "empty export service account",
-			modifyConfig: func(c *Config) {
-				c.ExportService.AccountNumber = ""
-			},
-			expectError:   true,
-			errorContains: "export service account number is required",
-		},
-		{
-			name: "empty export service org ID",
-			modifyConfig: func(c *Config) {
-				c.ExportService.OrgID = ""
-			},
-			expectError:   true,
-			errorContains: "export service org ID is required",
-		},
 	}
 
 	for _, tc := range testCases {
@@ -268,9 +252,7 @@ func TestConfigValidation(t *testing.T) {
 					Enabled: true,
 				},
 				ExportService: ExportServiceConfig{
-					BaseURL:       "http://localhost:9000",
-					AccountNumber: "123",
-					OrgID:         "org-123",
+					BaseURL: "http://localhost:9000",
 				},
 			}
 

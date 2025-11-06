@@ -14,8 +14,6 @@ func ExampleUsage() {
 	// Create a client
 	client := NewClient(
 		"https://console.redhat.com/api/export/v1",
-		"123456", // account number
-		"org123", // organization ID
 	)
 
 	ctx := context.Background()
@@ -64,7 +62,7 @@ func ExampleUsage() {
 
 	// Poll for completion
 	for {
-		status, err := client.GetExportStatus(ctx, export.ID)
+		status, err := client.GetExportStatus(ctx, export.ID, identityHeader)
 		if err != nil {
 			log.Printf("Failed to get status: %v", err)
 			break
@@ -74,7 +72,7 @@ func ExampleUsage() {
 
 		if status.Status == StatusComplete {
 			// Download the export
-			data, err := client.DownloadExport(ctx, export.ID)
+			data, err := client.DownloadExport(ctx, export.ID, identityHeader)
 			if err != nil {
 				log.Printf("Failed to download: %v", err)
 				break
@@ -100,7 +98,7 @@ func ExampleUsage() {
 		Limit:       func() *int { l := 10; return &l }(),
 	}
 
-	exports, err := client.ListExports(ctx, listParams)
+	exports, err := client.ListExports(ctx, listParams, identityHeader)
 	if err != nil {
 		log.Printf("Failed to list exports: %v", err)
 	} else {
@@ -189,11 +187,11 @@ func CreateInventoryExport(client *Client, ctx context.Context) (*ExportStatusRe
 }
 
 // WaitForExportCompletion polls an export until it's complete or failed
-func WaitForExportCompletion(client *Client, ctx context.Context, exportID string, timeout time.Duration) (*ExportStatusResponse, error) {
+func WaitForExportCompletion(client *Client, ctx context.Context, exportID string, identityHeader string, timeout time.Duration) (*ExportStatusResponse, error) {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		status, err := client.GetExportStatus(ctx, exportID)
+		status, err := client.GetExportStatus(ctx, exportID, identityHeader)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get export status: %w", err)
 		}
