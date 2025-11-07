@@ -257,7 +257,7 @@ func LoadConfig() (*Config, error) {
 	// Load BOP configuration
 	config.Bop = loadBopConfig()
 
-	config.UserValidatorImpl = getEnv("UserValidatorImpl", "bop")
+	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
