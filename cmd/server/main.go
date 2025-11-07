@@ -70,14 +70,14 @@ func main() {
 
 	schedulingService := usecases.NewDefaultSchedulingService()
 
-	var kafkaProducer messaging.KafkaProducer
+	var kafkaProducer *messaging.KafkaProducer
 
 	// Initialize job executor with optional Kafka producer
 	var jobExecutor usecases.JobExecutor
 	if cfg.Kafka.Enabled {
 		log.Printf("Initializing Kafka producer with brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
-		kafkaProducer, err := messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+		kafkaProducer, err = messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 		if err != nil {
 			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
@@ -92,7 +92,7 @@ func main() {
 		log.Printf("Kafka disabled, running without Kafka producer")
 	}
 
-	jobExecutor = executor.NewJobExecutor(cfg, userValidator, &kafkaProducer)
+	jobExecutor = executor.NewJobExecutor(cfg, userValidator, kafkaProducer)
 
 	// Create functional core service
 	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
