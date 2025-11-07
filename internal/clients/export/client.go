@@ -16,32 +16,6 @@ import (
 IDENTITY := $(shell echo -n '{"identity": {"account_number": "000202", "internal": {"org_id": "000101"}, "type": "User", "org_id": "000101", "auth_type": "jwt-auth", "user":{"username": "wilma", "user_id": "wilma-1"}}}' | base64 -w 0)
 */
 
-/*
-// Identity represents the Red Hat identity structure
-type Identity struct {
-	AccountNumber string `json:"account_number"`
-	OrgID         string `json:"org_id"`
-	Type          string `json:"type"`
-	AuthType      string `json:"auth_type"`
-	Internal      struct {
-		OrgID string `json:"org_id"`
-	} `json:"internal"`
-	User struct {
-		Username string `json:"username"`
-		UserID   string `json:"user_id"`
-	} `json:"user"`
-	System struct {
-		CN       string `json:"cn"`
-		CertType string `json:"cert_type"`
-	} `json:"system"`
-}
-
-// IdentityHeader represents the x-rh-identity header structure
-type IdentityHeader struct {
-	Identity Identity `json:"identity"`
-}
-*/
-
 // Client represents the export service REST client
 type Client struct {
 	baseURL    string
@@ -62,42 +36,6 @@ func NewClient(baseURL string) *Client {
 func (c *Client) SetHTTPClient(client *http.Client) {
 	c.httpClient = client
 }
-
-/*
-// createRequest creates an HTTP request with proper headers using default identity
-func (c *Client) createRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Request, error) {
-	var reqBody io.Reader
-
-	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
-		}
-		reqBody = bytes.NewBuffer(jsonBody)
-	}
-
-	url := c.baseURL + endpoint
-	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set content type for requests with body
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	// Set Red Hat identity header
-	identityJSON, err := json.Marshal(c.identity)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal identity: %w", err)
-	}
-	identityHeader := base64.StdEncoding.EncodeToString(identityJSON)
-	req.Header.Set("x-rh-identity", identityHeader)
-
-	return req, nil
-}
-*/
 
 // createRequestWithIdentity creates an HTTP request with a custom identity header
 func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint string, body interface{}, identityHeader string) (*http.Request, error) {
