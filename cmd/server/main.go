@@ -34,6 +34,7 @@ func main() {
 
 	// Create imperative shell components
 	var repo usecases.JobRepository
+	var runRepo usecases.JobRunRepository
 	switch cfg.Database.Type {
 	case "sqlite":
 		sqliteRepo, err := storage.NewSQLiteJobRepository(cfg.Database.Path)
@@ -44,6 +45,17 @@ func main() {
 		defer func() {
 			if closeErr := sqliteRepo.Close(); closeErr != nil {
 				log.Printf("Error closing database: %v", closeErr)
+			}
+		}()
+
+		sqliteRunRepo, err := storage.NewSQLiteJobRunRepository(cfg.Database.Path)
+		if err != nil {
+			log.Fatalf("Failed to initialize SQLite job run repository: %v", err)
+		}
+		runRepo = sqliteRunRepo
+		defer func() {
+			if closeErr := sqliteRunRepo.Close(); closeErr != nil {
+				log.Printf("Error closing job run repository: %v", closeErr)
 			}
 		}()
 	default:
@@ -92,10 +104,11 @@ func main() {
 		log.Printf("Kafka disabled, running without Kafka producer")
 	}
 
-	jobExecutor = executor.NewJobExecutor(cfg, userValidator, kafkaProducer)
+	jobExecutor = executor.NewJobExecutor(cfg, userValidator, kafkaProducer, runRepo)
 
 	// Create functional core service
 	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
+	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
 	// Create cron scheduler
 	cronScheduler := scheduler.NewCronScheduler(jobService)
@@ -104,7 +117,7 @@ func main() {
 	jobService.SetCronScheduler(cronScheduler)
 
 	// Setup HTTP routes
-	router := httpShell.SetupRoutes(jobService)
+	router := httpShell.SetupRoutes(jobService, jobRunService)
 
 	// Create HTTP server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

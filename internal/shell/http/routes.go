@@ -7,9 +7,10 @@ import (
 	"insights-scheduler/internal/core/usecases"
 )
 
-func SetupRoutes(jobService *usecases.JobService) *mux.Router {
+func SetupRoutes(jobService *usecases.JobService, jobRunService *usecases.JobRunService) *mux.Router {
 	router := mux.NewRouter()
 	handler := NewJobHandler(jobService)
+	runHandler := NewJobRunHandler(jobRunService)
 
 	// Apply identity middleware to all API routes
 	api := router.PathPrefix("/api/v1").Subrouter()
@@ -27,6 +28,10 @@ func SetupRoutes(jobService *usecases.JobService) *mux.Router {
 	api.HandleFunc("/jobs/{id}/run", handler.RunJob).Methods("POST")
 	api.HandleFunc("/jobs/{id}/pause", handler.PauseJob).Methods("POST")
 	api.HandleFunc("/jobs/{id}/resume", handler.ResumeJob).Methods("POST")
+
+	// Job run operations
+	api.HandleFunc("/jobs/{id}/runs", runHandler.GetJobRuns).Methods("GET")
+	api.HandleFunc("/jobs/{id}/runs/{run_id}", runHandler.GetJobRun).Methods("GET")
 
 	return router
 }

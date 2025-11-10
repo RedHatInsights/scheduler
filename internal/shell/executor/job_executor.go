@@ -9,6 +9,7 @@ import (
 	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/messaging"
 )
@@ -18,9 +19,10 @@ type DefaultJobExecutor struct {
 	kafkaProducer *messaging.KafkaProducer
 	userValidator identity.UserValidator
 	config        *config.Config
+	runRepo       usecases.JobRunRepository
 }
 
-func NewJobExecutor(cfg *config.Config, userValidator identity.UserValidator, kafkaProducer *messaging.KafkaProducer) *DefaultJobExecutor {
+func NewJobExecutor(cfg *config.Config, userValidator identity.UserValidator, kafkaProducer *messaging.KafkaProducer, runRepo usecases.JobRunRepository) *DefaultJobExecutor {
 	exportClient := export.NewClient(
 		cfg.ExportService.BaseURL,
 	)
@@ -30,24 +32,57 @@ func NewJobExecutor(cfg *config.Config, userValidator identity.UserValidator, ka
 		kafkaProducer: kafkaProducer,
 		userValidator: userValidator,
 		config:        cfg,
+		runRepo:       runRepo,
 	}
 }
 
 func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 	log.Printf("Executing job: %s (%s)", job.Name, job.ID)
 
+	// Create a job run record
+	var jobRun domain.JobRun
+	if e.runRepo != nil {
+		jobRun = domain.NewJobRun(job.ID)
+		if err := e.runRepo.Save(jobRun); err != nil {
+			log.Printf("Failed to create job run record: %v", err)
+			// Continue with execution even if we can't save the run
+		} else {
+			log.Printf("Created job run: %s for job: %s", jobRun.ID, job.ID)
+		}
+	}
+
+	// Execute the job
+	var execErr error
 	switch job.Payload.Type {
 	case domain.PayloadMessage:
-		return e.executeMessage(job.Payload.Details)
+		execErr = e.executeMessage(job.Payload.Details)
 	case domain.PayloadHTTPRequest:
-		return e.executeHTTPRequest(job.Payload.Details)
+		execErr = e.executeHTTPRequest(job.Payload.Details)
 	case domain.PayloadCommand:
-		return e.executeCommand(job.Payload.Details)
+		execErr = e.executeCommand(job.Payload.Details)
 	case domain.PayloadExport:
-		return e.executeExportReport(job, job.Payload.Details)
+		execErr = e.executeExportReport(job, job.Payload.Details)
 	default:
-		return fmt.Errorf("unknown payload type: %s", job.Payload.Type)
+		execErr = fmt.Errorf("unknown payload type: %s", job.Payload.Type)
 	}
+
+	// Update the job run record
+	if e.runRepo != nil && jobRun.ID != "" {
+		if execErr != nil {
+			jobRun = jobRun.WithFailed(execErr.Error())
+		} else {
+			result := fmt.Sprintf("Job %s completed successfully", job.Name)
+			jobRun = jobRun.WithCompleted(result)
+		}
+
+		if err := e.runRepo.Save(jobRun); err != nil {
+			log.Printf("Failed to update job run record: %v", err)
+		} else {
+			log.Printf("Updated job run: %s with status: %s", jobRun.ID, jobRun.Status)
+		}
+	}
+
+	return execErr
 }
 
 func (e *DefaultJobExecutor) executeMessage(details map[string]interface{}) error {

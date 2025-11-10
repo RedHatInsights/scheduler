@@ -10,4 +10,6 @@ var (
 	ErrInvalidOrgID     = errors.New("invalid or missing org_id")
 	ErrJobAlreadyPaused = errors.New("job is already paused")
 	ErrJobNotPaused     = errors.New("job is not paused")
+	ErrJobRunNotFound   = errors.New("job run not found")
+	ErrInvalidRunStatus = errors.New("invalid job run status")
 )

@@ -17,6 +17,14 @@ type JobRepository interface {
 	Delete(id string) error
 }
 
+type JobRunRepository interface {
+	Save(run domain.JobRun) error
+	FindByID(id string) (domain.JobRun, error)
+	FindByJobID(jobID string) ([]domain.JobRun, error)
+	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
+	FindAll() ([]domain.JobRun, error)
+}
+
 type SchedulingService interface {
 	ShouldRun(job domain.Job, currentTime time.Time) bool
 }

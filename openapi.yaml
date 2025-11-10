@@ -1,0 +1,679 @@
+openapi: 3.0.3
+info:
+  title: Insights Scheduler API
+  description: |
+    A job scheduling service that allows users to create, manage, and execute scheduled jobs.
+
+    The service implements a functional core/imperative shell architecture pattern with:
+    - Pure business logic in the core domain layer
+    - Side effects handled in the shell layer
+    - Support for multiple payload types (message, HTTP request, command, export)
+    - Multi-tenant support with organization-level isolation
+
+    ## Authentication
+    All endpoints require Red Hat identity authentication via the `X-Rh-Identity` header.
+
+    ## Schedule Format
+    Jobs can be scheduled using cron expressions. The service accepts both 5-field and 6-field cron formats:
+    - 5-field: `minute hour day month weekday`
+    - 6-field: `second minute hour day month weekday`
+
+    Common predefined schedules:
+    - Every 10 minutes: `0 */10 * * * *`
+    - Every hour: `0 0 * * * *`
+    - Every day: `0 0 0 * * *`
+    - Every month: `0 0 0 1 * *`
+  version: 1.0.0
+  contact:
+    name: Red Hat Insights
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local development server
+  - url: https://console.redhat.com/api/scheduler/v1
+    description: Production server
+
+tags:
+  - name: Jobs
+    description: Job management operations
+  - name: Job Control
+    description: Job execution control operations
+  - name: Job Runs
+    description: Job run history and execution details
+
+security:
+  - RedHatIdentity: []
+
+paths:
+  /jobs:
+    get:
+      tags:
+        - Jobs
+      summary: List all jobs
+      description: Retrieve all jobs for the authenticated organization. Supports filtering by status and name.
+      operationId: listJobs
+      parameters:
+        - name: status
+          in: query
+          description: Filter jobs by status
+          required: false
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+        - name: name
+          in: query
+          description: Filter jobs by name (partial match)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Jobs
+      summary: Create a new job
+      description: Create a new scheduled job for the authenticated organization.
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+            examples:
+              messageJob:
+                summary: Message payload job
+                value:
+                  name: "Daily Message Job"
+                  schedule: "0 0 0 * * *"
+                  payload:
+                    type: "message"
+                    details:
+                      message: "Hello, World!"
+              httpRequestJob:
+                summary: HTTP request job
+                value:
+                  name: "Hourly API Check"
+                  schedule: "0 0 * * * *"
+                  payload:
+                    type: "http_request"
+                    details:
+                      url: "https://api.example.com/health"
+                      method: "GET"
+              exportJob:
+                summary: Export job
+                value:
+                  name: "Monthly Advisor Export"
+                  schedule: "0 0 0 1 * *"
+                  payload:
+                    type: "export"
+                    details:
+                      application: "advisor"
+                      resource: "recommendations"
+                      format: "json"
+      responses:
+        '201':
+          description: Job created successfully
+          headers:
+            Location:
+              description: URL of the created job
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{id}:
+    parameters:
+      - name: id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Jobs
+      summary: Get a job by ID
+      description: Retrieve a specific job by its ID. Only returns jobs belonging to the authenticated organization.
+      operationId: getJob
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - Jobs
+      summary: Update a job
+      description: Completely update a job with new values. All fields must be provided.
+      operationId: updateJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateJobRequest'
+      responses:
+        '200':
+          description: Job updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags:
+        - Jobs
+      summary: Partially update a job
+      description: Update specific fields of a job. Only provided fields will be updated.
+      operationId: patchJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchJobRequest'
+            examples:
+              updateName:
+                summary: Update job name only
+                value:
+                  name: "New Job Name"
+              updateSchedule:
+                summary: Update schedule only
+                value:
+                  schedule: "0 0 * * * *"
+      responses:
+        '200':
+          description: Job updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Jobs
+      summary: Delete a job
+      description: Delete a job permanently. This operation cannot be undone.
+      operationId: deleteJob
+      responses:
+        '204':
+          description: Job deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{id}/run:
+    parameters:
+      - name: id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      tags:
+        - Job Control
+      summary: Manually run a job
+      description: Trigger an immediate execution of a job, regardless of its schedule.
+      operationId: runJob
+      responses:
+        '202':
+          description: Job execution triggered successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{id}/pause:
+    parameters:
+      - name: id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      tags:
+        - Job Control
+      summary: Pause a job
+      description: Pause a scheduled job. The job will not run until resumed.
+      operationId: pauseJob
+      responses:
+        '200':
+          description: Job paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          description: Bad request (e.g., job already paused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{id}/resume:
+    parameters:
+      - name: id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      tags:
+        - Job Control
+      summary: Resume a paused job
+      description: Resume a previously paused job. The job will return to scheduled execution.
+      operationId: resumeJob
+      responses:
+        '200':
+          description: Job resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          description: Bad request (e.g., job not paused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{id}/runs:
+    parameters:
+      - name: id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Job Runs
+      summary: List all runs for a job
+      description: Retrieve all execution runs for a specific job. Returns runs in reverse chronological order (most recent first).
+      operationId: getJobRuns
+      responses:
+        '200':
+          description: List of job runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Job not found
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Job not found"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /jobs/{id}/runs/{run_id}:
+    parameters:
+      - name: id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: run_id
+        in: path
+        description: Job run ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Job Runs
+      summary: Get a specific job run
+      description: Retrieve details of a specific job execution run.
+      operationId: getJobRun
+      responses:
+        '200':
+          description: Job run details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Job run not found
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Job run not found"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    Job:
+      type: object
+      description: A scheduled job
+      required:
+        - id
+        - name
+        - org_id
+        - username
+        - user_id
+        - schedule
+        - payload
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the job
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          description: Human-readable name for the job
+          example: "Daily Report Generation"
+        org_id:
+          type: string
+          description: Organization ID from Red Hat identity
+          example: "000001"
+        username:
+          type: string
+          description: Username of the job owner
+          example: "john.doe"
+        user_id:
+          type: string
+          description: User ID from Red Hat identity
+          example: "user-123"
+        schedule:
+          type: string
+          description: Cron expression defining when the job runs
+          example: "0 0 0 * * *"
+        payload:
+          $ref: '#/components/schemas/JobPayload'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        last_run:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the last job execution
+          example: "2025-11-03T10:00:00Z"
+
+    JobPayload:
+      type: object
+      description: Payload containing job execution details
+      required:
+        - type
+        - details
+      properties:
+        type:
+          $ref: '#/components/schemas/PayloadType'
+        details:
+          type: object
+          description: Type-specific payload details
+          additionalProperties: true
+          example:
+            message: "Hello, World!"
+
+    JobStatus:
+      type: string
+      description: Current status of the job
+      enum:
+        - scheduled
+        - running
+        - paused
+        - failed
+      example: "scheduled"
+
+    PayloadType:
+      type: string
+      description: Type of job payload
+      enum:
+        - message
+        - http_request
+        - command
+        - export
+      example: "message"
+
+    CreateJobRequest:
+      type: object
+      description: Request body for creating a new job
+      required:
+        - name
+        - schedule
+        - payload
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the job
+          example: "Daily Report Generation"
+        schedule:
+          type: string
+          description: Cron expression defining when the job runs
+          example: "0 0 0 * * *"
+        payload:
+          $ref: '#/components/schemas/JobPayload'
+
+    UpdateJobRequest:
+      type: object
+      description: Request body for updating a job (PUT)
+      required:
+        - name
+        - schedule
+        - payload
+        - status
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the job
+          example: "Updated Job Name"
+        schedule:
+          type: string
+          description: Cron expression defining when the job runs
+          example: "0 0 * * * *"
+        payload:
+          $ref: '#/components/schemas/JobPayload'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+
+    PatchJobRequest:
+      type: object
+      description: Request body for partially updating a job (PATCH)
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the job
+          example: "Updated Job Name"
+        schedule:
+          type: string
+          description: Cron expression defining when the job runs
+          example: "0 0 * * * *"
+        payload:
+          $ref: '#/components/schemas/JobPayload'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+
+    JobRun:
+      type: object
+      description: A record of a single job execution
+      required:
+        - id
+        - job_id
+        - status
+        - start_time
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the job run
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        job_id:
+          type: string
+          format: uuid
+          description: ID of the parent job
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          $ref: '#/components/schemas/JobRunStatus'
+        start_time:
+          type: string
+          format: date-time
+          description: When the job run started
+          example: "2025-11-07T10:00:00Z"
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the job run completed or failed
+          example: "2025-11-07T10:05:30Z"
+        error_message:
+          type: string
+          nullable: true
+          description: Error message if the run failed
+          example: "Connection timeout"
+        result:
+          type: string
+          nullable: true
+          description: Result or output from the job run
+          example: "Job completed successfully"
+
+    JobRunStatus:
+      type: string
+      description: Status of a job run
+      enum:
+        - running
+        - completed
+        - failed
+      example: "completed"
+
+    Error:
+      type: object
+      description: Error response
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "Job not found"
+
+  responses:
+    BadRequest:
+      description: Bad request - Invalid input or missing required fields
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Invalid JSON"
+
+    NotFound:
+      description: Resource not found
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Job not found"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Internal server error"
+
+  securitySchemes:
+    RedHatIdentity:
+      type: apiKey
+      in: header
+      name: X-Rh-Identity
+      description: |
+        Base64-encoded JSON containing Red Hat identity information.
+
+        The decoded JSON structure should contain:
+        ```json
+        {
+          "identity": {
+            "account_number": "000001",
+            "org_id": "000001",
+            "type": "User",
+            "auth_type": "jwt-auth",
+            "user": {
+              "username": "testuser",
+              "email": "test@example.com",
+              "user_id": "user-123"
+            },
+            "internal": {
+              "org_id": "000001"
+            }
+          }
+        }
+        ```
