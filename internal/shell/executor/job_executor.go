@@ -165,6 +165,7 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 		notification := messaging.NewExportCompletionNotification(
 			result.ID,
 			job.ID,
+			"", // FIXME: account
 			job.OrgID,
 			string(finalStatus.Status),
 			downloadURL,

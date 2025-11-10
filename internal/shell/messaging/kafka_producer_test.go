@@ -74,7 +74,7 @@ func TestNotificationMessageIntegration(t *testing.T) {
 	notification := NewExportCompletionNotification(
 		"export-456",
 		"job-789",
-		//		"account-123",
+		"account-123",
 		"org-456",
 		"completed",
 		"https://example.com/exports/export-456",

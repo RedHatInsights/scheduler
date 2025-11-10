@@ -16,7 +16,7 @@ func TestNewExportCompletionNotification(t *testing.T) {
 	errorMsg := ""
 
 	notification := NewExportCompletionNotification(
-		exportID, jobID /*accountID,*/, orgID, status, downloadURL, errorMsg,
+		exportID, jobID, accountID, orgID, status, downloadURL, errorMsg,
 	)
 
 	// Test basic fields
@@ -85,14 +85,14 @@ func TestNewExportCompletionNotification(t *testing.T) {
 func TestNewExportCompletionNotificationWithError(t *testing.T) {
 	exportID := "export-123"
 	jobID := "job-456"
-	//accountID := "account-789"
+	accountID := "account-789"
 	orgID := "org-012"
 	status := "failed"
 	downloadURL := ""
 	errorMsg := "Export processing failed due to timeout"
 
 	notification := NewExportCompletionNotification(
-		exportID, jobID /*accountID, */, orgID, status, downloadURL, errorMsg,
+		exportID, jobID, accountID, orgID, status, downloadURL, errorMsg,
 	)
 
 	// Test event type for failed export
@@ -108,7 +108,7 @@ func TestNewExportCompletionNotificationWithError(t *testing.T) {
 
 func TestNotificationMessageJSON(t *testing.T) {
 	notification := NewExportCompletionNotification(
-		"export-123", "job-456" /*"account-789",*/, "org-012", "completed",
+		"export-123", "job-456", "account-789", "org-012", "completed",
 		"https://example.com/export", "",
 	)
 
@@ -151,7 +151,7 @@ func TestNotificationMessageJSON(t *testing.T) {
 
 func TestNotificationMessageStructure(t *testing.T) {
 	notification := NewExportCompletionNotification(
-		"export-123", "job-456" /*"account-789",*/, "org-012", "completed",
+		"export-123", "job-456", "account-789", "org-012", "completed",
 		"https://example.com/export", "",
 	)
 
