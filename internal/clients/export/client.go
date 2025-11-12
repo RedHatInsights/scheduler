@@ -6,15 +6,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 /*
 IDENTITY := $(shell echo -n '{"identity": {"account_number": "000202", "internal": {"org_id": "000101"}, "type": "User", "org_id": "000101", "auth_type": "jwt-auth", "user":{"username": "wilma", "user_id": "wilma-1"}}}' | base64 -w 0)
 */
+
+const (
+	// RequestIDHeader is the header name for request ID tracking
+	RequestIDHeader = "x-insights-request-id"
+)
 
 // Client represents the export service REST client
 type Client struct {
@@ -55,6 +63,9 @@ func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// Generate a unique request ID for tracing
+	requestID := uuid.New().String()
+
 	// Set content type for requests with body
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -63,16 +74,26 @@ func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint
 	// Set the provided Red Hat identity header
 	req.Header.Set("x-rh-identity", identityHeader)
 
+	// Set the request ID header for distributed tracing
+	req.Header.Set(RequestIDHeader, requestID)
+
+	log.Printf("[DEBUG] Export client - %s %s - Request-ID: %s", method, endpoint, requestID)
+
 	return req, nil
 }
 
 // doRequest executes an HTTP request and handles the response
 func (c *Client) doRequest(req *http.Request, result interface{}) error {
+	requestID := req.Header.Get(RequestIDHeader)
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Printf("[DEBUG] Export client - Request failed - Request-ID: %s, Error: %v", requestID, err)
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	log.Printf("[DEBUG] Export client - Response received - Request-ID: %s, Status: %d", requestID, resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -181,11 +202,16 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 		return nil, err
 	}
 
+	requestID := req.Header.Get(RequestIDHeader)
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Printf("[DEBUG] Export client - Download request failed - Request-ID: %s, Error: %v", requestID, err)
 		return nil, fmt.Errorf("download request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	log.Printf("[DEBUG] Export client - Download response received - Request-ID: %s, Status: %d", requestID, resp.StatusCode)
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
@@ -200,6 +226,8 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 	if err != nil {
 		return nil, fmt.Errorf("failed to read download data: %w", err)
 	}
+
+	log.Printf("[DEBUG] Export client - Downloaded %d bytes - Request-ID: %s", len(data), requestID)
 
 	return data, nil
 }
