@@ -75,7 +75,7 @@ func main() {
 		)
 	case "fake":
 		fmt.Println("Intializing FAKE User Validator")
-		userValidator = identity.NewDefaultUserValidator("account-123")
+		userValidator = identity.NewFakeUserValidator()
 	default:
 		log.Fatalf("Unsupported UserValidator type: %s", cfg.UserValidatorImpl)
 	}

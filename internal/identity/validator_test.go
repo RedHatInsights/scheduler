@@ -4,10 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"testing"
+
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
 )
 
-func TestDefaultUserValidator_GenerateIdentityHeader(t *testing.T) {
-	validator := NewDefaultUserValidator("000001")
+func TestFakeUserValidator_GenerateIdentityHeader(t *testing.T) {
+	validator := NewFakeUserValidator()
 
 	tests := []struct {
 		name     string
@@ -72,7 +74,7 @@ func TestDefaultUserValidator_GenerateIdentityHeader(t *testing.T) {
 				t.Fatalf("Failed to decode identity header: %v", err)
 			}
 
-			var identity IdentityHeader
+			var identity platformIdentity.XRHID
 			if err := json.Unmarshal(decoded, &identity); err != nil {
 				t.Fatalf("Failed to unmarshal identity: %v", err)
 			}
@@ -90,8 +92,8 @@ func TestDefaultUserValidator_GenerateIdentityHeader(t *testing.T) {
 				t.Errorf("Expected Type 'User', got '%s'", identity.Identity.Type)
 			}
 
-			if identity.Identity.AccountNumber != "000001" {
-				t.Errorf("Expected AccountNumber '000001', got '%s'", identity.Identity.AccountNumber)
+			if identity.Identity.AccountNumber != "fake-account-000" {
+				t.Errorf("Expected AccountNumber 'fake-account-000', got '%s'", identity.Identity.AccountNumber)
 			}
 
 			if identity.Identity.AuthType != "jwt-auth" {
@@ -109,20 +111,15 @@ func TestDefaultUserValidator_GenerateIdentityHeader(t *testing.T) {
 	}
 }
 
-func TestNewDefaultUserValidator(t *testing.T) {
-	accountNumber := "123456"
-	validator := NewDefaultUserValidator(accountNumber)
+func TestNewFakeUserValidator(t *testing.T) {
+	validator := NewFakeUserValidator()
 
 	if validator == nil {
 		t.Fatal("Expected non-nil validator")
 	}
-
-	if validator.defaultAccountNumber != accountNumber {
-		t.Errorf("Expected defaultAccountNumber '%s', got '%s'", accountNumber, validator.defaultAccountNumber)
-	}
 }
 
-func TestDefaultUserValidator_Interface(t *testing.T) {
-	// Verify that DefaultUserValidator implements UserValidator interface
-	var _ UserValidator = (*DefaultUserValidator)(nil)
+func TestFakeUserValidator_Interface(t *testing.T) {
+	// Verify that FakeUserValidator implements UserValidator interface
+	var _ UserValidator = (*FakeUserValidator)(nil)
 }

@@ -20,7 +20,7 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 
 	// Create a mock Kafka producer (in a real test, you'd use a mock)
 	// For this test, we'll use nil to test the nil check
-	userValidator := identity.NewDefaultUserValidator("account-123")
+	userValidator := identity.NewFakeUserValidator()
 
 	executor := &DefaultJobExecutor{
 		exportClient:  nil, // We won't actually execute exports in this test

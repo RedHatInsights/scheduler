@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
+
 	"insights-scheduler/internal/identity"
 )
 
@@ -64,7 +66,7 @@ func TestClient_CreateExport(t *testing.T) {
 	}
 
 	// Generate identity header for the test using UserValidator
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
@@ -123,7 +125,7 @@ func TestClient_ListExports(t *testing.T) {
 	defer server.Close()
 
 	// Generate identity header for the test using UserValidator
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
@@ -174,7 +176,7 @@ func TestClient_GetExportStatus(t *testing.T) {
 	defer server.Close()
 
 	// Generate identity header for the test using UserValidator
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
@@ -214,7 +216,7 @@ func TestClient_DownloadExport(t *testing.T) {
 	defer server.Close()
 
 	// Generate identity header for the test using UserValidator
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
@@ -243,7 +245,7 @@ func TestClient_DeleteExport(t *testing.T) {
 	defer server.Close()
 
 	// Generate identity header for the test using UserValidator
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
@@ -280,7 +282,7 @@ func TestClient_ErrorHandling(t *testing.T) {
 	}
 
 	// Generate identity header for the test using UserValidator
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
@@ -298,7 +300,7 @@ func TestClient_ErrorHandling(t *testing.T) {
 }
 
 func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
-	userValidator := identity.NewDefaultUserValidator("123456")
+	userValidator := identity.NewFakeUserValidator()
 
 	identityHeader, err := userValidator.GenerateIdentityHeader("test-org", "testuser", "test-user-id")
 	if err != nil {
@@ -315,7 +317,7 @@ func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
 		t.Fatalf("Failed to decode identity header: %v", err)
 	}
 
-	var identityStruct identity.IdentityHeader
+	var identityStruct platformIdentity.XRHID
 	if err := json.Unmarshal(decoded, &identityStruct); err != nil {
 		t.Fatalf("Failed to unmarshal identity: %v", err)
 	}

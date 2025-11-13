@@ -1,12 +1,15 @@
 package identity
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
 )
 
 // BopUserValidator implements UserValidator by calling an external HTTP service
@@ -59,7 +62,7 @@ type UserInfo struct {
 
 // UserValidationResponse represents the response from the validation service
 type UserValidationResponse struct {
-	Users []UserInfo
+	Users []UserInfo `json:"users"`
 }
 
 // GenerateIdentityHeader calls an HTTP service to generate the identity header
@@ -109,22 +112,22 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	}
 
 	// Parse response
-	var validationResp []UserInfo
+	var validationResp UserValidationResponse
 	if err := json.NewDecoder(resp.Body).Decode(&validationResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	fmt.Printf("valdationResp: %+v\n", validationResp)
+	fmt.Printf("validationResp: %+v\n", validationResp)
 
-	if len(validationResp) != 1 {
-		return "", fmt.Errorf("invalid response: %w", err)
+	if len(validationResp.Users) != 1 {
+		return "", fmt.Errorf("invalid response: expected 1 user, got %d", len(validationResp.Users))
 	}
 
-	if !validationResp[0].IsActive {
+	if !validationResp.Users[0].IsActive {
 		return "", fmt.Errorf("inactive user")
 	}
 
-	if validationResp[0].OrgID != orgID {
+	if validationResp.Users[0].OrgID != orgID {
 		return "", fmt.Errorf("org-id mismatch...invalid user")
 	}
 
@@ -135,8 +138,27 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 			}
 	*/
 
-	// This is kind of a hack, but it should work for now
-	identityHeaderBuilder := NewDefaultUserValidator(validationResp[0].AccountNumber)
+	// Build the identity header using the BOP response
+	identity := platformIdentity.XRHID{
+		Identity: platformIdentity.Identity{
+			AccountNumber: validationResp.Users[0].AccountNumber,
+			OrgID:         validationResp.Users[0].OrgID,
+			Type:          "User",
+			AuthType:      "jwt-auth",
+			Internal: platformIdentity.Internal{
+				OrgID: validationResp.Users[0].OrgID,
+			},
+			User: platformIdentity.User{
+				Username: validationResp.Users[0].Username,
+				UserID:   validationResp.Users[0].ID,
+			},
+		},
+	}
 
-	return identityHeaderBuilder.GenerateIdentityHeader(validationResp[0].OrgID, validationResp[0].Username, validationResp[0].ID)
+	identityJSON, err := json.Marshal(identity)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal identity: %w", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(identityJSON), nil
 }
