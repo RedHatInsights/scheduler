@@ -190,6 +190,12 @@ type ExportServiceConfig struct {
 
 	// MaxRetries for failed requests
 	MaxRetries int `json:"max_retries"`
+
+	// PollMaxRetries is the maximum number of times to poll for export completion
+	PollMaxRetries int `json:"poll_max_retries"`
+
+	// PollInterval is the duration to wait between polling attempts
+	PollInterval time.Duration `json:"poll_interval"`
 }
 
 // BopConfig contains BOP (Back Office Portal) service settings
@@ -428,9 +434,11 @@ func loadMetricsConfig(clowderConfig *clowder.AppConfig) MetricsConfig {
 // loadExportServiceConfig loads export service configuration from environment
 func loadExportServiceConfig() ExportServiceConfig {
 	return ExportServiceConfig{
-		BaseURL:    getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1"),
-		Timeout:    getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
-		MaxRetries: getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
+		BaseURL:        getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1"),
+		Timeout:        getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
+		MaxRetries:     getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
+		PollMaxRetries: getEnvAsInt("EXPORT_SERVICE_POLL_MAX_RETRIES", 60),
+		PollInterval:   getEnvAsDuration("EXPORT_SERVICE_POLL_INTERVAL", 5*time.Second),
 	}
 }
 

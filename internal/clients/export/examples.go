@@ -187,10 +187,8 @@ func CreateInventoryExport(client *Client, ctx context.Context) (*ExportStatusRe
 }
 
 // WaitForExportCompletion polls an export until it's complete or failed
-func WaitForExportCompletion(client *Client, ctx context.Context, exportID string, identityHeader string, timeout time.Duration) (*ExportStatusResponse, error) {
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
+func WaitForExportCompletion(client *Client, ctx context.Context, exportID string, identityHeader string, maxRetries int, pollInterval time.Duration) (*ExportStatusResponse, error) {
+	for attempt := 0; attempt < maxRetries; attempt++ {
 		status, err := client.GetExportStatus(ctx, exportID, identityHeader)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get export status: %w", err)
@@ -203,11 +201,13 @@ func WaitForExportCompletion(client *Client, ctx context.Context, exportID strin
 			return status, fmt.Errorf("export failed")
 		case StatusPending, StatusRunning, StatusPartial:
 			// Continue waiting
-			time.Sleep(5 * time.Second)
+			if attempt < maxRetries-1 {
+				time.Sleep(pollInterval)
+			}
 		default:
 			return status, fmt.Errorf("unknown export status: %s", status.Status)
 		}
 	}
 
-	return nil, fmt.Errorf("export did not complete within timeout")
+	return nil, fmt.Errorf("export did not complete after %d polling attempts", maxRetries)
 }

@@ -164,14 +164,23 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 	// Optionally wait for completion if specified in details
 	log.Printf("Waiting for export %s to complete...", result.ID)
 
-	timeout := 5 * time.Minute // Default timeout
-	if timeoutStr, ok := details["timeout"].(string); ok {
-		if parsed, err := time.ParseDuration(timeoutStr); err == nil {
-			timeout = parsed
+	// Use configuration values for polling
+	maxRetries := e.config.ExportService.PollMaxRetries
+	pollInterval := e.config.ExportService.PollInterval
+
+	// Allow job details to override poll settings
+	if maxRetriesVal, ok := details["poll_max_retries"].(float64); ok {
+		maxRetries = int(maxRetriesVal)
+	}
+	if pollIntervalStr, ok := details["poll_interval"].(string); ok {
+		if parsed, err := time.ParseDuration(pollIntervalStr); err == nil {
+			pollInterval = parsed
 		}
 	}
 
-	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, result.ID, identityHeader, timeout)
+	log.Printf("Polling export with maxRetries=%d, pollInterval=%s", maxRetries, pollInterval)
+
+	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, result.ID, identityHeader, maxRetries, pollInterval)
 	if err != nil {
 		return fmt.Errorf("export failed or timed out: %w", err)
 	}
