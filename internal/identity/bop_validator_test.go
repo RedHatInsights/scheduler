@@ -13,7 +13,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 		name           string
 		orgID          string
 		username       string
-		mockResponse   UserValidationResponse
+		mockResponse   []UserInfo
 		mockStatusCode int
 		wantErr        bool
 	}{
@@ -21,15 +21,13 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			name:     "successful validation",
 			orgID:    "123456",
 			username: "testuser",
-			mockResponse: UserValidationResponse{
-				Users: []UserInfo{
-					{
-						ID:            "1",
-						Username:      "testuser",
-						AccountNumber: "000001",
-						OrgID:         "123456",
-						IsActive:      true,
-					},
+			mockResponse: []UserInfo{
+				{
+					ID:            "1",
+					Username:      "testuser",
+					AccountNumber: "000001",
+					OrgID:         "123456",
+					IsActive:      true,
 				},
 			},
 			mockStatusCode: http.StatusOK,
@@ -39,27 +37,23 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			name:     "inactive user",
 			orgID:    "123456",
 			username: "inactiveuser",
-			mockResponse: UserValidationResponse{
-				Users: []UserInfo{
-					{
-						ID:            "2",
-						Username:      "inactiveuser",
-						AccountNumber: "000002",
-						OrgID:         "123456",
-						IsActive:      false,
-					},
+			mockResponse: []UserInfo{
+				{
+					ID:            "2",
+					Username:      "inactiveuser",
+					AccountNumber: "000002",
+					OrgID:         "123456",
+					IsActive:      false,
 				},
 			},
 			mockStatusCode: http.StatusOK,
 			wantErr:        true,
 		},
 		{
-			name:     "no users returned",
-			orgID:    "123456",
-			username: "nouser",
-			mockResponse: UserValidationResponse{
-				Users: []UserInfo{},
-			},
+			name:           "no users returned",
+			orgID:          "123456",
+			username:       "nouser",
+			mockResponse:   []UserInfo{},
 			mockStatusCode: http.StatusOK,
 			wantErr:        true,
 		},
@@ -67,22 +61,20 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			name:     "multiple users returned",
 			orgID:    "123456",
 			username: "duplicateuser",
-			mockResponse: UserValidationResponse{
-				Users: []UserInfo{
-					{
-						ID:            "1",
-						Username:      "duplicateuser",
-						AccountNumber: "000001",
-						OrgID:         "123456",
-						IsActive:      true,
-					},
-					{
-						ID:            "2",
-						Username:      "duplicateuser",
-						AccountNumber: "000002",
-						OrgID:         "123456",
-						IsActive:      true,
-					},
+			mockResponse: []UserInfo{
+				{
+					ID:            "1",
+					Username:      "duplicateuser",
+					AccountNumber: "000001",
+					OrgID:         "123456",
+					IsActive:      true,
+				},
+				{
+					ID:            "2",
+					Username:      "duplicateuser",
+					AccountNumber: "000002",
+					OrgID:         "123456",
+					IsActive:      true,
 				},
 			},
 			mockStatusCode: http.StatusOK,
