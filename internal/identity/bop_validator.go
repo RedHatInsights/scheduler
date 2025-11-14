@@ -112,22 +112,22 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	}
 
 	// Parse response
-	var validationResp UserValidationResponse
+	var validationResp []UserInfo
 	if err := json.NewDecoder(resp.Body).Decode(&validationResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	fmt.Printf("validationResp: %+v\n", validationResp)
 
-	if len(validationResp.Users) != 1 {
-		return "", fmt.Errorf("invalid response: expected 1 user, got %d", len(validationResp.Users))
+	if len(validationResp) != 1 {
+		return "", fmt.Errorf("invalid response: expected 1 user, got %d", len(validationResp))
 	}
 
-	if !validationResp.Users[0].IsActive {
+	if !validationResp[0].IsActive {
 		return "", fmt.Errorf("inactive user")
 	}
 
-	if validationResp.Users[0].OrgID != orgID {
+	if validationResp[0].OrgID != orgID {
 		return "", fmt.Errorf("org-id mismatch...invalid user")
 	}
 
@@ -141,16 +141,16 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	// Build the identity header using the BOP response
 	identity := platformIdentity.XRHID{
 		Identity: platformIdentity.Identity{
-			AccountNumber: validationResp.Users[0].AccountNumber,
-			OrgID:         validationResp.Users[0].OrgID,
+			AccountNumber: validationResp[0].AccountNumber,
+			OrgID:         validationResp[0].OrgID,
 			Type:          "User",
 			AuthType:      "jwt-auth",
 			Internal: platformIdentity.Internal{
-				OrgID: validationResp.Users[0].OrgID,
+				OrgID: validationResp[0].OrgID,
 			},
 			User: platformIdentity.User{
-				Username: validationResp.Users[0].Username,
-				UserID:   validationResp.Users[0].ID,
+				Username: validationResp[0].Username,
+				UserID:   validationResp[0].ID,
 			},
 		},
 	}
