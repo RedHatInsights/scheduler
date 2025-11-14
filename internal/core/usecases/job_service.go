@@ -136,7 +136,7 @@ func (s *JobService) GetAllJobs(statusFilter, nameFilter string) ([]domain.Job, 
 		return nil, err
 	}
 
-	var filtered []domain.Job
+	filtered := make([]domain.Job, 0)
 	for _, job := range jobs {
 		if statusFilter != "" && string(job.Status) != statusFilter {
 			continue
@@ -156,7 +156,7 @@ func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter strin
 		return nil, err
 	}
 
-	var filtered []domain.Job
+	filtered := make([]domain.Job, 0)
 	for _, job := range jobs {
 		if statusFilter != "" && string(job.Status) != statusFilter {
 			continue
@@ -516,7 +516,7 @@ func (s *JobService) GetScheduledJobs() ([]domain.Job, error) {
 		return nil, err
 	}
 
-	var scheduled []domain.Job
+	scheduled := make([]domain.Job, 0)
 	for _, job := range jobs {
 		if job.Status == domain.StatusScheduled && s.scheduler.ShouldRun(job, time.Now()) {
 			scheduled = append(scheduled, job)

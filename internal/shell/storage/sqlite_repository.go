@@ -314,7 +314,7 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 	}
 	defer rows.Close()
 
-	var jobs []domain.Job
+	jobs := make([]domain.Job, 0)
 
 	for rows.Next() {
 		var job domain.Job
@@ -371,7 +371,7 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	}
 	defer rows.Close()
 
-	var jobs []domain.Job
+	jobs := make([]domain.Job, 0)
 
 	for rows.Next() {
 		var job domain.Job

@@ -166,7 +166,7 @@ func (r *SQLiteJobRunRepository) FindByJobID(jobID string) ([]domain.JobRun, err
 	}
 	defer rows.Close()
 
-	var runs []domain.JobRun
+	runs := make([]domain.JobRun, 0)
 	for rows.Next() {
 		var run domain.JobRun
 		var startTimeStr string
@@ -231,7 +231,7 @@ func (r *SQLiteJobRunRepository) FindByJobIDAndOrgID(jobID string, orgID string)
 	}
 	defer rows.Close()
 
-	var runs []domain.JobRun
+	runs := make([]domain.JobRun, 0)
 	for rows.Next() {
 		var run domain.JobRun
 		var startTimeStr string
