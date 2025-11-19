@@ -39,12 +39,10 @@ func NewExportCompletionNotification(exportID, jobID, accountID, orgID, status, 
 		eventType = "export-failed"
 	}
 
-	eventType = "my-event-type"
-
 	return &NotificationMessage{
 		Version:     "v1.2.0",
-		Bundle:      "my-bundle",
-		Application: "my-app",
+		Bundle:      "rhel",
+		Application: "insights-scheduler",
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		AccountID:   accountID,

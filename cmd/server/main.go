@@ -83,9 +83,9 @@ func main() {
 	schedulingService := usecases.NewDefaultSchedulingService()
 
 	var kafkaProducer *messaging.KafkaProducer
+	var notifier executor.JobCompletionNotifier
 
-	// Initialize job executor with optional Kafka producer
-	var jobExecutor usecases.JobExecutor
+	// Initialize job completion notifier
 	if cfg.Kafka.Enabled {
 		log.Printf("Initializing Kafka producer with brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
@@ -100,11 +100,16 @@ func main() {
 				log.Printf("Error closing Kafka producer: %v", closeErr)
 			}
 		}()
+
+		// Create notifications-based notifier
+		notifier = executor.NewNotificationsBasedJobCompletionNotifier(kafkaProducer)
+		log.Printf("Job completion notifier initialized (Kafka)")
 	} else {
-		log.Printf("Kafka disabled, running without Kafka producer")
+		log.Printf("Kafka disabled, running without job completion notifier")
 	}
 
-	jobExecutor = executor.NewJobExecutor(cfg, userValidator, kafkaProducer, runRepo)
+	// Initialize job executor with optional notifier
+	jobExecutor := executor.NewJobExecutor(cfg, userValidator, notifier, runRepo)
 
 	// Create functional core service
 	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)

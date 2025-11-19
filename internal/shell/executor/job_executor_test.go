@@ -18,13 +18,13 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 		},
 	}
 
-	// Create a mock Kafka producer (in a real test, you'd use a mock)
-	// For this test, we'll use nil to test the nil check
+	// Create a fake user validator
 	userValidator := identity.NewFakeUserValidator()
 
+	// Create executor without notifier (test nil notifier handling)
 	executor := &DefaultJobExecutor{
 		exportClient:  nil, // We won't actually execute exports in this test
-		kafkaProducer: nil, // Test nil producer handling
+		notifier:      nil, // Test nil notifier handling
 		userValidator: userValidator,
 		config:        cfg,
 	}
@@ -39,7 +39,7 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 
 	job := domain.NewJob("Test Job", "test-org-123", "testuser", "test-user-id", "0 */15 * * * *", payload)
 
-	// Test executing a message job (should not trigger Kafka)
+	// Test executing a message job (should not trigger notification)
 	err := executor.Execute(job)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
