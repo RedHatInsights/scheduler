@@ -92,8 +92,8 @@ func TestFakeUserValidator_GenerateIdentityHeader(t *testing.T) {
 				t.Errorf("Expected Type 'User', got '%s'", identity.Identity.Type)
 			}
 
-			if identity.Identity.AccountNumber != "fake-account-000" {
-				t.Errorf("Expected AccountNumber 'fake-account-000', got '%s'", identity.Identity.AccountNumber)
+			if identity.Identity.AccountNumber != "000002" {
+				t.Errorf("Expected AccountNumber '000002', got '%s'", identity.Identity.AccountNumber)
 			}
 
 			if identity.Identity.AuthType != "jwt-auth" {

@@ -37,7 +37,7 @@ func (v *FakeUserValidator) GenerateIdentityHeader(orgID, username, userID strin
 
 	identity := platformIdentity.XRHID{
 		Identity: platformIdentity.Identity{
-			AccountNumber: "fake-account-000",
+			AccountNumber: "000002",
 			OrgID:         orgID,
 			Type:          "User",
 			AuthType:      "jwt-auth",
