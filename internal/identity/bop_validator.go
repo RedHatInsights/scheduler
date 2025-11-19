@@ -55,6 +55,7 @@ type UserValidationRequest struct {
 type UserInfo struct {
 	ID            string `json:"id"`
 	Username      string `json:"username"`
+	Email         string `json:"email"`
 	AccountNumber string `json:"account_number"`
 	OrgID         string `json:"org_id"`
 	IsActive      bool   `json:"is_active"`
@@ -151,6 +152,7 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 			User: platformIdentity.User{
 				Username: validationResp[0].Username,
 				UserID:   validationResp[0].ID,
+				Email:    validationResp[0].Email,
 			},
 		},
 	}
