@@ -76,7 +76,8 @@ The `X-Rh-Identity` header should contain base64-encoded JSON:
     "org_id": "000001",
     "user": {
       "username": "john.doe",
-      "email": "john.doe@example.com"
+      "email": "john.doe@example.com",
+      "user_id": "john.doe-id"
     },
     "type": "User"
   }
@@ -89,7 +90,7 @@ For testing purposes, the `cmd/test/main.go` includes a mock identity header:
 
 ```go
 // Base64 encoded test identity
-req.Header.Set("X-Rh-Identity", "eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjAwMDAwMSIsIm9yZ19pZCI6IjAwMDAwMSIsInVzZXIiOnsidXNlcm5hbWUiOiJ0ZXN0dXNlciIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSJ9LCJ0eXBlIjoiVXNlciJ9fQ==")
+req.Header.Set("X-Rh-Identity", "eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjAwMDAwMSIsIm9yZ19pZCI6IjAwMDAwMSIsInVzZXIiOnsidXNlcm5hbWUiOiJ0ZXN0dXNlciIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsInVzZXJfaWQiOiJ0ZXN0dXNlci1pZCJ9LCJ0eXBlIjoiVXNlciJ9fQ==")
 ```
 
 ## Database Migration

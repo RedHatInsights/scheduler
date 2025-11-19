@@ -315,8 +315,8 @@ func makeRequest(method, endpoint string, data interface{}) (*http.Response, err
 
 	// Add mock identity headers for testing
 	// In production, these would be set by the identity middleware
-	// Base64 encoded identity: {"identity":{"account_number":"000001","org_id":"000001","user":{"username":"testuser","email":"test@example.com"},"type":"User"}}
-	req.Header.Set("X-Rh-Identity", "eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjAwMDAwMSIsIm9yZ19pZCI6IjAwMDAwMSIsInVzZXIiOnsidXNlcm5hbWUiOiJ0ZXN0dXNlciIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSJ9LCJ0eXBlIjoiVXNlciJ9fQ==")
+	// Base64 encoded identity: {"identity":{"account_number":"000001","org_id":"000001","user":{"username":"testuser","email":"test@example.com","user_id":"testuser-id"},"type":"User"}}
+	req.Header.Set("X-Rh-Identity", "eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjAwMDAwMSIsIm9yZ19pZCI6IjAwMDAwMSIsInVzZXIiOnsidXNlcm5hbWUiOiJ0ZXN0dXNlciIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsInVzZXJfaWQiOiJ0ZXN0dXNlci1pZCJ9LCJ0eXBlIjoiVXNlciJ9fQ==")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	return client.Do(req)
