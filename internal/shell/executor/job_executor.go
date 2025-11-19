@@ -11,25 +11,24 @@ import (
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/identity"
-	"insights-scheduler/internal/shell/messaging"
 )
 
 type DefaultJobExecutor struct {
 	exportClient  *export.Client
-	kafkaProducer *messaging.KafkaProducer
+	notifier      JobCompletionNotifier
 	userValidator identity.UserValidator
 	config        *config.Config
 	runRepo       usecases.JobRunRepository
 }
 
-func NewJobExecutor(cfg *config.Config, userValidator identity.UserValidator, kafkaProducer *messaging.KafkaProducer, runRepo usecases.JobRunRepository) *DefaultJobExecutor {
+func NewJobExecutor(cfg *config.Config, userValidator identity.UserValidator, notifier JobCompletionNotifier, runRepo usecases.JobRunRepository) *DefaultJobExecutor {
 	exportClient := export.NewClient(
 		cfg.ExportService.BaseURL,
 	)
 
 	return &DefaultJobExecutor{
 		exportClient:  exportClient,
-		kafkaProducer: kafkaProducer,
+		notifier:      notifier,
 		userValidator: userValidator,
 		config:        cfg,
 		runRepo:       runRepo,
@@ -187,10 +186,8 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 
 	log.Printf("Export %s completed with status: %s", result.ID, finalStatus.Status)
 
-	// Send Kafka message if producer is available
-	if e.kafkaProducer != nil {
-		log.Printf("Sending platform notification for export completion: %s", result.ID)
-
+	// Send notification if notifier is available
+	if e.notifier != nil {
 		downloadURL := ""
 		errorMsg := ""
 
@@ -205,25 +202,22 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 			}
 		}
 
-		// Create platform notification message
-		notification := messaging.NewExportCompletionNotification(
-			result.ID,
-			job.ID,
-			"", // FIXME: account
-			job.OrgID,
-			string(finalStatus.Status),
-			downloadURL,
-			errorMsg,
-		)
+		notification := &ExportCompletionNotification{
+			ExportID:    result.ID,
+			JobID:       job.ID,
+			AccountID:   "", // FIXME: account
+			OrgID:       job.OrgID,
+			Status:      string(finalStatus.Status),
+			DownloadURL: downloadURL,
+			ErrorMsg:    errorMsg,
+		}
 
-		if err := e.kafkaProducer.SendNotificationMessage(notification); err != nil {
-			log.Printf("Failed to send platform notification for export %s: %v", result.ID, err)
-			// Don't fail the job execution if Kafka message fails
-		} else {
-			log.Printf("Platform notification sent successfully for export %s", result.ID)
+		if err := e.notifier.JobComplete(notification); err != nil {
+			// Don't fail the job execution if notification fails
+			log.Printf("Warning: Failed to send completion notification for export %s", result.ID)
 		}
 	} else {
-		log.Printf("No Kafka producer configured, skipping notification send")
+		log.Printf("No notifier configured, skipping completion notification")
 	}
 
 	log.Printf("Scheduled report has been generated")
