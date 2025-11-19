@@ -47,6 +47,7 @@ func (v *FakeUserValidator) GenerateIdentityHeader(orgID, username, userID strin
 			User: platformIdentity.User{
 				Username: username,
 				UserID:   userID,
+				Email:    "testuser@testcorp.com",
 			},
 		},
 	}
