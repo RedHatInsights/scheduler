@@ -186,38 +186,34 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 
 	log.Printf("Export %s completed with status: %s", result.ID, finalStatus.Status)
 
-	// Send notification if notifier is available
-	if e.notifier != nil {
-		downloadURL := ""
-		errorMsg := ""
+	// Send notification
+	downloadURL := ""
+	errorMsg := ""
 
-		if finalStatus.Status == export.StatusComplete {
-			downloadURL = e.exportClient.GetExportDownloadURL(result.ID)
-		} else if finalStatus.Status == export.StatusFailed {
-			// Extract error message if available from the status
-			if len(finalStatus.Sources) > 0 && finalStatus.Sources[0].Error != nil {
-				errorMsg = *finalStatus.Sources[0].Error
-			} else {
-				errorMsg = "Export processing failed"
-			}
+	if finalStatus.Status == export.StatusComplete {
+		downloadURL = e.exportClient.GetExportDownloadURL(result.ID)
+	} else if finalStatus.Status == export.StatusFailed {
+		// Extract error message if available from the status
+		if len(finalStatus.Sources) > 0 && finalStatus.Sources[0].Error != nil {
+			errorMsg = *finalStatus.Sources[0].Error
+		} else {
+			errorMsg = "Export processing failed"
 		}
+	}
 
-		notification := &ExportCompletionNotification{
-			ExportID:    result.ID,
-			JobID:       job.ID,
-			AccountID:   "", // FIXME: account
-			OrgID:       job.OrgID,
-			Status:      string(finalStatus.Status),
-			DownloadURL: downloadURL,
-			ErrorMsg:    errorMsg,
-		}
+	notification := &ExportCompletionNotification{
+		ExportID:    result.ID,
+		JobID:       job.ID,
+		AccountID:   "", // FIXME: account
+		OrgID:       job.OrgID,
+		Status:      string(finalStatus.Status),
+		DownloadURL: downloadURL,
+		ErrorMsg:    errorMsg,
+	}
 
-		if err := e.notifier.JobComplete(notification); err != nil {
-			// Don't fail the job execution if notification fails
-			log.Printf("Warning: Failed to send completion notification for export %s", result.ID)
-		}
-	} else {
-		log.Printf("No notifier configured, skipping completion notification")
+	if err := e.notifier.JobComplete(notification); err != nil {
+		// Don't fail the job execution if notification fails
+		log.Printf("Warning: Failed to send completion notification for export %s", result.ID)
 	}
 
 	log.Printf("Scheduled report has been generated")

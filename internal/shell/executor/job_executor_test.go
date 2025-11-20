@@ -19,10 +19,10 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	// Create a fake user validator
 	userValidator := identity.NewFakeUserValidator()
 
-	// Create executor without notifier (test nil notifier handling)
+	// Create executor with null notifier (test null object pattern)
 	executor := &DefaultJobExecutor{
-		exportClient:  nil, // We won't actually execute exports in this test
-		notifier:      nil, // Test nil notifier handling
+		exportClient:  nil,                            // We won't actually execute exports in this test
+		notifier:      NewNullJobCompletionNotifier(), // Test null object pattern
 		userValidator: userValidator,
 		config:        cfg,
 	}

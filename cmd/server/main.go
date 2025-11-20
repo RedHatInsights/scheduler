@@ -85,9 +85,11 @@ func main() {
 	var kafkaProducer *messaging.KafkaProducer
 	var notifier executor.JobCompletionNotifier
 
-	// Initialize job completion notifier
-	if cfg.Kafka.Enabled {
-		log.Printf("Initializing Kafka producer with brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
+	// Initialize job completion notifier based on configuration
+	switch cfg.JobNotifierImpl {
+	case "notifications":
+		log.Printf("Initializing platform notifications job completion notifier")
+		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
 		kafkaProducer, err = messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 		if err != nil {
@@ -103,12 +105,16 @@ func main() {
 
 		// Create notifications-based notifier
 		notifier = executor.NewNotificationsBasedJobCompletionNotifier(kafkaProducer)
-		log.Printf("Job completion notifier initialized (Kafka)")
-	} else {
-		log.Printf("Kafka disabled, running without job completion notifier")
+		log.Printf("Job completion notifier initialized (platform notifications)")
+	case "null":
+		// Use null object pattern - no-op notifier
+		notifier = executor.NewNullJobCompletionNotifier()
+		log.Printf("Using null notifier (no notifications will be sent)")
+	default:
+		log.Fatalf("Unsupported JobNotifierImpl type: %s", cfg.JobNotifierImpl)
 	}
 
-	// Initialize job executor with optional notifier
+	// Initialize job executor with notifier (never nil)
 	jobExecutor := executor.NewJobExecutor(cfg, userValidator, notifier, runRepo)
 
 	// Create functional core service

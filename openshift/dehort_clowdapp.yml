@@ -122,6 +122,8 @@ objects:
           value: "true"
         - name: USER_VALIDATOR_IMPL
           value: ${USER_VALIDATOR_IMPL}
+        - name: JOB_NOTIFIER_IMPL
+          value: ${JOB_NOTIFIER_IMPL}
 
 parameters:
 - description: Initial amount of memory the insights-scheduler container will request.
@@ -173,4 +175,8 @@ parameters:
 
 - name: USER_VALIDATOR_IMPL
   value: "bop"
+  required: true
+
+- name: JOB_NOTIFIER_IMPL
+  value: "notifications"
   required: true
