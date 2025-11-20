@@ -2,12 +2,10 @@ package executor
 
 import (
 	"testing"
-	"time"
 
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/identity"
-	"insights-scheduler/internal/shell/messaging"
 )
 
 func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
@@ -46,34 +44,35 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	}
 }
 
-func TestExportCompletionMessageStructure(t *testing.T) {
-	// Test that we can create the message structure correctly
-	message := messaging.ExportCompletionMessage{
+func TestExportCompletionNotificationStructure(t *testing.T) {
+	// Test that we can create the notification structure correctly
+	notification := &ExportCompletionNotification{
 		ExportID:    "export-123",
 		JobID:       "job-456",
 		OrgID:       "org-789",
+		AccountID:   "account-123",
 		Status:      "complete",
-		CompletedAt: time.Now(),
 		DownloadURL: "https://example.com/exports/export-123",
+		ErrorMsg:    "",
 	}
 
-	if message.ExportID != "export-123" {
-		t.Errorf("Expected ExportID 'export-123', got %s", message.ExportID)
+	if notification.ExportID != "export-123" {
+		t.Errorf("Expected ExportID 'export-123', got %s", notification.ExportID)
 	}
 
-	if message.JobID != "job-456" {
-		t.Errorf("Expected JobID 'job-456', got %s", message.JobID)
+	if notification.JobID != "job-456" {
+		t.Errorf("Expected JobID 'job-456', got %s", notification.JobID)
 	}
 
-	if message.OrgID != "org-789" {
-		t.Errorf("Expected OrgID 'org-789', got %s", message.OrgID)
+	if notification.OrgID != "org-789" {
+		t.Errorf("Expected OrgID 'org-789', got %s", notification.OrgID)
 	}
 
-	if message.Status != "complete" {
-		t.Errorf("Expected Status 'complete', got %s", message.Status)
+	if notification.Status != "complete" {
+		t.Errorf("Expected Status 'complete', got %s", notification.Status)
 	}
 
-	if message.DownloadURL != "https://example.com/exports/export-123" {
-		t.Errorf("Expected DownloadURL 'https://example.com/exports/export-123', got %s", message.DownloadURL)
+	if notification.DownloadURL != "https://example.com/exports/export-123" {
+		t.Errorf("Expected DownloadURL 'https://example.com/exports/export-123', got %s", notification.DownloadURL)
 	}
 }
