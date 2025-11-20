@@ -33,8 +33,8 @@ type Config struct {
 	// BOP service configuration
 	Bop BopConfig `json:"bop"`
 
-	UserValidatorImpl string
-	JobNotifierImpl   string
+	UserValidatorImpl         string
+	JobCompletionNotifierImpl string
 }
 
 // ServerConfig contains HTTP server settings
@@ -265,7 +265,7 @@ func LoadConfig() (*Config, error) {
 	config.Bop = loadBopConfig()
 
 	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
-	config.JobNotifierImpl = getEnv("JOB_NOTIFIER_IMPL", "notifications")
+	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {

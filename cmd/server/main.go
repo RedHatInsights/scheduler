@@ -86,7 +86,7 @@ func main() {
 	var notifier executor.JobCompletionNotifier
 
 	// Initialize job completion notifier based on configuration
-	switch cfg.JobNotifierImpl {
+	switch cfg.JobCompletionNotifierImpl {
 	case "notifications":
 		log.Printf("Initializing platform notifications job completion notifier")
 		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
@@ -111,7 +111,7 @@ func main() {
 		notifier = executor.NewNullJobCompletionNotifier()
 		log.Printf("Using null notifier (no notifications will be sent)")
 	default:
-		log.Fatalf("Unsupported JobNotifierImpl type: %s", cfg.JobNotifierImpl)
+		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
 	}
 
 	// Initialize job executor with notifier (never nil)
