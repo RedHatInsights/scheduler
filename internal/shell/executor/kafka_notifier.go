@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -37,7 +38,7 @@ func NewNotificationsBasedJobCompletionNotifier(producer *messaging.KafkaProduce
 }
 
 // JobComplete sends a job completion notification to Kafka
-func (n *NotificationsBasedJobCompletionNotifier) JobComplete(notification *ExportCompletionNotification) error {
+func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification) error {
 	log.Printf("Sending platform notification via Kafka for export: %s", notification.ExportID)
 
 	// Build the platform notification message

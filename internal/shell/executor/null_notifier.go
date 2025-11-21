@@ -1,6 +1,9 @@
 package executor
 
-import "log"
+import (
+	"context"
+	"log"
+)
 
 // NullJobCompletionNotifier is a no-op implementation of JobCompletionNotifier
 // that does nothing when notifications are disabled (null object pattern)
@@ -12,7 +15,7 @@ func NewNullJobCompletionNotifier() *NullJobCompletionNotifier {
 }
 
 // JobComplete does nothing - this is a no-op implementation
-func (n *NullJobCompletionNotifier) JobComplete(notification *ExportCompletionNotification) error {
+func (n *NullJobCompletionNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification) error {
 	log.Printf("No notifier configured - skipping completion notification for export: %s", notification.ExportID)
 	return nil
 }
