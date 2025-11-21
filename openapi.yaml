@@ -14,15 +14,14 @@ info:
     All endpoints require Red Hat identity authentication via the `X-Rh-Identity` header.
 
     ## Schedule Format
-    Jobs can be scheduled using cron expressions. The service accepts both 5-field and 6-field cron formats:
-    - 5-field: `minute hour day month weekday`
-    - 6-field: `second minute hour day month weekday`
+    Jobs can be scheduled using standard 5-field cron expressions:
+    - Format: `minute hour day month weekday`
 
     Common predefined schedules:
-    - Every 10 minutes: `0 */10 * * * *`
-    - Every hour: `0 0 * * * *`
-    - Every day: `0 0 0 * * *`
-    - Every month: `0 0 0 1 * *`
+    - Every 10 minutes: `*/10 * * * *`
+    - Every hour: `0 * * * *`
+    - Every day: `0 0 * * *`
+    - Every month: `0 0 1 * *`
   version: 1.0.0
   contact:
     name: Red Hat Insights

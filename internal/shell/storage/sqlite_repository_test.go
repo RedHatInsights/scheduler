@@ -29,7 +29,7 @@ func TestSQLiteJobRepository(t *testing.T) {
 		},
 	}
 
-	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "0 */15 * * * *", payload)
+	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", payload)
 
 	// Test Save
 	if err := repo.Save(job); err != nil {
@@ -164,9 +164,9 @@ func TestSQLiteJobRepository_FindByOrgID(t *testing.T) {
 		},
 	}
 
-	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "0 */30 * * * *", payload1)
-	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 0 * * * *", payload2)
-	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 0 12 * * *", payload1)
+	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", payload1)
+	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 * * * *", payload2)
+	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 12 * * *", payload1)
 
 	// Save all jobs
 	if err := repo.Save(job1); err != nil {

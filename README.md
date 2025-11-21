@@ -10,8 +10,8 @@ A Go REST API service for programmatic job scheduling using the declarative shel
 - **Imperative Shell** for side effects (HTTP, storage, scheduling)
 - **CRUD operations** for scheduled jobs
 - **Job control endpoints** (run, pause, resume)
-- **Strict scheduling intervals** (10m, 1h, 1d, 1mon)
-- **Thread-safe in-memory storage**
+- **Standard 5-field cron scheduling**
+- **SQLite database storage**
 - **Background job execution**
 
 ## Installation
@@ -51,9 +51,12 @@ The service will start on `http://localhost:5000` with the scheduler running in 
 {
   "id": "string (UUID)",
   "name": "string",
-  "schedule": "string (10m|1h|1d|1mon)",
+  "org_id": "string",
+  "username": "string",
+  "user_id": "string",
+  "schedule": "string (5-field cron expression)",
   "payload": {
-    "type": "string (message|http_request|command)",
+    "type": "string (message|http_request|command|export)",
     "details": {}
   },
   "status": "string (scheduled|running|paused|failed)",
@@ -63,11 +66,16 @@ The service will start on `http://localhost:5000` with the scheduler running in 
 
 ## Schedule Formats
 
-Supported intervals:
-- `10m` - Every 10 minutes
-- `1h` - Every 1 hour  
-- `1d` - Every 1 day
-- `1mon` - Every 1 month
+The service accepts standard 5-field cron expressions:
+- Format: `minute hour day-of-month month day-of-week`
+
+Common examples:
+- `*/10 * * * *` - Every 10 minutes
+- `0 * * * *` - Every hour at minute 0
+- `0 0 * * *` - Every day at midnight
+- `0 0 1 * *` - Every month on the 1st at midnight
+- `30 14 * * MON-FRI` - Every weekday at 2:30 PM
+- `0 9 * * 1` - Every Monday at 9:00 AM
 
 ## Testing
 

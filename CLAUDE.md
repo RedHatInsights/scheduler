@@ -45,8 +45,8 @@ Contains pure functions with no side effects:
 Handles all side effects and I/O:
 
 **Storage** (`internal/shell/storage/`):
-- `memory_repository.go` - Thread-safe in-memory storage implementation
-- Implements `JobRepository` interface from core
+- `sqlite_repository.go` - SQLite database implementation for jobs and job runs
+- Implements `JobRepository` and `JobRunRepository` interfaces from core
 
 **HTTP** (`internal/shell/http/`):
 - `handlers.go` - HTTP request/response handling
@@ -58,7 +58,11 @@ Handles all side effects and I/O:
 - Uses functional core for scheduling decisions
 
 **Executor** (`internal/shell/executor/`):
-- `job_executor.go` - Simulated job execution with logging
+- `job_executor.go` - Generic job executor with map-based payload type dispatch
+- `export_job_executor.go` - Export service integration
+- `message_job_executor.go`, `http_job_executor.go`, `command_job_executor.go` - Simulated executors
+- `kafka_notifier.go` - Platform notifications integration
+- Job completion notification system with Kafka support
 
 ### Dependency Injection Pattern
 
@@ -74,17 +78,23 @@ The `cmd/server/main.go` wires everything together:
 **Dependency Inversion**: Core defines interfaces, shell implements them
 **Pure Functions**: All business logic in core is deterministic and testable
 
-## Schedule Format Restrictions
+## Schedule Format
 
-The service only accepts these exact schedule strings:
-- `10m` - Every 10 minutes
-- `1h` - Every 1 hour  
-- `1d` - Every 1 day
-- `1mon` - Every 1 month
+The service accepts standard 5-field cron expressions:
+- Format: `minute hour day-of-month month day-of-week`
+
+Common predefined schedules (available as constants):
+- `*/10 * * * *` - Every 10 minutes (Schedule10Minutes)
+- `0 * * * *` - Every hour at minute 0 (Schedule1Hour)
+- `0 0 * * *` - Every day at midnight (Schedule1Day)
+- `0 0 1 * *` - Every month on the 1st at midnight (Schedule1Month)
+
+The service also accepts any valid 5-field cron expression (e.g., `30 14 * * MON-FRI` for weekdays at 2:30 PM)
 
 ## Payload Types
 
-Jobs support three payload types:
+Jobs support four payload types:
 - `message` - Simple message processing
 - `http_request` - HTTP requests (simulated)
 - `command` - Command execution (simulated)
+- `export` - Red Hat Insights export service integration (production implementation)

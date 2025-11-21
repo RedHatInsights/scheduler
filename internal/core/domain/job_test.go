@@ -36,9 +36,9 @@ func TestIsValidSchedule(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "Valid custom cron expression with seconds",
-			schedule: "0 0 12 * * *", // Every day at noon
-			expected: true,
+			name:     "Invalid 6-field cron expression (seconds not supported)",
+			schedule: "0 0 12 * * *", // 6-field format should fail
+			expected: false,
 		},
 		{
 			name:     "Invalid cron expression",
