@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 // UserValidator defines the interface for validating users and generating identity headers
 type UserValidator interface {
 	// GenerateIdentityHeader creates a Red Hat identity header from org-id, username, and userID
-	GenerateIdentityHeader(orgID, username, userID string) (string, error)
+	GenerateIdentityHeader(ctx context.Context, orgID, username, userID string) (string, error)
 }
 
 // FakeUserValidator is a concrete implementation of UserValidator for testing/development
@@ -24,7 +25,7 @@ func NewFakeUserValidator() *FakeUserValidator {
 }
 
 // GenerateIdentityHeader creates an identity header from org-id, username, and userID
-func (v *FakeUserValidator) GenerateIdentityHeader(orgID, username, userID string) (string, error) {
+func (v *FakeUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, username, userID string) (string, error) {
 	if orgID == "" {
 		return "", fmt.Errorf("orgID cannot be empty")
 	}

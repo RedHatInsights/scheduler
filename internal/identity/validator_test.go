@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
@@ -50,7 +51,7 @@ func TestFakeUserValidator_GenerateIdentityHeader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			identityHeader, err := validator.GenerateIdentityHeader(tt.orgID, tt.username, tt.userID)
+			identityHeader, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.username, tt.userID)
 
 			if tt.wantErr {
 				if err == nil {

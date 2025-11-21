@@ -99,7 +99,7 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 	defer cancel()
 
 	// Generate identity header for the export request
-	identityHeader, err := e.userValidator.GenerateIdentityHeader(job.OrgID, job.Username, job.UserID)
+	identityHeader, err := e.userValidator.GenerateIdentityHeader(ctx, job.OrgID, job.Username, job.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to generate identity header: %w", err)
 	}
