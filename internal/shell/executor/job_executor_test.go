@@ -19,13 +19,19 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	// Create a fake user validator
 	userValidator := identity.NewFakeUserValidator()
 
-	// Create executor with null notifier (test null object pattern)
-	executor := &DefaultJobExecutor{
-		exportClient:  nil,                            // We won't actually execute exports in this test
-		notifier:      NewNullJobCompletionNotifier(), // Test null object pattern
-		userValidator: userValidator,
-		config:        cfg,
+	// Create null notifier (test null object pattern)
+	notifier := NewNullJobCompletionNotifier()
+
+	// Create payload-specific executors
+	executors := map[domain.PayloadType]JobExecutor{
+		domain.PayloadMessage:     NewMessageJobExecutor(),
+		domain.PayloadHTTPRequest: NewHTTPJobExecutor(),
+		domain.PayloadCommand:     NewCommandJobExecutor(),
+		domain.PayloadExport:      NewExportJobExecutor(cfg, userValidator, notifier),
 	}
+
+	// Create executor with map of executors
+	executor := NewJobExecutor(executors, nil)
 
 	// Create a test job
 	payload := domain.JobPayload{

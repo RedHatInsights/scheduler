@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"insights-scheduler/internal/config"
+	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
@@ -114,8 +115,16 @@ func main() {
 		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
 	}
 
-	// Initialize job executor with notifier (never nil)
-	jobExecutor := executor.NewJobExecutor(cfg, userValidator, notifier, runRepo)
+	// Initialize payload-specific job executors
+	executors := map[domain.PayloadType]executor.JobExecutor{
+		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
+		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
+		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
+		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
+	}
+
+	// Initialize job executor with map of executors
+	jobExecutor := executor.NewJobExecutor(executors, runRepo)
 
 	// Create functional core service
 	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
