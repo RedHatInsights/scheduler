@@ -84,7 +84,7 @@ func testCreateJob() (string, error) {
 
 	jobData := map[string]interface{}{
 		"name":     "Test Job",
-		"schedule": "0 */10 * * * *",
+		"schedule": "*/10 * * * *",
 		"payload": map[string]interface{}{
 			"type": "message",
 			"details": map[string]interface{}{

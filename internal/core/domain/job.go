@@ -29,10 +29,10 @@ const (
 type Schedule string
 
 const (
-	Schedule10Minutes Schedule = "0 */10 * * * *" // Every 10 minutes
-	Schedule1Hour     Schedule = "0 0 * * * *"    // Every hour at minute 0
-	Schedule1Day      Schedule = "0 0 0 * * *"    // Every day at midnight
-	Schedule1Month    Schedule = "0 0 0 1 * *"    // Every month on the 1st at midnight
+	Schedule10Minutes Schedule = "*/10 * * * *" // Every 10 minutes
+	Schedule1Hour     Schedule = "0 * * * *"    // Every hour at minute 0
+	Schedule1Day      Schedule = "0 0 * * *"    // Every day at midnight
+	Schedule1Month    Schedule = "0 0 1 * *"    // Every month on the 1st at midnight
 )
 
 type JobPayload struct {
@@ -139,17 +139,9 @@ func IsValidSchedule(s string) bool {
 		return true
 	}
 
-	// If not predefined, validate as a cron expression
-	// Try with standard 5-field format first (minute hour dom month dow)
+	// If not predefined, validate as a standard 5-field cron expression (minute hour dom month dow)
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	_, err := parser.Parse(s)
-	if err == nil {
-		return true
-	}
-
-	// Try with 6-field format (second minute hour dom month dow)
-	parser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	_, err = parser.Parse(s)
 	return err == nil
 }
 

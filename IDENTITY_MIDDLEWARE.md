@@ -29,7 +29,7 @@ The service now uses the `github.com/redhatinsights/platform-go-middlewares/iden
   "name": "My Job",
   "org_id": "12345",
   "username": "john.doe",
-  "schedule": "0 */10 * * * *",
+  "schedule": "*/10 * * * *",
   "payload": {
     "type": "message",
     "details": {"message": "Hello"}
@@ -41,7 +41,7 @@ The service now uses the `github.com/redhatinsights/platform-go-middlewares/iden
 ```json
 {
   "name": "My Job",
-  "schedule": "0 */10 * * * *",
+  "schedule": "*/10 * * * *",
   "payload": {
     "type": "message",
     "details": {"message": "Hello"}
@@ -61,7 +61,7 @@ All API requests must include a valid `X-Rh-Identity` header containing base64-e
 ```bash
 curl -H "X-Rh-Identity: <base64-encoded-identity>" \
      -H "Content-Type: application/json" \
-     -d '{"name": "Test Job", "schedule": "0 */10 * * * *", "payload": {"type": "message", "details": {"message": "Hello"}}}' \
+     -d '{"name": "Test Job", "schedule": "*/10 * * * *", "payload": {"type": "message", "details": {"message": "Hello"}}}' \
      http://localhost:5000/api/v1/jobs
 ```
 

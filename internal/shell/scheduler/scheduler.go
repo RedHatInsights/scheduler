@@ -21,7 +21,7 @@ type CronScheduler struct {
 func NewCronScheduler(jobService *usecases.JobService) *CronScheduler {
 	return &CronScheduler{
 		jobService: jobService,
-		cron:       cron.New(cron.WithSeconds()),
+		cron:       cron.New(), // Standard 5-field format (minute hour dom month dow)
 		jobEntries: make(map[string]cron.EntryID),
 	}
 }
