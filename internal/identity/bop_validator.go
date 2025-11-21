@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -67,7 +68,7 @@ type UserValidationResponse struct {
 }
 
 // GenerateIdentityHeader calls an HTTP service to generate the identity header
-func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string) (string, error) {
+func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, username, userID string) (string, error) {
 	if orgID == "" {
 		return "", fmt.Errorf("orgID cannot be empty")
 	}
@@ -87,8 +88,8 @@ func (v *BopUserValidator) GenerateIdentityHeader(orgID, username, userID string
 	fmt.Println("BOP URL: ", url)
 	fmt.Println("BOP post body: ", postBody)
 
-	// Create HTTP request
-	req, err := http.NewRequest("POST", url, postBodyReader)
+	// Create HTTP request with context
+	req, err := http.NewRequestWithContext(ctx, "POST", url, postBodyReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

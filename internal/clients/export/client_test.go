@@ -67,7 +67,7 @@ func TestClient_CreateExport(t *testing.T) {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestClient_ListExports(t *testing.T) {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestClient_GetExportStatus(t *testing.T) {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestClient_DownloadExport(t *testing.T) {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestClient_DeleteExport(t *testing.T) {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestClient_ErrorHandling(t *testing.T) {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader("org123", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestClient_ErrorHandling(t *testing.T) {
 func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
 	userValidator := identity.NewFakeUserValidator()
 
-	identityHeader, err := userValidator.GenerateIdentityHeader("test-org", "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "test-org", "testuser", "test-user-id")
 	if err != nil {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}

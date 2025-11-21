@@ -31,15 +31,17 @@ func main() {
 		log.Fatal("Account number and organization ID are required")
 	}
 
+	// Create context
+	ctx := context.Background()
+
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader(*orgID, "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(ctx, *orgID, "testuser", "test-user-id")
 	if err != nil {
 		log.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
 
 	client := export.NewClient(*baseURL)
-	ctx := context.Background()
 
 	switch *command {
 	case "list":
