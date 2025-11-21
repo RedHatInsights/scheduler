@@ -211,7 +211,7 @@ func (e *DefaultJobExecutor) executeExportReport(job domain.Job, details map[str
 		ErrorMsg:    errorMsg,
 	}
 
-	if err := e.notifier.JobComplete(notification); err != nil {
+	if err := e.notifier.JobComplete(ctx, notification); err != nil {
 		// Don't fail the job execution if notification fails
 		log.Printf("Warning: Failed to send completion notification for export %s", result.ID)
 	}
