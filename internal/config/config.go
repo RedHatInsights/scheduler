@@ -12,9 +12,6 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	// Clowder configuration (loaded from app-common-go)
-	Clowder *clowder.AppConfig `json:"clowder,omitempty"`
-
 	// Server configuration (with Clowder integration)
 	Server ServerConfig `json:"server"`
 
@@ -232,19 +229,9 @@ func LoadConfig() (*Config, error) {
 		if clowderConfig == nil {
 			return nil, fmt.Errorf("failed to load Clowder configuration (nil)")
 		}
-
-		/* FIXME:  this look weird!!
-		var err error
-			clowderConfig, err = clowder.LoadConfig("")
-			if err != nil {
-				return nil, fmt.Errorf("failed to load Clowder configuration: %w", err)
-			}
-		*/
 	}
 
-	config := &Config{
-		Clowder: clowderConfig,
-	}
+	config := &Config{}
 
 	// Load server configuration with Clowder integration
 	config.Server = loadServerConfig(clowderConfig)
@@ -544,24 +531,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// GetDatabaseConnectionString returns a connection string for the database
-func (c *Config) GetDatabaseConnectionString() string {
-	switch c.Database.Type {
-	case "sqlite":
-		return c.Database.Path
-	case "postgres":
-		return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			c.Database.Host, c.Database.Port, c.Database.Username,
-			c.Database.Password, c.Database.Name, c.Database.SSLMode)
-	case "mysql":
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-			c.Database.Username, c.Database.Password,
-			c.Database.Host, c.Database.Port, c.Database.Name)
-	default:
-		return ""
-	}
-}
-
 // Helper functions for environment variable parsing
 
 func getEnv(key, defaultValue string) string {
@@ -603,33 +572,4 @@ func getEnvAsStringSlice(key string, defaultValue []string) []string {
 		return strings.Split(value, ",")
 	}
 	return defaultValue
-}
-
-// IsClowderEnabled returns true if running in a Clowder environment
-func (c *Config) IsClowderEnabled() bool {
-	return c.Clowder != nil
-}
-
-// GetKafkaBrokers returns a slice of Kafka broker addresses
-func (c *Config) GetKafkaBrokers() []string {
-	return c.Kafka.Brokers
-}
-
-// GetKafkaTopic returns the Kafka topic name for export completions
-func (c *Config) GetKafkaTopic() string {
-	return c.Kafka.Topic
-}
-
-// GetKafkaTopicByName returns the Kafka topic configuration by name (for Clowder)
-func (c *Config) GetKafkaTopicByName(topicName string) *clowder.TopicConfig {
-	if c.Clowder == nil || c.Clowder.Kafka == nil {
-		return nil
-	}
-
-	for _, topic := range c.Clowder.Kafka.Topics {
-		if topic.Name == topicName || topic.RequestedName == topicName {
-			return &topic
-		}
-	}
-	return nil
 }

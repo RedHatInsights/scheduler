@@ -28,7 +28,6 @@ func NewCronScheduler(jobService *usecases.JobService) *CronScheduler {
 
 func (s *CronScheduler) Start(ctx context.Context) {
 	log.Println("Starting cron scheduler")
-	log.Println("HERE!!")
 
 	// Load existing jobs and schedule them
 	s.loadAndScheduleAllJobs()

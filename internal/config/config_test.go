@@ -277,65 +277,6 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-func TestGetDatabaseConnectionString(t *testing.T) {
-	testCases := []struct {
-		name     string
-		config   DatabaseConfig
-		expected string
-	}{
-		{
-			name: "sqlite",
-			config: DatabaseConfig{
-				Type: "sqlite",
-				Path: "/data/jobs.db",
-			},
-			expected: "/data/jobs.db",
-		},
-		{
-			name: "postgres",
-			config: DatabaseConfig{
-				Type:     "postgres",
-				Host:     "localhost",
-				Port:     5432,
-				Username: "user",
-				Password: "pass",
-				Name:     "mydb",
-				SSLMode:  "require",
-			},
-			expected: "host=localhost port=5432 user=user password=pass dbname=mydb sslmode=require",
-		},
-		{
-			name: "mysql",
-			config: DatabaseConfig{
-				Type:     "mysql",
-				Host:     "localhost",
-				Port:     3306,
-				Username: "user",
-				Password: "pass",
-				Name:     "mydb",
-			},
-			expected: "user:pass@tcp(localhost:3306)/mydb",
-		},
-		{
-			name: "unknown type",
-			config: DatabaseConfig{
-				Type: "unknown",
-			},
-			expected: "",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			config := &Config{Database: tc.config}
-			result := config.GetDatabaseConnectionString()
-			if result != tc.expected {
-				t.Errorf("Expected connection string '%s', got '%s'", tc.expected, result)
-			}
-		})
-	}
-}
-
 func TestEnvironmentVariableParsing(t *testing.T) {
 	// Test duration parsing
 	os.Setenv("TEST_DURATION", "30s")
@@ -449,51 +390,6 @@ func TestClowderIntegration(t *testing.T) {
 	}
 	if metricsConfig.Path != "/prometheus" {
 		t.Errorf("Expected metrics path '/prometheus', got %s", metricsConfig.Path)
-	}
-}
-
-func TestConfigHelperMethods(t *testing.T) {
-	config := &Config{
-		Clowder: &clowder.AppConfig{
-			Kafka: &clowder.KafkaConfig{
-				Topics: []clowder.TopicConfig{
-					{
-						Name:          "platform.notifications.ingress",
-						RequestedName: "platform.notifications.ingress",
-					},
-				},
-			},
-		},
-		Kafka: KafkaConfig{
-			Brokers: []string{"broker1:9092", "broker2:9092"},
-			Topic:   "platform.notifications.ingress",
-		},
-	}
-
-	// Test IsClowderEnabled
-	if !config.IsClowderEnabled() {
-		t.Error("Expected IsClowderEnabled to return true")
-	}
-
-	// Test GetKafkaBrokers
-	brokers := config.GetKafkaBrokers()
-	if len(brokers) != 2 {
-		t.Errorf("Expected 2 brokers, got %d", len(brokers))
-	}
-
-	// Test GetKafkaTopic
-	topic := config.GetKafkaTopic()
-	if topic != "platform.notifications.ingress" {
-		t.Errorf("Expected topic 'platform.notifications.ingress', got %s", topic)
-	}
-
-	// Test GetKafkaTopicByName
-	topicConfig := config.GetKafkaTopicByName("platform.notifications.ingress")
-	if topicConfig == nil {
-		t.Error("Expected to find topic config")
-	}
-	if topicConfig.RequestedName != "platform.notifications.ingress" {
-		t.Errorf("Expected requested name 'platform.notifications.ingress', got %s", topicConfig.RequestedName)
 	}
 }
 

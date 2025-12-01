@@ -29,7 +29,7 @@ func main() {
 
 	log.Printf("Starting Insights Scheduler with configuration:")
 	log.Printf("  Server: %s:%d (private: %d)", cfg.Server.Host, cfg.Server.Port, cfg.Server.PrivatePort)
-	log.Printf("  Database: %s (%s)", cfg.Database.Type, cfg.GetDatabaseConnectionString())
+	log.Printf("  Database Type: %s", cfg.Database.Type)
 	log.Printf("  Kafka: enabled=%t, brokers=%v", cfg.Kafka.Enabled, cfg.Kafka.Brokers)
 	log.Printf("  Metrics: enabled=%t, port=%d", cfg.Metrics.Enabled, cfg.Metrics.Port)
 
