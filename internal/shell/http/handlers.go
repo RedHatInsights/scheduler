@@ -92,7 +92,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", "/api/v1/jobs/"+job.ID)
 	w.WriteHeader(http.StatusCreated)
 
-	if err := json.NewEncoder(w).Encode(job); err != nil {
+	if err := json.NewEncoder(w).Encode(ToJobResponse(job)); err != nil {
 		log.Printf("[DEBUG] HTTP CreateJob - warning: failed to encode response: %v", err)
 	} else {
 		log.Printf("[DEBUG] HTTP CreateJob - response sent successfully")
@@ -118,7 +118,7 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jobs)
+	json.NewEncoder(w).Encode(ToJobResponseList(jobs))
 }
 
 func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +144,7 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job)
+	json.NewEncoder(w).Encode(ToJobResponse(job))
 }
 
 func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +207,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job)
+	json.NewEncoder(w).Encode(ToJobResponse(job))
 }
 
 func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +243,7 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job)
+	json.NewEncoder(w).Encode(ToJobResponse(job))
 }
 
 func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
@@ -323,7 +323,7 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job)
+	json.NewEncoder(w).Encode(ToJobResponse(job))
 }
 
 func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
@@ -353,5 +353,5 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job)
+	json.NewEncoder(w).Encode(ToJobResponse(job))
 }

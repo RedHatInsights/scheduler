@@ -422,13 +422,10 @@ components:
   schemas:
     Job:
       type: object
-      description: A scheduled job
+      description: A scheduled job (org_id, username, and user_id are extracted from X-Rh-Identity header)
       required:
         - id
         - name
-        - org_id
-        - username
-        - user_id
         - schedule
         - type
         - status
@@ -442,18 +439,6 @@ components:
           type: string
           description: Human-readable name for the job
           example: "Daily Report Generation"
-        org_id:
-          type: string
-          description: Organization ID from Red Hat identity
-          example: "000001"
-        username:
-          type: string
-          description: Username of the job owner
-          example: "john.doe"
-        user_id:
-          type: string
-          description: User ID from Red Hat identity
-          example: "user-123"
         schedule:
           type: string
           description: Cron expression defining when the job runs

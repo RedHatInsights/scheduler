@@ -47,13 +47,12 @@ The service will start on `http://localhost:5000` with the scheduler running in 
 
 ## Job Schema
 
+Jobs are authenticated via the `X-Rh-Identity` header. The `org_id`, `username`, and `user_id` are automatically extracted from this header and not exposed in API responses.
+
 ```json
 {
   "id": "string (UUID)",
   "name": "string",
-  "org_id": "string",
-  "username": "string",
-  "user_id": "string",
   "schedule": "string (5-field cron expression)",
   "type": "string (message|http_request|command|export)",
   "payload": {
