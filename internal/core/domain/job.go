@@ -36,23 +36,23 @@ const (
 )
 
 type JobPayload struct {
-	Type    PayloadType            `json:"type"`
-	Details map[string]interface{} `json:"details"`
+	Details map[string]interface{} `json:"details,omitempty"`
 }
 
 type Job struct {
-	ID       string     `json:"id"`
-	Name     string     `json:"name"`
-	OrgID    string     `json:"org_id"`
-	Username string     `json:"username"`
-	UserID   string     `json:"user_id"`
-	Schedule Schedule   `json:"schedule"`
-	Payload  JobPayload `json:"payload"`
-	Status   JobStatus  `json:"status"`
-	LastRun  *time.Time `json:"last_run,omitempty"`
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	OrgID    string      `json:"org_id"`
+	Username string      `json:"username"`
+	UserID   string      `json:"user_id"`
+	Schedule Schedule    `json:"schedule"`
+	Type     PayloadType `json:"type"`
+	Payload  JobPayload  `json:"payload,omitempty"`
+	Status   JobStatus   `json:"status"`
+	LastRun  *time.Time  `json:"last_run,omitempty"`
 }
 
-func NewJob(name string, orgID string, username string, userID string, schedule Schedule, payload JobPayload) Job {
+func NewJob(name string, orgID string, username string, userID string, schedule Schedule, payloadType PayloadType, payload JobPayload) Job {
 	return Job{
 		ID:       uuid.New().String(),
 		Name:     name,
@@ -60,6 +60,7 @@ func NewJob(name string, orgID string, username string, userID string, schedule 
 		Username: username,
 		UserID:   userID,
 		Schedule: schedule,
+		Type:     payloadType,
 		Payload:  payload,
 		Status:   StatusScheduled,
 		LastRun:  nil,
@@ -74,6 +75,7 @@ func (j Job) WithStatus(status JobStatus) Job {
 		Username: j.Username,
 		UserID:   j.UserID,
 		Schedule: j.Schedule,
+		Type:     j.Type,
 		Payload:  j.Payload,
 		Status:   status,
 		LastRun:  j.LastRun,
@@ -88,13 +90,14 @@ func (j Job) WithLastRun(lastRun time.Time) Job {
 		Username: j.Username,
 		UserID:   j.UserID,
 		Schedule: j.Schedule,
+		Type:     j.Type,
 		Payload:  j.Payload,
 		Status:   j.Status,
 		LastRun:  &lastRun,
 	}
 }
 
-func (j Job) UpdateFields(name *string, orgID *string, username *string, userID *string, schedule *Schedule, payload *JobPayload, status *JobStatus) Job {
+func (j Job) UpdateFields(name *string, orgID *string, username *string, userID *string, schedule *Schedule, payloadType *PayloadType, payload *JobPayload, status *JobStatus) Job {
 	updated := j
 
 	if name != nil {
@@ -111,6 +114,9 @@ func (j Job) UpdateFields(name *string, orgID *string, username *string, userID 
 	}
 	if schedule != nil {
 		updated.Schedule = *schedule
+	}
+	if payloadType != nil {
+		updated.Type = *payloadType
 	}
 	if payload != nil {
 		updated.Payload = *payload

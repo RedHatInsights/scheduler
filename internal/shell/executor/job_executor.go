@@ -37,9 +37,9 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 
 	// Execute the job using the appropriate executor
 	var execErr error
-	executor, ok := e.executors[job.Payload.Type]
+	executor, ok := e.executors[job.Type]
 	if !ok {
-		execErr = fmt.Errorf("no executor found for payload type: %s", job.Payload.Type)
+		execErr = fmt.Errorf("no executor found for payload type: %s", job.Type)
 	} else {
 		execErr = executor.Execute(job)
 	}

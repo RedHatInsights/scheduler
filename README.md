@@ -55,8 +55,8 @@ The service will start on `http://localhost:5000` with the scheduler running in 
   "username": "string",
   "user_id": "string",
   "schedule": "string (5-field cron expression)",
+  "type": "string (message|http_request|command|export)",
   "payload": {
-    "type": "string (message|http_request|command|export)",
     "details": {}
   },
   "status": "string (scheduled|running|paused|failed)",

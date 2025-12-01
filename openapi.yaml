@@ -95,8 +95,8 @@ paths:
                 value:
                   name: "Daily Message Job"
                   schedule: "0 0 0 * * *"
+                  type: "message"
                   payload:
-                    type: "message"
                     details:
                       message: "Hello, World!"
               httpRequestJob:
@@ -104,8 +104,8 @@ paths:
                 value:
                   name: "Hourly API Check"
                   schedule: "0 0 * * * *"
+                  type: "http_request"
                   payload:
-                    type: "http_request"
                     details:
                       url: "https://api.example.com/health"
                       method: "GET"
@@ -114,8 +114,8 @@ paths:
                 value:
                   name: "Monthly Advisor Export"
                   schedule: "0 0 0 1 * *"
+                  type: "export"
                   payload:
-                    type: "export"
                     details:
                       application: "advisor"
                       resource: "recommendations"
@@ -430,7 +430,7 @@ components:
         - username
         - user_id
         - schedule
-        - payload
+        - type
         - status
       properties:
         id:
@@ -458,6 +458,8 @@ components:
           type: string
           description: Cron expression defining when the job runs
           example: "0 0 0 * * *"
+        type:
+          $ref: '#/components/schemas/PayloadType'
         payload:
           $ref: '#/components/schemas/JobPayload'
         status:
@@ -472,12 +474,7 @@ components:
     JobPayload:
       type: object
       description: Payload containing job execution details
-      required:
-        - type
-        - details
       properties:
-        type:
-          $ref: '#/components/schemas/PayloadType'
         details:
           type: object
           description: Type-specific payload details
@@ -511,7 +508,7 @@ components:
       required:
         - name
         - schedule
-        - payload
+        - type
       properties:
         name:
           type: string
@@ -521,6 +518,8 @@ components:
           type: string
           description: Cron expression defining when the job runs
           example: "0 0 0 * * *"
+        type:
+          $ref: '#/components/schemas/PayloadType'
         payload:
           $ref: '#/components/schemas/JobPayload'
 
@@ -530,7 +529,7 @@ components:
       required:
         - name
         - schedule
-        - payload
+        - type
         - status
       properties:
         name:
@@ -541,6 +540,8 @@ components:
           type: string
           description: Cron expression defining when the job runs
           example: "0 0 * * * *"
+        type:
+          $ref: '#/components/schemas/PayloadType'
         payload:
           $ref: '#/components/schemas/JobPayload'
         status:
@@ -558,6 +559,8 @@ components:
           type: string
           description: Cron expression defining when the job runs
           example: "0 0 * * * *"
+        type:
+          $ref: '#/components/schemas/PayloadType'
         payload:
           $ref: '#/components/schemas/JobPayload'
         status:

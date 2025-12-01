@@ -35,13 +35,12 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 
 	// Create a test job
 	payload := domain.JobPayload{
-		Type: domain.PayloadMessage,
 		Details: map[string]interface{}{
 			"message": "test message",
 		},
 	}
 
-	job := domain.NewJob("Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", payload)
+	job := domain.NewJob("Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", domain.PayloadMessage, payload)
 
 	// Test executing a message job (should not trigger notification)
 	err := executor.Execute(job)

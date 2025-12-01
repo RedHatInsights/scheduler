@@ -57,8 +57,8 @@ func (s *JobService) SetCronScheduler(cronScheduler CronScheduler) {
 	s.cronScheduler = cronScheduler
 }
 
-func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, payload domain.JobPayload) (domain.Job, error) {
-	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, payload type: %s", name, orgID, username, userID, schedule, payload.Type)
+func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload domain.JobPayload) (domain.Job, error) {
+	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, payload type: %s", name, orgID, username, userID, schedule, payloadType)
 
 	// Validate org_id
 	if orgID == "" {
@@ -73,13 +73,13 @@ func (s *JobService) CreateJob(name string, orgID string, username string, userI
 	}
 	log.Printf("[DEBUG] CreateJob - schedule validation passed: %s", schedule)
 
-	if !domain.IsValidPayloadType(string(payload.Type)) {
-		log.Printf("[DEBUG] CreateJob failed - invalid payload type: %s", payload.Type)
+	if !domain.IsValidPayloadType(string(payloadType)) {
+		log.Printf("[DEBUG] CreateJob failed - invalid payload type: %s", payloadType)
 		return domain.Job{}, domain.ErrInvalidPayload
 	}
-	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payload.Type)
+	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
 
-	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), payload)
+	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), payloadType, payload)
 	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s", job.ID, job.Status)
 
 	err := s.repo.Save(job)
@@ -170,7 +170,7 @@ func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter strin
 	return filtered, nil
 }
 
-func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payload domain.JobPayload, status string) (domain.Job, error) {
+func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload domain.JobPayload, status string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -190,7 +190,7 @@ func (s *JobService) UpdateJob(id string, name string, orgID string, username st
 		return domain.Job{}, domain.ErrInvalidSchedule
 	}
 
-	if !domain.IsValidPayloadType(string(payload.Type)) {
+	if !domain.IsValidPayloadType(string(payloadType)) {
 		return domain.Job{}, domain.ErrInvalidPayload
 	}
 
@@ -201,7 +201,7 @@ func (s *JobService) UpdateJob(id string, name string, orgID string, username st
 	scheduleVal := domain.Schedule(schedule)
 	statusVal := domain.JobStatus(status)
 
-	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payload, &statusVal)
+	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
 
 	err = s.repo.Save(updatedJob)
 	if err != nil {
@@ -237,6 +237,7 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	var username *string
 	var userID *string
 	var schedule *domain.Schedule
+	var payloadType *domain.PayloadType
 	var payload *domain.JobPayload
 	var status *domain.JobStatus
 
@@ -279,17 +280,20 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 		}
 	}
 
+	if v, ok := updates["type"]; ok {
+		if typeStr, ok := v.(string); ok {
+			if !domain.IsValidPayloadType(typeStr) {
+				return domain.Job{}, domain.ErrInvalidPayload
+			}
+			pt := domain.PayloadType(typeStr)
+			payloadType = &pt
+		}
+	}
+
 	if v, ok := updates["payload"]; ok {
 		if payloadMap, ok := v.(map[string]interface{}); ok {
-			typeStr, typeOk := payloadMap["type"].(string)
-			details, detailsOk := payloadMap["details"].(map[string]interface{})
-
-			if typeOk && detailsOk {
-				if !domain.IsValidPayloadType(typeStr) {
-					return domain.Job{}, domain.ErrInvalidPayload
-				}
+			if details, detailsOk := payloadMap["details"].(map[string]interface{}); detailsOk {
 				payloadVal := domain.JobPayload{
-					Type:    domain.PayloadType(typeStr),
 					Details: details,
 				}
 				payload = &payloadVal
@@ -307,7 +311,7 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 		}
 	}
 
-	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payload, status)
+	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
 
 	err = s.repo.Save(updatedJob)
 	if err != nil {

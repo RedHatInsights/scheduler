@@ -22,14 +22,13 @@ func TestSQLiteJobRepository(t *testing.T) {
 
 	// Test job creation
 	payload := domain.JobPayload{
-		Type: domain.PayloadMessage,
 		Details: map[string]interface{}{
 			"message": "Unit test job",
 			"count":   42,
 		},
 	}
 
-	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", payload)
+	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", domain.PayloadMessage, payload)
 
 	// Test Save
 	if err := repo.Save(job); err != nil {
@@ -70,9 +69,9 @@ func TestSQLiteJobRepository(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", job.Status, retrievedJob.Status)
 	}
 
-	// Test payload details
-	if retrievedJob.Payload.Type != job.Payload.Type {
-		t.Errorf("Expected payload type %s, got %s", job.Payload.Type, retrievedJob.Payload.Type)
+	// Test type field
+	if retrievedJob.Type != job.Type {
+		t.Errorf("Expected type %s, got %s", job.Type, retrievedJob.Type)
 	}
 
 	if retrievedJob.Payload.Details["message"] != "Unit test job" {
@@ -151,22 +150,20 @@ func TestSQLiteJobRepository_FindByOrgID(t *testing.T) {
 
 	// Create jobs for different orgs
 	payload1 := domain.JobPayload{
-		Type: domain.PayloadMessage,
 		Details: map[string]interface{}{
 			"message": "org1 job",
 		},
 	}
 
 	payload2 := domain.JobPayload{
-		Type: domain.PayloadCommand,
 		Details: map[string]interface{}{
 			"command": "org2 job",
 		},
 	}
 
-	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", payload1)
-	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 * * * *", payload2)
-	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 12 * * *", payload1)
+	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", domain.PayloadMessage, payload1)
+	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 * * * *", domain.PayloadCommand, payload2)
+	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 12 * * *", domain.PayloadMessage, payload1)
 
 	// Save all jobs
 	if err := repo.Save(job1); err != nil {

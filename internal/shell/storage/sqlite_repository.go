@@ -242,7 +242,7 @@ func (r *SQLiteJobRepository) Save(job domain.Job) error {
 		)
 	`
 
-	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.Username, job.UserID, string(job.Schedule), string(job.Payload.Type),
+	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.Username, job.UserID, string(job.Schedule), string(job.Type),
 		string(payloadJSON), string(job.Status), lastRun, job.ID)
 
 	if err != nil {
@@ -269,7 +269,7 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 	var payloadJSON string
 	var lastRunStr sql.NullString
 
-	err := row.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Payload.Type,
+	err := row.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Type,
 		&payloadJSON, &job.Status, &lastRunStr)
 
 	if err != nil {
@@ -321,7 +321,7 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 		var payloadJSON string
 		var lastRunStr sql.NullString
 
-		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Payload.Type,
+		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Type,
 			&payloadJSON, &job.Status, &lastRunStr)
 
 		if err != nil {
@@ -378,7 +378,7 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 		var payloadJSON string
 		var lastRunStr sql.NullString
 
-		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Payload.Type,
+		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Type,
 			&payloadJSON, &job.Status, &lastRunStr)
 
 		if err != nil {

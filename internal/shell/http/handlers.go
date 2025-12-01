@@ -26,9 +26,10 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[DEBUG] HTTP CreateJob called - method: %s, path: %s", r.Method, r.URL.Path)
 
 	var req struct {
-		Name     string            `json:"name"`
-		Schedule string            `json:"schedule"`
-		Payload  domain.JobPayload `json:"payload"`
+		Name     string             `json:"name"`
+		Schedule string             `json:"schedule"`
+		Type     domain.PayloadType `json:"type"`
+		Payload  domain.JobPayload  `json:"payload"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -63,17 +64,17 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, payload_type=%s", req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Payload.Type)
+	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, type=%s", req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Type)
 
-	if req.Name == "" || req.Schedule == "" {
-		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields: name=%s, schedule=%s", req.Name, req.Schedule)
-		http.Error(w, "Missing required fields (name, schedule)", http.StatusBadRequest)
+	if req.Name == "" || req.Schedule == "" || req.Type == "" {
+		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields: name=%s, schedule=%s, type=%s", req.Name, req.Schedule, req.Type)
+		http.Error(w, "Missing required fields (name, schedule, type)", http.StatusBadRequest)
 		return
 	}
 
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
-	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Payload)
+	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Type, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
@@ -174,10 +175,11 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name     string            `json:"name"`
-		Schedule string            `json:"schedule"`
-		Payload  domain.JobPayload `json:"payload"`
-		Status   string            `json:"status"`
+		Name     string             `json:"name"`
+		Schedule string             `json:"schedule"`
+		Type     domain.PayloadType `json:"type"`
+		Payload  domain.JobPayload  `json:"payload"`
+		Status   string             `json:"status"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -185,12 +187,12 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.Schedule == "" || req.Status == "" {
-		http.Error(w, "Missing required fields (name, schedule, status)", http.StatusBadRequest)
+	if req.Name == "" || req.Schedule == "" || req.Type == "" || req.Status == "" {
+		http.Error(w, "Missing required fields (name, schedule, type, status)", http.StatusBadRequest)
 		return
 	}
 
-	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Payload, req.Status)
+	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Type, req.Payload, req.Status)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
