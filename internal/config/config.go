@@ -350,7 +350,6 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 		CAFile:             getEnv("KAFKA_TLS_CA_FILE", ""),
 	}
 
-	fmt.Println("clowderConfig: ", clowderConfig)
 	// Override with Clowder values if available
 	if clowderConfig != nil && clowderConfig.Kafka != nil {
 		enabled = true
@@ -467,8 +466,6 @@ func getOpenshiftNamespace() (string, error) {
 	}
 
 	namespace := string(contentBytes)
-
-	fmt.Println("namesapce:", namespace)
 
 	return namespace, nil
 }
