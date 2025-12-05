@@ -67,24 +67,11 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 
 	log.Printf("Export created successfully - ID: %s, Status: %s", result.ID, result.Status)
 
-	// Optionally wait for completion if specified in details
+	// Wait for completion using configuration values for polling
 	log.Printf("Waiting for export %s to complete...", result.ID)
 
-	// Use configuration values for polling
 	maxRetries := e.config.ExportService.PollMaxRetries
 	pollInterval := e.config.ExportService.PollInterval
-
-	// Allow job payload to override poll settings (these are scheduler-specific settings)
-	if payloadMap, ok := job.Payload.(map[string]interface{}); ok {
-		if maxRetriesVal, ok := payloadMap["poll_max_retries"].(float64); ok {
-			maxRetries = int(maxRetriesVal)
-		}
-		if pollIntervalStr, ok := payloadMap["poll_interval"].(string); ok {
-			if parsed, err := time.ParseDuration(pollIntervalStr); err == nil {
-				pollInterval = parsed
-			}
-		}
-	}
 
 	log.Printf("Polling export with maxRetries=%d, pollInterval=%s", maxRetries, pollInterval)
 
