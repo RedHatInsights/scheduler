@@ -29,7 +29,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		Name     string             `json:"name"`
 		Schedule string             `json:"schedule"`
 		Type     domain.PayloadType `json:"type"`
-		Payload  domain.JobPayload  `json:"payload"`
+		Payload  interface{}        `json:"payload"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -69,6 +69,12 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" || req.Schedule == "" || req.Type == "" {
 		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields: name=%s, schedule=%s, type=%s", req.Name, req.Schedule, req.Type)
 		http.Error(w, "Missing required fields (name, schedule, type)", http.StatusBadRequest)
+		return
+	}
+
+	if req.Payload == nil {
+		log.Printf("[DEBUG] HTTP CreateJob failed - payload is required")
+		http.Error(w, "Missing required field: payload", http.StatusBadRequest)
 		return
 	}
 
@@ -178,7 +184,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		Name     string             `json:"name"`
 		Schedule string             `json:"schedule"`
 		Type     domain.PayloadType `json:"type"`
-		Payload  domain.JobPayload  `json:"payload"`
+		Payload  interface{}        `json:"payload"`
 		Status   string             `json:"status"`
 	}
 
@@ -189,6 +195,11 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" || req.Schedule == "" || req.Type == "" || req.Status == "" {
 		http.Error(w, "Missing required fields (name, schedule, type, status)", http.StatusBadRequest)
+		return
+	}
+
+	if req.Payload == nil {
+		http.Error(w, "Missing required field: payload", http.StatusBadRequest)
 		return
 	}
 

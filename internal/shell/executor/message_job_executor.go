@@ -16,7 +16,14 @@ func NewMessageJobExecutor() *MessageJobExecutor {
 
 // Execute executes a message job
 func (e *MessageJobExecutor) Execute(job domain.Job) error {
-	message, ok := job.Payload.Details["message"].(string)
+	// Cast payload to map[string]interface{}
+	payloadMap, ok := job.Payload.(map[string]interface{})
+	if !ok {
+		log.Printf("Processing message: unknown (payload is not a map)")
+		return nil
+	}
+
+	message, ok := payloadMap["message"].(string)
 	if !ok {
 		message = "unknown"
 	}

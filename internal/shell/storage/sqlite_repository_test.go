@@ -21,11 +21,9 @@ func TestSQLiteJobRepository(t *testing.T) {
 	defer repo.Close()
 
 	// Test job creation
-	payload := domain.JobPayload{
-		Details: map[string]interface{}{
-			"message": "Unit test job",
-			"count":   42,
-		},
+	payload := map[string]interface{}{
+		"message": "Unit test job",
+		"count":   42,
 	}
 
 	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", domain.PayloadMessage, payload)
@@ -74,12 +72,18 @@ func TestSQLiteJobRepository(t *testing.T) {
 		t.Errorf("Expected type %s, got %s", job.Type, retrievedJob.Type)
 	}
 
-	if retrievedJob.Payload.Details["message"] != "Unit test job" {
-		t.Errorf("Expected message 'Unit test job', got %v", retrievedJob.Payload.Details["message"])
+	// Cast payload to map and verify contents
+	payloadMap, ok := retrievedJob.Payload.(map[string]interface{})
+	if !ok {
+		t.Errorf("Expected payload to be map[string]interface{}, got %T", retrievedJob.Payload)
 	}
 
-	if retrievedJob.Payload.Details["count"].(float64) != 42 {
-		t.Errorf("Expected count 42, got %v", retrievedJob.Payload.Details["count"])
+	if payloadMap["message"] != "Unit test job" {
+		t.Errorf("Expected message 'Unit test job', got %v", payloadMap["message"])
+	}
+
+	if payloadMap["count"].(float64) != 42 {
+		t.Errorf("Expected count 42, got %v", payloadMap["count"])
 	}
 
 	// Test FindAll
@@ -149,16 +153,12 @@ func TestSQLiteJobRepository_FindByOrgID(t *testing.T) {
 	defer repo.Close()
 
 	// Create jobs for different orgs
-	payload1 := domain.JobPayload{
-		Details: map[string]interface{}{
-			"message": "org1 job",
-		},
+	payload1 := map[string]interface{}{
+		"message": "org1 job",
 	}
 
-	payload2 := domain.JobPayload{
-		Details: map[string]interface{}{
-			"command": "org2 job",
-		},
+	payload2 := map[string]interface{}{
+		"command": "org2 job",
 	}
 
 	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", domain.PayloadMessage, payload1)

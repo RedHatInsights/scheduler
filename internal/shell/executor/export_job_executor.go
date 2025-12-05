@@ -44,7 +44,11 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 		return fmt.Errorf("failed to generate identity header: %w", err)
 	}
 
-	details := job.Payload.Details
+	// Cast payload to map[string]interface{}
+	details, ok := job.Payload.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("payload is not a map[string]interface{}")
+	}
 
 	// Extract export configuration from job details
 	exportName, _ := details["name"].(string)

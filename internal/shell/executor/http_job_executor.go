@@ -16,8 +16,15 @@ func NewHTTPJobExecutor() *HTTPJobExecutor {
 
 // Execute executes an HTTP request job
 func (e *HTTPJobExecutor) Execute(job domain.Job) error {
-	url, _ := job.Payload.Details["url"].(string)
-	method, _ := job.Payload.Details["method"].(string)
+	// Cast payload to map[string]interface{}
+	payloadMap, ok := job.Payload.(map[string]interface{})
+	if !ok {
+		log.Printf("Executing HTTP request: unknown (payload is not a map)")
+		return nil
+	}
+
+	url, _ := payloadMap["url"].(string)
+	method, _ := payloadMap["method"].(string)
 	if method == "" {
 		method = "GET"
 	}

@@ -97,8 +97,7 @@ paths:
                   schedule: "0 0 0 * * *"
                   type: "message"
                   payload:
-                    details:
-                      message: "Hello, World!"
+                    message: "Hello, World!"
               httpRequestJob:
                 summary: HTTP request job
                 value:
@@ -106,9 +105,8 @@ paths:
                   schedule: "0 0 * * * *"
                   type: "http_request"
                   payload:
-                    details:
-                      url: "https://api.example.com/health"
-                      method: "GET"
+                    url: "https://api.example.com/health"
+                    method: "GET"
               exportJob:
                 summary: Export job
                 value:
@@ -116,10 +114,9 @@ paths:
                   schedule: "0 0 0 1 * *"
                   type: "export"
                   payload:
-                    details:
-                      application: "advisor"
-                      resource: "recommendations"
-                      format: "json"
+                    application: "advisor"
+                    resource: "recommendations"
+                    format: "json"
       responses:
         '201':
           description: Job created successfully
@@ -457,15 +454,24 @@ components:
           example: "2025-11-03T10:00:00Z"
 
     JobPayload:
-      type: object
-      description: Payload containing job execution details
-      properties:
-        details:
-          type: object
-          description: Type-specific payload details
+      description: |
+        Payload containing job execution details. Can be any valid JSON value:
+        - Object: {"key": "value"}
+        - Array: [1, 2, 3]
+        - String: "text"
+        - Number: 42
+        - Boolean: true
+        - Null: null
+      oneOf:
+        - type: object
           additionalProperties: true
-          example:
-            message: "Hello, World!"
+        - type: array
+        - type: string
+        - type: number
+        - type: boolean
+        - type: 'null'
+      example:
+        message: "Hello, World!"
 
     JobStatus:
       type: string
@@ -494,6 +500,7 @@ components:
         - name
         - schedule
         - type
+        - payload
       properties:
         name:
           type: string
@@ -515,6 +522,7 @@ components:
         - name
         - schedule
         - type
+        - payload
         - status
       properties:
         name:

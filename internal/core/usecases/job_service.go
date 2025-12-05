@@ -57,7 +57,7 @@ func (s *JobService) SetCronScheduler(cronScheduler CronScheduler) {
 	s.cronScheduler = cronScheduler
 }
 
-func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload domain.JobPayload) (domain.Job, error) {
+func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
 	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, payload type: %s", name, orgID, username, userID, schedule, payloadType)
 
 	// Validate org_id
@@ -170,7 +170,7 @@ func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter strin
 	return filtered, nil
 }
 
-func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload domain.JobPayload, status string) (domain.Job, error) {
+func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -238,7 +238,7 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	var userID *string
 	var schedule *domain.Schedule
 	var payloadType *domain.PayloadType
-	var payload *domain.JobPayload
+	var payload *interface{}
 	var status *domain.JobStatus
 
 	if v, ok := updates["name"]; ok {
@@ -291,14 +291,8 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	}
 
 	if v, ok := updates["payload"]; ok {
-		if payloadMap, ok := v.(map[string]interface{}); ok {
-			if details, detailsOk := payloadMap["details"].(map[string]interface{}); detailsOk {
-				payloadVal := domain.JobPayload{
-					Details: details,
-				}
-				payload = &payloadVal
-			}
-		}
+		// Payload can be any JSON value (object, array, string, number, etc.)
+		payload = &v
 	}
 
 	if v, ok := updates["status"]; ok {

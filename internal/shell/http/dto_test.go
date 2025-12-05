@@ -10,10 +10,8 @@ import (
 
 func TestToJobResponse(t *testing.T) {
 	// Create a domain job with all fields including org_id, username, user_id
-	payload := domain.JobPayload{
-		Details: map[string]interface{}{
-			"message": "test message",
-		},
+	payload := map[string]interface{}{
+		"message": "test message",
 	}
 
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", domain.PayloadMessage, payload)
@@ -87,16 +85,12 @@ func TestToJobResponse(t *testing.T) {
 
 func TestToJobResponseList(t *testing.T) {
 	// Create multiple domain jobs
-	payload1 := domain.JobPayload{
-		Details: map[string]interface{}{
-			"message": "test message 1",
-		},
+	payload1 := map[string]interface{}{
+		"message": "test message 1",
 	}
 
-	payload2 := domain.JobPayload{
-		Details: map[string]interface{}{
-			"message": "test message 2",
-		},
+	payload2 := map[string]interface{}{
+		"message": "test message 2",
 	}
 
 	job1 := domain.NewJob("Test Job 1", "org-123", "testuser", "user-123", "*/15 * * * *", domain.PayloadMessage, payload1)
@@ -145,10 +139,8 @@ func TestToJobResponseList(t *testing.T) {
 
 func TestJobResponseWithLastRun(t *testing.T) {
 	// Create a job with last_run set
-	payload := domain.JobPayload{
-		Details: map[string]interface{}{
-			"message": "test message",
-		},
+	payload := map[string]interface{}{
+		"message": "test message",
 	}
 
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", domain.PayloadMessage, payload)

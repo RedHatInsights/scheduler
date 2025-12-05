@@ -35,10 +35,6 @@ const (
 	Schedule1Month    Schedule = "0 0 1 * *"    // Every month on the 1st at midnight
 )
 
-type JobPayload struct {
-	Details map[string]interface{} `json:"details,omitempty"`
-}
-
 type Job struct {
 	ID       string      `json:"id"`
 	Name     string      `json:"name"`
@@ -47,12 +43,12 @@ type Job struct {
 	UserID   string      `json:"user_id"`
 	Schedule Schedule    `json:"schedule"`
 	Type     PayloadType `json:"type"`
-	Payload  JobPayload  `json:"payload,omitempty"`
+	Payload  interface{} `json:"payload,omitempty"`
 	Status   JobStatus   `json:"status"`
 	LastRun  *time.Time  `json:"last_run,omitempty"`
 }
 
-func NewJob(name string, orgID string, username string, userID string, schedule Schedule, payloadType PayloadType, payload JobPayload) Job {
+func NewJob(name string, orgID string, username string, userID string, schedule Schedule, payloadType PayloadType, payload interface{}) Job {
 	return Job{
 		ID:       uuid.New().String(),
 		Name:     name,
@@ -97,7 +93,7 @@ func (j Job) WithLastRun(lastRun time.Time) Job {
 	}
 }
 
-func (j Job) UpdateFields(name *string, orgID *string, username *string, userID *string, schedule *Schedule, payloadType *PayloadType, payload *JobPayload, status *JobStatus) Job {
+func (j Job) UpdateFields(name *string, orgID *string, username *string, userID *string, schedule *Schedule, payloadType *PayloadType, payload *interface{}, status *JobStatus) Job {
 	updated := j
 
 	if name != nil {

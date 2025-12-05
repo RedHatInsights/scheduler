@@ -84,10 +84,8 @@ func TestScheduleConstants(t *testing.T) {
 }
 
 func TestNewJob(t *testing.T) {
-	payload := JobPayload{
-		Details: map[string]interface{}{
-			"message": "test message",
-		},
+	payload := map[string]interface{}{
+		"message": "test message",
 	}
 
 	job := NewJob("Test Job", "org-123", "testuser", "user-123", Schedule1Hour, PayloadMessage, payload)
@@ -130,8 +128,8 @@ func TestNewJob(t *testing.T) {
 }
 
 func TestJobUpdateFields(t *testing.T) {
-	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, PayloadMessage, JobPayload{
-		Details: map[string]interface{}{"msg": "original"},
+	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, PayloadMessage, map[string]interface{}{
+		"msg": "original",
 	})
 
 	newName := "Updated Job"
@@ -140,9 +138,7 @@ func TestJobUpdateFields(t *testing.T) {
 	newUserID := "user-456"
 	newSchedule := Schedule1Day
 	newPayloadType := PayloadCommand
-	newPayload := JobPayload{
-		Details: map[string]interface{}{"cmd": "ls"},
-	}
+	var newPayload interface{} = map[string]interface{}{"cmd": "ls"}
 	newStatus := StatusPaused
 
 	updatedJob := job.UpdateFields(&newName, &newOrgID, &newUsername, &newUserID, &newSchedule, &newPayloadType, &newPayload, &newStatus)

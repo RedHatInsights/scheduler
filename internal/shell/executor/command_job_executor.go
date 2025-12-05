@@ -16,7 +16,14 @@ func NewCommandJobExecutor() *CommandJobExecutor {
 
 // Execute executes a command job
 func (e *CommandJobExecutor) Execute(job domain.Job) error {
-	command, ok := job.Payload.Details["command"].(string)
+	// Cast payload to map[string]interface{}
+	payloadMap, ok := job.Payload.(map[string]interface{})
+	if !ok {
+		log.Printf("Executing command: unknown (payload is not a map)")
+		return nil
+	}
+
+	command, ok := payloadMap["command"].(string)
 	if !ok {
 		command = "unknown"
 	}
