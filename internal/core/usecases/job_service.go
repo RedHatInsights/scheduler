@@ -14,6 +14,7 @@ type JobRepository interface {
 	FindByID(id string) (domain.Job, error)
 	FindAll() ([]domain.Job, error)
 	FindByOrgID(orgID string) ([]domain.Job, error)
+	FindByUserID(userID string) ([]domain.Job, error)
 	Delete(id string) error
 }
 
@@ -126,6 +127,19 @@ func (s *JobService) GetJobWithOrgCheck(id string, orgID string) (domain.Job, er
 	return job, nil
 }
 
+func (s *JobService) GetJobWithUserCheck(id string, userID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	return job, nil
+}
+
 func (s *JobService) ListJobs() ([]domain.Job, error) {
 	return s.repo.FindAll()
 }
@@ -152,6 +166,26 @@ func (s *JobService) GetAllJobs(statusFilter, nameFilter string) ([]domain.Job, 
 
 func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter string) ([]domain.Job, error) {
 	jobs, err := s.repo.FindByOrgID(orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]domain.Job, 0)
+	for _, job := range jobs {
+		if statusFilter != "" && string(job.Status) != statusFilter {
+			continue
+		}
+		if nameFilter != "" && !strings.Contains(strings.ToLower(job.Name), strings.ToLower(nameFilter)) {
+			continue
+		}
+		filtered = append(filtered, job)
+	}
+
+	return filtered, nil
+}
+
+func (s *JobService) GetJobsByUserID(userID string, statusFilter, nameFilter string) ([]domain.Job, error) {
+	jobs, err := s.repo.FindByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +359,113 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	return updatedJob, nil
 }
 
+func (s *JobService) PatchJobWithUserCheck(id string, userUserID string, updates map[string]interface{}) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userUserID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	var name *string
+	var orgID *string
+	var username *string
+	var userID *string
+	var schedule *domain.Schedule
+	var payloadType *domain.PayloadType
+	var payload *interface{}
+	var status *domain.JobStatus
+
+	if v, ok := updates["name"]; ok {
+		if nameStr, ok := v.(string); ok {
+			name = &nameStr
+		}
+	}
+
+	if v, ok := updates["org_id"]; ok {
+		if orgIDStr, ok := v.(string); ok {
+			if orgIDStr == "" {
+				return domain.Job{}, domain.ErrInvalidOrgID
+			}
+			// For security, don't allow changing org_id via API
+			// Keep the job's current org_id
+			currentOrgID := job.OrgID
+			orgID = &currentOrgID
+		}
+	}
+
+	if v, ok := updates["username"]; ok {
+		if usernameStr, ok := v.(string); ok {
+			username = &usernameStr
+		}
+	}
+
+	if v, ok := updates["user_id"]; ok {
+		if _, ok := v.(string); ok {
+			// For security, don't allow changing user_id via API
+			// Always use the authenticated user's user_id
+			userID = &userUserID
+		}
+	}
+
+	if v, ok := updates["schedule"]; ok {
+		if schedStr, ok := v.(string); ok {
+			if !domain.IsValidSchedule(schedStr) {
+				return domain.Job{}, domain.ErrInvalidSchedule
+			}
+			schedVal := domain.Schedule(schedStr)
+			schedule = &schedVal
+		}
+	}
+
+	if v, ok := updates["type"]; ok {
+		if typeStr, ok := v.(string); ok {
+			if !domain.IsValidPayloadType(typeStr) {
+				return domain.Job{}, domain.ErrInvalidPayload
+			}
+			pt := domain.PayloadType(typeStr)
+			payloadType = &pt
+		}
+	}
+
+	if v, ok := updates["payload"]; ok {
+		// Payload can be any JSON value (object, array, string, number, etc.)
+		payload = &v
+	}
+
+	if v, ok := updates["status"]; ok {
+		if statusStr, ok := v.(string); ok {
+			if !domain.IsValidStatus(statusStr) {
+				return domain.Job{}, domain.ErrInvalidStatus
+			}
+			statusVal := domain.JobStatus(statusStr)
+			status = &statusVal
+		}
+	}
+
+	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
+
+	err = s.repo.Save(updatedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Update cron scheduling
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id) // Remove old schedule
+		if updatedJob.Status == domain.StatusScheduled {
+			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
+				// Log error but don't fail the update
+			}
+		}
+	}
+
+	return updatedJob, nil
+}
+
 func (s *JobService) DeleteJob(id string) error {
 	_, err := s.repo.FindByID(id)
 	if err != nil {
@@ -348,6 +489,25 @@ func (s *JobService) DeleteJobWithOrgCheck(id string, orgID string) error {
 	// Check if job belongs to the same organization
 	if job.OrgID != orgID {
 		return domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return s.repo.Delete(id)
+}
+
+func (s *JobService) DeleteJobWithUserCheck(id string, userID string) error {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.ErrJobNotFound // Don't reveal existence of job from other users
 	}
 
 	// Unschedule from cron scheduler
@@ -437,6 +597,35 @@ func (s *JobService) PauseJobWithOrgCheck(id string, orgID string) (domain.Job, 
 	return pausedJob, nil
 }
 
+func (s *JobService) PauseJobWithUserCheck(id string, userID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	if job.Status == domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobAlreadyPaused
+	}
+
+	pausedJob := job.WithStatus(domain.StatusPaused)
+	err = s.repo.Save(pausedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return pausedJob, nil
+}
+
 func (s *JobService) ResumeJob(id string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
@@ -494,6 +683,37 @@ func (s *JobService) ResumeJobWithOrgCheck(id string, orgID string) (domain.Job,
 	return resumedJob, nil
 }
 
+func (s *JobService) ResumeJobWithUserCheck(id string, userID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	if job.Status != domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobNotPaused
+	}
+
+	resumedJob := job.WithStatus(domain.StatusScheduled)
+	err = s.repo.Save(resumedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Reschedule in cron scheduler
+	if s.cronScheduler != nil {
+		if err := s.cronScheduler.ScheduleJob(resumedJob); err != nil {
+			// Log error but don't fail the resume
+		}
+	}
+
+	return resumedJob, nil
+}
+
 func (s *JobService) RunJobWithOrgCheck(id string, orgID string) error {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
@@ -503,6 +723,20 @@ func (s *JobService) RunJobWithOrgCheck(id string, orgID string) error {
 	// Check if job belongs to the same organization
 	if job.OrgID != orgID {
 		return domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	return s.RunJob(id)
+}
+
+func (s *JobService) RunJobWithUserCheck(id string, userID string) error {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.ErrJobNotFound // Don't reveal existence of job from other users
 	}
 
 	return s.RunJob(id)

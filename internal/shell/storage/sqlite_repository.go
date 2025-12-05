@@ -411,6 +411,63 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	return jobs, nil
 }
 
+func (r *SQLiteJobRepository) FindByUserID(userID string) ([]domain.Job, error) {
+	log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - retrieving jobs for user: %s", userID)
+
+	query := `
+		SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
+		FROM jobs
+		WHERE user_id = ?
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - database error: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := make([]domain.Job, 0)
+
+	for rows.Next() {
+		var job domain.Job
+		var payloadJSON string
+		var lastRunStr sql.NullString
+
+		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Type,
+			&payloadJSON, &job.Status, &lastRunStr)
+
+		if err != nil {
+			log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - scan error: %v", err)
+			return nil, err
+		}
+
+		// Unmarshal payload
+		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
+			log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - failed to unmarshal payload for job %s: %v", job.ID, err)
+			continue
+		}
+
+		// Parse last_run time
+		if lastRunStr.Valid {
+			if parsedTime, err := time.Parse(time.RFC3339, lastRunStr.String); err == nil {
+				job.LastRun = &parsedTime
+			}
+		}
+
+		jobs = append(jobs, job)
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - rows error: %v", err)
+		return nil, err
+	}
+
+	log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - found %d jobs for user %s", len(jobs), userID)
+	return jobs, nil
+}
+
 func (r *SQLiteJobRepository) Delete(id string) error {
 	log.Printf("[DEBUG] SQLiteJobRepository.Delete - deleting job: %s", id)
 

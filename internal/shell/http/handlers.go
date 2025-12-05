@@ -108,16 +108,18 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
 	statusFilter := r.URL.Query().Get("status")
 	nameFilter := r.URL.Query().Get("name")
 
-	// Only get jobs for the user's organization
-	jobs, err := h.jobService.GetJobsByOrgID(ident.Identity.OrgID, statusFilter, nameFilter)
+	// Only get jobs for the current user
+	jobs, err := h.jobService.GetJobsByUserID(userID, statusFilter, nameFilter)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -133,13 +135,15 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
-	// Only get job if it belongs to the user's organization
-	job, err := h.jobService.GetJobWithOrgCheck(id, ident.Identity.OrgID)
+	// Only get job if it belongs to the current user
+	job, err := h.jobService.GetJobWithUserCheck(id, userID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -227,8 +231,10 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
@@ -238,8 +244,8 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only patch job if it belongs to the user's organization
-	job, err := h.jobService.PatchJobWithOrgCheck(id, ident.Identity.OrgID, updates)
+	// Only patch job if it belongs to the current user
+	job, err := h.jobService.PatchJobWithUserCheck(id, userID, updates)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -263,13 +269,15 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
-	// Only delete job if it belongs to the user's organization
-	err := h.jobService.DeleteJobWithOrgCheck(id, ident.Identity.OrgID)
+	// Only delete job if it belongs to the current user
+	err := h.jobService.DeleteJobWithUserCheck(id, userID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -288,13 +296,15 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
-	// Only run job if it belongs to the user's organization
-	err := h.jobService.RunJobWithOrgCheck(id, ident.Identity.OrgID)
+	// Only run job if it belongs to the current user
+	err := h.jobService.RunJobWithUserCheck(id, userID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -313,13 +323,15 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
-	// Only pause job if it belongs to the user's organization
-	job, err := h.jobService.PauseJobWithOrgCheck(id, ident.Identity.OrgID)
+	// Only pause job if it belongs to the current user
+	job, err := h.jobService.PauseJobWithUserCheck(id, userID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -343,13 +355,15 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	userID := ident.Identity.User.UserID
+	if userID == "" {
+		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
 		return
 	}
 
-	// Only resume job if it belongs to the user's organization
-	job, err := h.jobService.ResumeJobWithOrgCheck(id, ident.Identity.OrgID)
+	// Only resume job if it belongs to the current user
+	job, err := h.jobService.ResumeJobWithUserCheck(id, userID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
