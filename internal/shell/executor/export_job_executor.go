@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -44,59 +45,19 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 		return fmt.Errorf("failed to generate identity header: %w", err)
 	}
 
-	// Cast payload to map[string]interface{}
-	details, ok := job.Payload.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("payload is not a map[string]interface{}")
+	// Marshal the payload to JSON then unmarshal into ExportRequest
+	// This preserves the payload structure exactly as provided
+	payloadJSON, err := json.Marshal(job.Payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	// Extract export configuration from job details
-	exportName, _ := details["name"].(string)
-	if exportName == "" {
-		exportName = fmt.Sprintf("Scheduled Export %s", time.Now().Format("2006-01-02 15:04:05"))
+	var req export.ExportRequest
+	if err := json.Unmarshal(payloadJSON, &req); err != nil {
+		return fmt.Errorf("failed to unmarshal payload into ExportRequest: %w", err)
 	}
 
-	formatStr, _ := details["format"].(string)
-	var format export.ExportFormat
-	switch formatStr {
-	case "csv":
-		format = export.FormatCSV
-	default:
-		format = export.FormatJSON
-	}
-
-	/*
-	   subscriptionsFilters := map[string]interface{}{
-	           "product_id": "RHEL for x86",
-	   }
-	*/
-
-	req := export.ExportRequest{
-		Name:   exportName,
-		Format: export.FormatJSON,
-		Sources: []export.Source{
-			{
-				Application: export.Application("urn:redhat:application:inventory"),
-				Resource:    "urn:redhat:application:inventory:export:systems",
-			},
-			/*
-			   {
-			           Application: export.Application("subscriptions"),
-			           Resource:    "instances",
-			           Filters:     subscriptionsFilters,
-			   },
-			*/
-		},
-	}
-
-	// Set expiration if specified
-	if expirationStr, ok := details["expiration"].(string); ok {
-		if expiration, err := time.Parse(time.RFC3339, expirationStr); err == nil {
-			req.Expiration = &expiration
-		}
-	}
-
-	log.Printf("Creating export request: %s (format: %s, sources: %d)", exportName, format, len(req.Sources))
+	log.Printf("Creating export request: %s (format: %s, sources: %d)", req.Name, req.Format, len(req.Sources))
 
 	// Create the export
 	result, err := e.exportClient.CreateExport(ctx, req, identityHeader)
@@ -106,22 +67,11 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 
 	log.Printf("Export created successfully - ID: %s, Status: %s", result.ID, result.Status)
 
-	// Optionally wait for completion if specified in details
+	// Wait for completion using configuration values for polling
 	log.Printf("Waiting for export %s to complete...", result.ID)
 
-	// Use configuration values for polling
 	maxRetries := e.config.ExportService.PollMaxRetries
 	pollInterval := e.config.ExportService.PollInterval
-
-	// Allow job details to override poll settings
-	if maxRetriesVal, ok := details["poll_max_retries"].(float64); ok {
-		maxRetries = int(maxRetriesVal)
-	}
-	if pollIntervalStr, ok := details["poll_interval"].(string); ok {
-		if parsed, err := time.ParseDuration(pollIntervalStr); err == nil {
-			pollInterval = parsed
-		}
-	}
 
 	log.Printf("Polling export with maxRetries=%d, pollInterval=%s", maxRetries, pollInterval)
 
