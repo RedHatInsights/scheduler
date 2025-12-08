@@ -86,17 +86,19 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		context["error_message"] = notification.ErrorMsg
 	}
 
-	// Determine event type based on status
-	eventType := "export-completed"
-	if notification.Status == "failed" {
-		eventType = "export-failed"
-	}
+	/*
+		// Determine event type based on status
+		eventType := "export-completed"
+		if notification.Status == "failed" {
+			eventType = "export-failed"
+		}
+	*/
 
 	return &NotificationMessage{
 		Version:     "v1.2.0",
-		Bundle:      "rhel",
-		Application: "insights-scheduler",
-		EventType:   eventType,
+		Bundle:      "my-bundle",     // "console"
+		Application: "my-app",        //"insights-scheduler",
+		EventType:   "my-event-type", // eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		AccountID:   notification.AccountID,
 		OrgID:       notification.OrgID,
