@@ -96,9 +96,9 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 
 	return &NotificationMessage{
 		Version:     "v1.2.0",
-		Bundle:      "my-bundle",     // "console"
-		Application: "my-app",        //"insights-scheduler",
-		EventType:   "my-event-type", // eventType,
+		Bundle:      "console",
+		Application: "integrations",     //"insights-scheduler",
+		EventType:   "integration-test", // eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		AccountID:   notification.AccountID,
 		OrgID:       notification.OrgID,
