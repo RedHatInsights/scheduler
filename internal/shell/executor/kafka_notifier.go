@@ -79,6 +79,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		"job_id":       notification.JobID,
 		"status":       notification.Status,
 		"download_url": notification.DownloadURL,
+		"name":         "ima-test-from-scheduler",
 	}
 
 	// Add error message if present
