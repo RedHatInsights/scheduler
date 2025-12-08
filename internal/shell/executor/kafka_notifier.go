@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
+
 	"insights-scheduler/internal/shell/messaging"
 )
 
@@ -14,6 +16,7 @@ import (
 // Based on the notifications-backend message format
 type NotificationMessage struct {
 	Version     string                 `json:"version"`
+	ID          string                 `json:"id"`
 	Bundle      string                 `json:"bundle"`
 	Application string                 `json:"application"`
 	EventType   string                 `json:"event_type"`
@@ -75,11 +78,11 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 // buildPlatformNotification creates a platform notification message from an export completion notification
 func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification) *NotificationMessage {
 	context := map[string]interface{}{
-		"export_id":    notification.ExportID,
-		"job_id":       notification.JobID,
+		"export_id": notification.ExportID,
+		"job_id":    notification.JobID,
+		// "run_id":  FIXME:  include the run-id
 		"status":       notification.Status,
 		"download_url": notification.DownloadURL,
-		"name":         "ima-test-from-scheduler",
 	}
 
 	// Add error message if present
@@ -95,8 +98,55 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		}
 	*/
 
+	notificationsID := uuid.New().String()
+
+	payload := struct {
+		Metadata interface{} `json:"metadata"`
+		Message  string      `json:"message"`
+	}{
+		//Metadata: interface{}{},
+		Message: "ima test message",
+	}
+	events := []interface{}{payload}
+
+	recipient := struct {
+		OnlyAdmins     bool     `json:"only_admins"`
+		IgnoreUserPref bool     `json:"ignore_user_preferences"`
+		Users          []string `json:"users"`
+	}{
+		OnlyAdmins:     false,
+		IgnoreUserPref: false,
+		Users:          []string{"user1", "user2"},
+	}
+	recipients := []interface{}{recipient}
+
+	/*
+	   "events": [
+	     {
+	       "metadata": {},
+	       "payload": {
+	         "any" : "thing",
+	         "you": 1,
+	         "want" : "here"
+	       }
+	     }
+	   ]
+
+	   "recipients": [
+	     {
+	       "only_admins": false,
+	       "ignore_user_preferences": false,
+	       "users": [
+	         "user1",
+	         "user2"
+	       ]
+	     }
+	   ]
+	*/
+
 	return &NotificationMessage{
 		Version:     "v1.2.0",
+		ID:          notificationsID,
 		Bundle:      "console",
 		Application: "integrations",     //"insights-scheduler",
 		EventType:   "integration-test", // eventType,
@@ -104,7 +154,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		AccountID:   notification.AccountID,
 		OrgID:       notification.OrgID,
 		Context:     context,
-		Events:      []interface{}{},
-		Recipients:  []interface{}{},
+		Events:      events,
+		Recipients:  recipients,
 	}
 }
