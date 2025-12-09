@@ -83,10 +83,11 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		"export_id": notification.ExportID,
 		"job_id":    notification.JobID,
 		// "run_id":  FIXME:  include the run-id
-		"username":     notification.Username,
-		"user_id":      notification.UserID,
-		"status":       notification.Status,
-		"download_url": notification.DownloadURL,
+		"username":         notification.Username,
+		"user_id":          notification.UserID,
+		"status":           notification.Status,
+		"download_url":     notification.DownloadURL,
+		"integration-uuid": uuid.New().String(),
 	}
 
 	// Add error message if present
