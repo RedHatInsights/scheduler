@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
+
 	"insights-scheduler/internal/shell/messaging"
 )
 
@@ -14,6 +16,7 @@ import (
 // Based on the notifications-backend message format
 type NotificationMessage struct {
 	Version     string                 `json:"version"`
+	ID          string                 `json:"id"`
 	Bundle      string                 `json:"bundle"`
 	Application string                 `json:"application"`
 	EventType   string                 `json:"event_type"`
@@ -51,6 +54,8 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
+	log.Printf("notifications message: \n\n%s\n", string(messageBytes))
+
 	// Build headers for Kafka message
 	headers := map[string]string{
 		"message-type": "platform-notification",
@@ -75,10 +80,14 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 // buildPlatformNotification creates a platform notification message from an export completion notification
 func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification) *NotificationMessage {
 	context := map[string]interface{}{
-		"export_id":    notification.ExportID,
-		"job_id":       notification.JobID,
-		"status":       notification.Status,
-		"download_url": notification.DownloadURL,
+		"export_id": notification.ExportID,
+		"job_id":    notification.JobID,
+		// "run_id":  FIXME:  include the run-id
+		"username":         notification.Username,
+		"user_id":          notification.UserID,
+		"status":           notification.Status,
+		"download_url":     notification.DownloadURL,
+		"integration-uuid": uuid.New().String(), // FIXME: specific to the the TestEventHelper?
 	}
 
 	// Add error message if present
@@ -86,22 +95,79 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		context["error_message"] = notification.ErrorMsg
 	}
 
-	// Determine event type based on status
-	eventType := "export-completed"
-	if notification.Status == "failed" {
-		eventType = "export-failed"
+	/*
+		// Determine event type based on status
+		eventType := "export-completed"
+		if notification.Status == "failed" {
+			eventType = "export-failed"
+		}
+	*/
+
+	notificationsID := uuid.New().String()
+
+	payload := struct {
+		JobStatus   string `json:"job_status"`
+		DownloadUrl string `json:"download_url"`
+	}{
+		JobStatus:   notification.Status,
+		DownloadUrl: notification.DownloadURL,
 	}
+
+	event := struct {
+		Metadata interface{} `json:"metadata,omitempty"`
+		Payload  interface{} `json:"payload"`
+	}{
+		//Metadata: interface{}{},
+		Payload: payload,
+	}
+	events := []interface{}{event}
+
+	recipient := struct {
+		OnlyAdmins     bool     `json:"only_admins"`
+		IgnoreUserPref bool     `json:"ignore_user_preferences"`
+		Users          []string `json:"users"`
+	}{
+		OnlyAdmins:     false,
+		IgnoreUserPref: false,
+		Users:          []string{notification.UserID},
+	}
+	recipients := []interface{}{recipient}
+
+	/*
+	   "events": [
+	     {
+	       "metadata": {},
+	       "payload": {
+	         "any" : "thing",
+	         "you": 1,
+	         "want" : "here"
+	       }
+	     }
+	   ]
+
+	   "recipients": [
+	     {
+	       "only_admins": false,
+	       "ignore_user_preferences": false,
+	       "users": [
+	         "user1",
+	         "user2"
+	       ]
+	     }
+	   ]
+	*/
 
 	return &NotificationMessage{
 		Version:     "v1.2.0",
-		Bundle:      "rhel",
-		Application: "insights-scheduler",
-		EventType:   eventType,
+		ID:          notificationsID,
+		Bundle:      "console",
+		Application: "integrations",     //"insights-scheduler",
+		EventType:   "integration-test", // eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		AccountID:   notification.AccountID,
 		OrgID:       notification.OrgID,
 		Context:     context,
-		Events:      []interface{}{},
-		Recipients:  []interface{}{},
+		Events:      events,
+		Recipients:  recipients,
 	}
 }
