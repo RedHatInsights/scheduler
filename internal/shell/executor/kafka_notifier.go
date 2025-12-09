@@ -54,6 +54,8 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
+	log.Printf("notifications message: \n\n%s\n", string(messageBytes))
+
 	// Build headers for Kafka message
 	headers := map[string]string{
 		"message-type": "platform-notification",
