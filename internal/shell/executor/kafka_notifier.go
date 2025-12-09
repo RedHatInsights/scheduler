@@ -87,7 +87,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		"user_id":          notification.UserID,
 		"status":           notification.Status,
 		"download_url":     notification.DownloadURL,
-		"integration-uuid": uuid.New().String(),
+		"integration-uuid": uuid.New().String(), // FIXME: specific to the the TestEventHelper?
 	}
 
 	// Add error message if present
