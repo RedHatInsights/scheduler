@@ -105,13 +105,21 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 	notificationsID := uuid.New().String()
 
 	payload := struct {
+		JobStatus   string `json:"job_status"`
+		DownloadUrl string `json:"download_url"`
+	}{
+		JobStatus:   notification.Status,
+		DownloadUrl: notification.DownloadURL,
+	}
+
+	event := struct {
 		Metadata interface{} `json:"metadata"`
 		Payload  interface{} `json:"payload"`
 	}{
 		//Metadata: interface{}{},
-		Payload: "ima test message",
+		Payload: payload,
 	}
-	events := []interface{}{payload}
+	events := []interface{}{event}
 
 	recipient := struct {
 		OnlyAdmins     bool     `json:"only_admins"`
