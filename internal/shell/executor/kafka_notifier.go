@@ -113,7 +113,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 	}
 
 	event := struct {
-		Metadata interface{} `json:"metadata"`
+		Metadata interface{} `json:"metadata,omitempty"`
 		Payload  interface{} `json:"payload"`
 	}{
 		//Metadata: interface{}{},
