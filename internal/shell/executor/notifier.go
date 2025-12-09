@@ -8,6 +8,8 @@ type ExportCompletionNotification struct {
 	JobID       string
 	AccountID   string
 	OrgID       string
+	Username    string
+	UserID      string
 	Status      string
 	DownloadURL string
 	ErrorMsg    string

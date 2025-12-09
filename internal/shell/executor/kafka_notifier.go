@@ -81,6 +81,8 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		"export_id": notification.ExportID,
 		"job_id":    notification.JobID,
 		// "run_id":  FIXME:  include the run-id
+		"username":     notification.Username,
+		"user_id":      notification.UserID,
 		"status":       notification.Status,
 		"download_url": notification.DownloadURL,
 	}
@@ -116,7 +118,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 	}{
 		OnlyAdmins:     false,
 		IgnoreUserPref: false,
-		Users:          []string{"user1", "user2"},
+		Users:          []string{notification.UserID},
 	}
 	recipients := []interface{}{recipient}
 
