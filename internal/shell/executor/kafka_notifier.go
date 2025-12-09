@@ -104,10 +104,10 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 
 	payload := struct {
 		Metadata interface{} `json:"metadata"`
-		Message  string      `json:"message"`
+		Payload  interface{} `json:"payload"`
 	}{
 		//Metadata: interface{}{},
-		Message: "ima test message",
+		Payload: "ima test message",
 	}
 	events := []interface{}{payload}
 
