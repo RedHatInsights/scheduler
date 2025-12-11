@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/v2/identity"
 )
 
 // BopUserValidator implements UserValidator by calling an external HTTP service

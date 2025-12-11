@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/v2/identity"
 )
 
 // UserValidator defines the interface for validating users and generating identity headers

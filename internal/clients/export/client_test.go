@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/v2/identity"
 
 	"insights-scheduler/internal/identity"
 )
