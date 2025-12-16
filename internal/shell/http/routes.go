@@ -13,7 +13,7 @@ func SetupRoutes(jobService *usecases.JobService, jobRunService *usecases.JobRun
 	runHandler := NewJobRunHandler(jobRunService)
 
 	// Apply identity middleware to all API routes
-	api := router.PathPrefix("/api/v1").Subrouter()
+	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
 	api.Use(identity.EnforceIdentity)
 
 	// Job CRUD operations
