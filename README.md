@@ -32,18 +32,23 @@ The service will start on `http://localhost:5000` with the scheduler running in 
 
 ### Job Management
 
-- `POST /api/v1/jobs` - Create a new job
-- `GET /api/v1/jobs` - Get all jobs (supports ?status= and ?name= filters)
-- `GET /api/v1/jobs/{id}` - Get specific job
-- `PUT /api/v1/jobs/{id}` - Update job (full replacement)
-- `PATCH /api/v1/jobs/{id}` - Partial update job
-- `DELETE /api/v1/jobs/{id}` - Delete job
+- `POST /api/scheduler/v1/jobs` - Create a new job
+- `GET /api/scheduler/v1/jobs` - Get all jobs (supports ?status= and ?name= filters)
+- `GET /api/scheduler/v1/jobs/{id}` - Get specific job
+- `PUT /api/scheduler/v1/jobs/{id}` - Update job (full replacement)
+- `PATCH /api/scheduler/v1/jobs/{id}` - Partial update job
+- `DELETE /api/scheduler/v1/jobs/{id}` - Delete job
 
 ### Job Control
 
-- `POST /api/v1/jobs/{id}/run` - Run job immediately
-- `POST /api/v1/jobs/{id}/pause` - Pause job
-- `POST /api/v1/jobs/{id}/resume` - Resume paused job
+- `POST /api/scheduler/v1/jobs/{id}/run` - Run job immediately
+- `POST /api/scheduler/v1/jobs/{id}/pause` - Pause job
+- `POST /api/scheduler/v1/jobs/{id}/resume` - Resume paused job
+
+### Job Runs
+
+- `GET /api/scheduler/v1/jobs/{id}/runs` - List all runs for a job
+- `GET /api/scheduler/v1/jobs/{id}/runs/{run_id}` - Get specific run details
 
 ## Job Schema
 
@@ -55,13 +60,13 @@ Jobs are authenticated via the `X-Rh-Identity` header. The `org_id`, `username`,
   "name": "string",
   "schedule": "string (5-field cron expression)",
   "type": "string (message|http_request|command|export)",
-  "payload": {
-    "details": {}
-  },
+  "payload": {},
   "status": "string (scheduled|running|paused|failed)",
   "last_run": "string (ISO timestamp)"
 }
 ```
+
+**Note**: The `payload` field can be any valid JSON value (object, array, string, number, boolean, or null). Its structure depends on the job type.
 
 ## Schedule Formats
 
