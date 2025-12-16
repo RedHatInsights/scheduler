@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/v2/identity"
 )
 
 // BopUserValidator implements UserValidator by calling an external HTTP service
@@ -150,7 +150,7 @@ func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, us
 			Internal: platformIdentity.Internal{
 				OrgID: validationResp[0].OrgID,
 			},
-			User: platformIdentity.User{
+			User: &platformIdentity.User{
 				Username: validationResp[0].Username,
 				UserID:   validationResp[0].ID,
 				Email:    validationResp[0].Email,
