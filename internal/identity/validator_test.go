@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	platformIdentity "github.com/redhatinsights/platform-go-middlewares/identity"
+	platformIdentity "github.com/redhatinsights/platform-go-middlewares/v2/identity"
 )
 
 func TestFakeUserValidator_GenerateIdentityHeader(t *testing.T) {
