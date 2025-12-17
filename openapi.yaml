@@ -26,7 +26,7 @@ info:
   contact:
     name: Red Hat Insights
 servers:
-  - url: http://localhost:5000/api/v1
+  - url: http://localhost:5000/api/scheduler/v1
     description: Local development server
   - url: https://console.redhat.com/api/scheduler/v1
     description: Production server
