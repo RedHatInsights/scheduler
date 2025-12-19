@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -37,6 +38,8 @@ type JobExecutor interface {
 type CronScheduler interface {
 	ScheduleJob(job domain.Job) error
 	UnscheduleJob(jobID string)
+	Start(ctx context.Context)
+	Stop()
 }
 
 type JobService struct {

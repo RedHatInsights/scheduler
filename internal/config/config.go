@@ -30,8 +30,12 @@ type Config struct {
 	// BOP service configuration
 	Bop BopConfig `json:"bop"`
 
+	// Redis configuration (for distributed coordination and optional job storage)
+	Redis RedisConfig `json:"redis"`
+
 	UserValidatorImpl         string
 	JobCompletionNotifierImpl string
+	StorageBackend            string // "sqlite", "postgres", or "redis"
 }
 
 // ServerConfig contains HTTP server settings
@@ -216,6 +220,39 @@ type BopConfig struct {
 	EphemeralMode bool `json:"ephemeral_mode"`
 }
 
+// RedisConfig contains Redis connection settings
+type RedisConfig struct {
+	// Enabled indicates if Redis integration is active
+	Enabled bool `json:"enabled"`
+
+	// Address is the Redis server address (host:port)
+	Address string `json:"address"`
+
+	// Password for Redis authentication
+	Password string `json:"password"`
+
+	// DB is the Redis database number
+	DB int `json:"db"`
+
+	// PoolSize is the maximum number of socket connections
+	PoolSize int `json:"pool_size"`
+
+	// MinIdleConns is the minimum number of idle connections
+	MinIdleConns int `json:"min_idle_conns"`
+
+	// MaxRetries is the maximum number of retries before giving up
+	MaxRetries int `json:"max_retries"`
+
+	// LockTTL is the default TTL for distributed locks
+	LockTTL time.Duration `json:"lock_ttl"`
+
+	// TLS configuration
+	TLS TLSConfig `json:"tls"`
+
+	// KeyPrefix is prepended to all Redis keys (for namespace isolation)
+	KeyPrefix string `json:"key_prefix"`
+}
+
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
 func LoadConfig() (*Config, error) {
 	var clowderConfig *clowder.AppConfig
@@ -251,8 +288,12 @@ func LoadConfig() (*Config, error) {
 	// Load BOP configuration
 	config.Bop = loadBopConfig()
 
+	// Load Redis configuration
+	config.Redis = loadRedisConfig()
+
 	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
 	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
+	config.StorageBackend = getEnv("STORAGE_BACKEND", "sqlite")
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
@@ -470,6 +511,32 @@ func getOpenshiftNamespace() (string, error) {
 	return namespace, nil
 }
 
+// loadRedisConfig loads Redis configuration from environment
+func loadRedisConfig() RedisConfig {
+	address := getEnv("REDIS_ADDRESS", "localhost:6379")
+	password := getEnv("REDIS_PASSWORD", "")
+	enabled := getEnvAsBool("REDIS_ENABLED", false)
+
+	return RedisConfig{
+		Enabled:      enabled,
+		Address:      address,
+		Password:     password,
+		DB:           getEnvAsInt("REDIS_DB", 0),
+		PoolSize:     getEnvAsInt("REDIS_POOL_SIZE", 10),
+		MinIdleConns: getEnvAsInt("REDIS_MIN_IDLE_CONNS", 2),
+		MaxRetries:   getEnvAsInt("REDIS_MAX_RETRIES", 3),
+		LockTTL:      getEnvAsDuration("REDIS_LOCK_TTL", 30*time.Second),
+		TLS: TLSConfig{
+			Enabled:            getEnvAsBool("REDIS_TLS_ENABLED", false),
+			InsecureSkipVerify: getEnvAsBool("REDIS_TLS_INSECURE_SKIP_VERIFY", false),
+			CertFile:           getEnv("REDIS_TLS_CERT_FILE", ""),
+			KeyFile:            getEnv("REDIS_TLS_KEY_FILE", ""),
+			CAFile:             getEnv("REDIS_TLS_CA_FILE", ""),
+		},
+		KeyPrefix: getEnv("REDIS_KEY_PREFIX", "scheduler:"),
+	}
+}
+
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
 	// Validate server ports
@@ -523,6 +590,18 @@ func (c *Config) Validate() error {
 		if c.Bop.InsightsEnv == "" {
 			return fmt.Errorf("BOP insights environment is required when BOP is enabled")
 		}
+	}
+
+	// Validate Redis configuration (only if enabled)
+	if c.Redis.Enabled {
+		if c.Redis.Address == "" {
+			return fmt.Errorf("Redis address is required when Redis is enabled")
+		}
+	}
+
+	// Validate storage backend
+	if c.StorageBackend != "" && c.StorageBackend != "sqlite" && c.StorageBackend != "postgres" && c.StorageBackend != "redis" {
+		return fmt.Errorf("invalid storage backend: %s (must be sqlite, postgres, or redis)", c.StorageBackend)
 	}
 
 	return nil

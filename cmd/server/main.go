@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -29,16 +30,31 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	// Generate unique instance ID for distributed coordination
+	hostname, _ := os.Hostname()
+	instanceID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
+
 	log.Printf("Starting Insights Scheduler with configuration:")
+	log.Printf("  Instance ID: %s", instanceID)
 	log.Printf("  Server: %s:%d (private: %d)", cfg.Server.Host, cfg.Server.Port, cfg.Server.PrivatePort)
+	log.Printf("  Storage Backend: %s", cfg.StorageBackend)
 	log.Printf("  Database Type: %s", cfg.Database.Type)
+	log.Printf("  Redis: enabled=%t, address=%s", cfg.Redis.Enabled, cfg.Redis.Address)
 	log.Printf("  Kafka: enabled=%t, brokers=%v", cfg.Kafka.Enabled, cfg.Kafka.Brokers)
 	log.Printf("  Metrics: enabled=%t, port=%d", cfg.Metrics.Enabled, cfg.Metrics.Port)
 
 	// Create imperative shell components
 	var repo usecases.JobRepository
 	var runRepo usecases.JobRunRepository
-	switch cfg.Database.Type {
+	var lockManager executor.LockManager
+
+	// Determine which storage backend to use
+	storageBackend := cfg.StorageBackend
+	if storageBackend == "" {
+		storageBackend = cfg.Database.Type // Fallback to database type
+	}
+
+	switch storageBackend {
 	case "sqlite":
 		sqliteRepo, err := storage.NewSQLiteJobRepository(cfg.Database.Path)
 		if err != nil {
@@ -61,10 +77,47 @@ func main() {
 				log.Printf("Error closing job run repository: %v", closeErr)
 			}
 		}()
+
+		log.Printf("SQLite storage initialized successfully")
+
+		// If Redis is enabled, use it for distributed locking even with SQLite storage
+		if cfg.Redis.Enabled {
+			redisClient, err := storage.NewRedisClient(cfg.Redis)
+			if err != nil {
+				log.Fatalf("Failed to initialize Redis client: %v", err)
+			}
+			defer redisClient.Close()
+
+			lockManager = storage.NewRedisLockManager(redisClient, cfg.Redis.KeyPrefix, cfg.Redis.LockTTL, instanceID)
+			log.Printf("Redis lock manager initialized for distributed coordination")
+		}
+
+	case "redis":
+		if !cfg.Redis.Enabled {
+			log.Fatalf("Redis storage backend requires Redis to be enabled")
+		}
+
+		redisClient, err := storage.NewRedisClient(cfg.Redis)
+		if err != nil {
+			log.Fatalf("Failed to initialize Redis client: %v", err)
+		}
+		defer redisClient.Close()
+
+		repo = storage.NewRedisJobRepository(redisClient, cfg.Redis.KeyPrefix)
+		runRepo = storage.NewRedisJobRunRepository(redisClient, cfg.Redis.KeyPrefix)
+		lockManager = storage.NewRedisLockManager(redisClient, cfg.Redis.KeyPrefix, cfg.Redis.LockTTL, instanceID)
+
+		log.Printf("Redis storage and lock manager initialized successfully")
+
 	default:
-		log.Fatalf("Unsupported database type: %s", cfg.Database.Type)
+		log.Fatalf("Unsupported storage backend: %s (must be sqlite or redis)", storageBackend)
 	}
-	log.Printf("Database initialized successfully")
+
+	if lockManager != nil {
+		log.Printf("Distributed locking enabled for instance: %s", instanceID)
+	} else {
+		log.Printf("Running in single-instance mode (no distributed locking)")
+	}
 
 	var userValidator identity.UserValidator
 	switch cfg.UserValidatorImpl {
@@ -126,17 +179,43 @@ func main() {
 	}
 
 	// Initialize job executor with map of executors
-	jobExecutor := executor.NewJobExecutor(executors, runRepo)
+	baseExecutor := executor.NewJobExecutor(executors, runRepo)
+
+	// Wrap with distributed executor if lock manager is available
+	var jobExecutor usecases.JobExecutor
+	if lockManager != nil {
+		jobExecutor = executor.NewDistributedJobExecutor(baseExecutor, lockManager, instanceID)
+		log.Printf("Job executor wrapped with distributed locking")
+	} else {
+		jobExecutor = baseExecutor
+	}
 
 	// Create functional core service
 	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
-	// Create cron scheduler
-	cronScheduler := scheduler.NewCronScheduler(jobService)
+	// Create scheduler based on storage backend
+	var jobScheduler usecases.CronScheduler
+	if storageBackend == "redis" && cfg.Redis.Enabled {
+		// Use polling scheduler with Redis ZSET for distributed scheduling
+		redisClient, err := storage.NewRedisClient(cfg.Redis)
+		if err != nil {
+			log.Fatalf("Failed to initialize Redis client for scheduler: %v", err)
+		}
+		defer redisClient.Close()
 
-	// Connect job service to cron scheduler
-	jobService.SetCronScheduler(cronScheduler)
+		jobQueue := storage.NewRedisJobQueue(redisClient, cfg.Redis.KeyPrefix)
+		pollInterval := 5 * time.Second // Poll every 5 seconds
+		jobScheduler = scheduler.NewPollingScheduler(jobService, jobQueue, pollInterval, instanceID)
+		log.Printf("Using polling scheduler with Redis ZSET (poll interval: %v)", pollInterval)
+	} else {
+		// Use cron scheduler for SQLite (robfig/cron based)
+		jobScheduler = scheduler.NewCronScheduler(jobService)
+		log.Printf("Using cron scheduler (robfig/cron based)")
+	}
+
+	// Connect job service to scheduler
+	jobService.SetCronScheduler(jobScheduler)
 
 	// Setup HTTP routes
 	router := httpShell.SetupRoutes(jobService, jobRunService)
@@ -175,8 +254,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start cron scheduler
-	go cronScheduler.Start(ctx)
+	// Start scheduler
+	go jobScheduler.Start(ctx)
 
 	// Start HTTP server
 	go func() {
@@ -194,7 +273,7 @@ func main() {
 	log.Println("Shutting down server...")
 
 	// Stop scheduler
-	cronScheduler.Stop()
+	jobScheduler.Stop()
 
 	// Shutdown HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
