@@ -1,0 +1,61 @@
+# Multi-stage build for Worker pod
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+
+# Set working directory
+WORKDIR /opt/app-root/src
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the Worker application
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o scheduler-worker cmd/worker/main.go
+
+# Final stage - minimal runtime image
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+# Install ca-certificates for HTTPS calls and sqlite for storage
+RUN microdnf update -y && \
+    microdnf install -y ca-certificates sqlite curl && \
+    microdnf clean all
+
+# Create non-root user
+RUN groupadd -r scheduler && useradd -r -g scheduler -u 1001 scheduler
+
+# Create data directory
+RUN mkdir -p /data && chown scheduler:scheduler /data
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /opt/app-root/src/scheduler-worker .
+
+# Change ownership of the binary
+RUN chown scheduler:scheduler scheduler-worker
+
+# Switch to non-root user
+USER 1001
+
+# Expose metrics port only
+EXPOSE 8080
+
+# Health check for metrics endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8080/metrics || exit 1
+
+# Set environment variables
+ENV DB_PATH=/data/jobs.db
+ENV METRICS_ENABLED=true
+ENV METRICS_PORT=8080
+ENV REDIS_ENABLED=true
+ENV USER_VALIDATOR_IMPL=fake
+ENV JOB_COMPLETION_NOTIFIER_IMPL=null
+
+# Run the Worker application
+CMD ["./scheduler-worker"]

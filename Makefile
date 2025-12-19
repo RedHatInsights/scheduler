@@ -153,3 +153,9 @@ help:
 	@echo "  docker-compose-down - Stop docker-compose services"
 	@echo "  docker-clean        - Clean Docker artifacts"
 	@echo "  help                - Show this help message"
+
+ugh:
+	cd cmd/worker/ && go build -o worker
+	cd cmd/api/ && go build -o api
+	cd cmd/scheduler/ && go build -o scheduler
+
