@@ -545,3 +545,138 @@ func (l *RedisLockManager) IsLocked(jobID string) (bool, error) {
 
 	return exists > 0, nil
 }
+
+// RedisWorkQueue manages a work queue using Redis LIST
+// This is used for the 3-pod architecture where scheduler pods push jobs to a queue
+// and worker pods consume from the queue
+type RedisWorkQueue struct {
+	client    *redis.Client
+	ctx       context.Context
+	keyPrefix string
+}
+
+// NewRedisWorkQueue creates a new Redis-based work queue
+func NewRedisWorkQueue(client *redis.Client, keyPrefix string) *RedisWorkQueue {
+	return &RedisWorkQueue{
+		client:    client,
+		ctx:       context.Background(),
+		keyPrefix: keyPrefix,
+	}
+}
+
+// workQueueKey returns the Redis key for the work queue LIST
+func (q *RedisWorkQueue) workQueueKey() string {
+	return fmt.Sprintf("%swork_queue", q.keyPrefix)
+}
+
+// processingQueueKey returns the Redis key for the processing queue LIST (for reliability)
+func (q *RedisWorkQueue) processingQueueKey() string {
+	return fmt.Sprintf("%sprocessing_queue", q.keyPrefix)
+}
+
+// PushJob adds a job to the work queue
+func (q *RedisWorkQueue) PushJob(jobID string) error {
+	err := q.client.LPush(q.ctx, q.workQueueKey(), jobID).Err()
+	if err != nil {
+		return fmt.Errorf("failed to push job to work queue: %w", err)
+	}
+	return nil
+}
+
+// PopJob retrieves the next job from the work queue (blocking with timeout)
+// Returns empty string if timeout occurs
+func (q *RedisWorkQueue) PopJob(timeout time.Duration) (string, error) {
+	result, err := q.client.BRPopLPush(q.ctx, q.workQueueKey(), q.processingQueueKey(), timeout).Result()
+	if err == redis.Nil {
+		// Timeout occurred, no job available
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to pop job from work queue: %w", err)
+	}
+	return result, nil
+}
+
+// CompleteJob removes a job from the processing queue after successful execution
+func (q *RedisWorkQueue) CompleteJob(jobID string) error {
+	err := q.client.LRem(q.ctx, q.processingQueueKey(), 1, jobID).Err()
+	if err != nil {
+		return fmt.Errorf("failed to complete job: %w", err)
+	}
+	return nil
+}
+
+// RequeueProcessingJobs moves all jobs from processing queue back to work queue
+// This is used during startup to handle jobs that were being processed when workers crashed
+func (q *RedisWorkQueue) RequeueProcessingJobs() (int, error) {
+	count := 0
+	for {
+		jobID, err := q.client.RPop(q.ctx, q.processingQueueKey()).Result()
+		if err == redis.Nil {
+			// Processing queue is empty
+			break
+		}
+		if err != nil {
+			return count, fmt.Errorf("failed to requeue processing jobs: %w", err)
+		}
+
+		// Push back to work queue
+		if err := q.PushJob(jobID); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
+}
+
+// GetQueueLength returns the number of jobs in the work queue
+func (q *RedisWorkQueue) GetQueueLength() (int64, error) {
+	length, err := q.client.LLen(q.ctx, q.workQueueKey()).Result()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get queue length: %w", err)
+	}
+	return length, nil
+}
+
+// GetProcessingLength returns the number of jobs currently being processed
+func (q *RedisWorkQueue) GetProcessingLength() (int64, error) {
+	length, err := q.client.LLen(q.ctx, q.processingQueueKey()).Result()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get processing queue length: %w", err)
+	}
+	return length, nil
+}
+
+// MoveJobToQueue atomically moves a job from the scheduled ZSET to the work queue
+// This ensures idempotent queue operations when multiple scheduler pods are running
+// Returns true if the job was moved, false if it was already removed from ZSET
+func (q *RedisWorkQueue) MoveJobToQueue(jobID string, scheduledJobsKey string) (bool, error) {
+	// Lua script for atomic ZREM + LPUSH
+	script := `
+		local zset_key = KEYS[1]
+		local list_key = KEYS[2]
+		local job_id = ARGV[1]
+
+		-- Try to remove from ZSET
+		local removed = redis.call("ZREM", zset_key, job_id)
+
+		if removed == 1 then
+			-- Job was in ZSET, add to LIST
+			redis.call("LPUSH", list_key, job_id)
+			return 1
+		else
+			-- Job was already removed (another scheduler got it)
+			return 0
+		end
+	`
+
+	result, err := q.client.Eval(q.ctx, script,
+		[]string{scheduledJobsKey, q.workQueueKey()},
+		jobID).Result()
+
+	if err != nil {
+		return false, fmt.Errorf("failed to move job to queue: %w", err)
+	}
+
+	return result.(int64) == 1, nil
+}

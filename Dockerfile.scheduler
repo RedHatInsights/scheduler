@@ -1,0 +1,55 @@
+# Multi-stage build for Scheduler pod
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+
+# Set working directory
+WORKDIR /opt/app-root/src
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the Scheduler application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o scheduler-pod cmd/scheduler/main.go
+
+# Final stage - minimal runtime image
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+# Install ca-certificates for HTTPS calls (no sqlite needed for scheduler)
+RUN microdnf update -y && \
+    microdnf install -y ca-certificates && \
+    microdnf clean all
+
+# Create non-root user
+RUN groupadd -r scheduler && useradd -r -g scheduler -u 1001 scheduler
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /opt/app-root/src/scheduler-pod .
+
+# Change ownership of the binary
+RUN chown scheduler:scheduler scheduler-pod
+
+# Switch to non-root user
+USER 1001
+
+# Expose metrics port only
+EXPOSE 8080
+
+# Health check for metrics endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8080/metrics || exit 1
+
+# Set environment variables
+ENV METRICS_ENABLED=true
+ENV METRICS_PORT=8080
+ENV REDIS_ENABLED=true
+
+# Run the Scheduler application
+CMD ["./scheduler-pod"]
