@@ -91,6 +91,12 @@ type DatabaseConfig struct {
 	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
 }
 
+// ConnectionString returns a PostgreSQL connection string
+func (d *DatabaseConfig) ConnectionString() string {
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		d.Host, d.Port, d.Username, d.Password, d.Name, d.SSLMode)
+}
+
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
 	// Enabled indicates if Kafka integration is active

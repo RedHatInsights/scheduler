@@ -16,10 +16,9 @@ objects:
       - export-service
     testing:
       iqePlugin: insights-scheduler
-    inMemoryDb: false
-    #database:
-    #   name: insights-scheduler
-    #   version: 12
+    database:
+      name: insights-scheduler
+      version: 15
     kafkaTopics:
     - replicas: 3
       partitions: 16
@@ -78,8 +77,6 @@ objects:
           value: "5"
         - name: DB_CONNECTION_MAX_LIFETIME
           value: 5m
-        - name: DB_PATH
-          value: "/tmp/jobs.db"
         - name: KAFKA_CLIENT_ID
           value: insights-scheduler
         - name: KAFKA_TIMEOUT

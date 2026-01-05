@@ -61,6 +61,29 @@ func main() {
 				log.Printf("Error closing job run repository: %v", closeErr)
 			}
 		}()
+	case "postgres", "postgresql":
+		connStr := cfg.Database.ConnectionString()
+		postgresRepo, err := storage.NewPostgresJobRepository(connStr)
+		if err != nil {
+			log.Fatalf("Failed to initialize PostgreSQL database: %v", err)
+		}
+		repo = postgresRepo
+		defer func() {
+			if closeErr := postgresRepo.Close(); closeErr != nil {
+				log.Printf("Error closing database: %v", closeErr)
+			}
+		}()
+
+		postgresRunRepo, err := storage.NewPostgresJobRunRepository(connStr)
+		if err != nil {
+			log.Fatalf("Failed to initialize PostgreSQL job run repository: %v", err)
+		}
+		runRepo = postgresRunRepo
+		defer func() {
+			if closeErr := postgresRunRepo.Close(); closeErr != nil {
+				log.Printf("Error closing job run repository: %v", closeErr)
+			}
+		}()
 	default:
 		log.Fatalf("Unsupported database type: %s", cfg.Database.Type)
 	}
