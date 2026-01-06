@@ -62,8 +62,7 @@ func main() {
 			}
 		}()
 	case "postgres", "postgresql":
-		connStr := cfg.Database.ConnectionString()
-		postgresRepo, err := storage.NewPostgresJobRepository(connStr)
+		postgresRepo, err := storage.NewPostgresJobRepository(cfg)
 		if err != nil {
 			log.Fatalf("Failed to initialize PostgreSQL database: %v", err)
 		}
@@ -74,7 +73,7 @@ func main() {
 			}
 		}()
 
-		postgresRunRepo, err := storage.NewPostgresJobRunRepository(connStr)
+		postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
 		if err != nil {
 			log.Fatalf("Failed to initialize PostgreSQL job run repository: %v", err)
 		}

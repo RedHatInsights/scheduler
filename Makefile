@@ -1,5 +1,5 @@
 # Go parameters
-GOCMD=/home/dehort/dev/go/distros/go1.24.5/bin/go
+GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
@@ -46,6 +46,9 @@ clean:
 test:
 	@echo "Running tests..."
 	$(GOTEST) -v ./...
+
+test-sql:  # migrate
+	$(GOTEST) -v ./... -tags=sql
 
 # Install dependencies
 deps:

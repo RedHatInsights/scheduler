@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 )
 
@@ -14,7 +15,10 @@ type PostgresJobRunRepository struct {
 	db *sql.DB
 }
 
-func NewPostgresJobRunRepository(connStr string) (*PostgresJobRunRepository, error) {
+func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository, error) {
+
+	connStr := buildConnectionString(cfg)
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)

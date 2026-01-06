@@ -17,8 +17,8 @@ objects:
     testing:
       iqePlugin: insights-scheduler
     database:
-      name: insights-scheduler
-      version: 15
+      name: scheduler
+      version: 16
     kafkaTopics:
     - replicas: 3
       partitions: 16

@@ -91,12 +91,6 @@ type DatabaseConfig struct {
 	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
 }
 
-// ConnectionString returns a PostgreSQL connection string
-func (d *DatabaseConfig) ConnectionString() string {
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		d.Host, d.Port, d.Username, d.Password, d.Name, d.SSLMode)
-}
-
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
 	// Enabled indicates if Kafka integration is active
@@ -302,9 +296,9 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 	dbPath := getEnv("DB_PATH", "./jobs.db")
 	host := getEnv("DB_HOST", "localhost")
 	port := getEnvAsInt("DB_PORT", 5432)
-	name := getEnv("DB_NAME", "insights_scheduler")
-	username := getEnv("DB_USERNAME", "")
-	password := getEnv("DB_PASSWORD", "")
+	name := getEnv("DB_NAME", "scheduler")
+	username := getEnv("DB_USERNAME", "insights")
+	password := getEnv("DB_PASSWORD", "insights")
 	sslMode := getEnv("DB_SSL_MODE", "disable")
 
 	// Override with Clowder values if available

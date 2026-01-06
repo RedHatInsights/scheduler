@@ -3,10 +3,12 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
 	_ "github.com/lib/pq"
+	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 )
 
@@ -14,7 +16,10 @@ type PostgresJobRepository struct {
 	db *sql.DB
 }
 
-func NewPostgresJobRepository(connStr string) (*PostgresJobRepository, error) {
+func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error) {
+
+	connStr := buildConnectionString(cfg)
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, err
@@ -155,12 +160,12 @@ func (r *PostgresJobRepository) FindAll() ([]domain.Job, error) {
 
 func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
-		FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
+	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
 }
 
 func (r *PostgresJobRepository) FindByUserID(userID string) ([]domain.Job, error) {
 	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
-		FROM jobs WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 }
 
 func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]domain.Job, error) {
@@ -209,4 +214,9 @@ func (r *PostgresJobRepository) Delete(id string) error {
 
 func (r *PostgresJobRepository) Close() error {
 	return r.db.Close()
+}
+
+func buildConnectionString(cfg *config.Config) string {
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		cfg.Database.Host, cfg.Database.Port, cfg.Database.Username, cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
 }
