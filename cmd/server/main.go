@@ -117,6 +117,14 @@ func runDatabaseDown(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+type loggerWrapper struct {
+	*log.Logger
+}
+
+func (lw loggerWrapper) Verbose() bool {
+	return true
+}
+
 func createMigration(cfg *config.Config) (*migrate.Migrate, error) {
 	var databaseURL string
 
@@ -141,6 +149,8 @@ func createMigration(cfg *config.Config) (*migrate.Migrate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize migration: %w", err)
 	}
+
+	m.Log = loggerWrapper{log.Default()}
 
 	return m, nil
 }
