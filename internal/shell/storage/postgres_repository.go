@@ -19,6 +19,7 @@ type PostgresJobRepository struct {
 func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error) {
 
 	connStr := buildConnectionString(cfg)
+	fmt.Println("connStr: ", connStr)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
