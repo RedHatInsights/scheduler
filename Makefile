@@ -47,7 +47,7 @@ test:
 	@echo "Running tests..."
 	$(GOTEST) -v ./...
 
-test-sql:  # migrate
+test-sql: migrate
 	$(GOTEST) -v ./... -tags=sql
 
 # Install dependencies
@@ -129,6 +129,9 @@ docker-clean:
 	docker container rm -f scheduler-container 2>/dev/null || true
 	docker image rm insights-scheduler 2>/dev/null || true
 	docker-compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
+
+migrate: build
+	bin/scheduler db_migration up
 
 # Show help
 help:

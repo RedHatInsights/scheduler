@@ -29,14 +29,17 @@ func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error
 	}
 
 	repo := &PostgresJobRepository{db: db}
-	if err := repo.initSchema(); err != nil {
-		return nil, err
-	}
+	/*
+		if err := repo.initSchema(); err != nil {
+			return nil, err
+		}
+	*/
 
 	log.Printf("[DEBUG] PostgresJobRepository - database initialized successfully")
 	return repo, nil
 }
 
+/*
 func (r *PostgresJobRepository) initSchema() error {
 	if err := r.runMigrations(); err != nil {
 		return err
@@ -98,6 +101,7 @@ func (r *PostgresJobRepository) runMigrations() error {
 	}
 	return nil
 }
+*/
 
 func (r *PostgresJobRepository) Save(job domain.Job) error {
 	payloadJSON, err := json.Marshal(job.Payload)
