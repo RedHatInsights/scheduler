@@ -37,6 +37,29 @@ objects:
         minReadySeconds: 15
         progressDeadlineSeconds: 600
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+        - name: db-migration
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - ./scheduler
+            - db_migration
+            - up
+          env:
+          - name: LOG_LEVEL
+            value: DEBUG
+          - name: DB_MAX_OPEN_CONNECTIONS
+            value: "25"
+          - name: DB_MAX_IDLE_CONNECTIONS
+            value: "5"
+          - name: DB_CONNECTION_MAX_LIFETIME
+            value: 5m
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
         command:
           - ./scheduler
         #livenessProbe:
