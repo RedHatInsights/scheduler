@@ -575,3 +575,152 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	// Cleanup
 	jobRepo.Delete(job.ID)
 }
+func TestPostgresJobRepository_UpdatedAtColumn(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a test job
+	payload := map[string]interface{}{
+		"message": "Test updated_at tracking",
+	}
+
+	job := domain.NewJob(
+		"Updated At Test Job",
+		"test-org-updated-at",
+		"testuser",
+		"test-user-updated-at",
+		"*/30 * * * *",
+		domain.PayloadMessage,
+		payload,
+	)
+	job.ID = "test-job-updated-at"
+
+	// Save the job initially
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Query the initial created_at and updated_at timestamps
+	var initialCreatedAt, initialUpdatedAt time.Time
+	query := `SELECT created_at, updated_at FROM jobs WHERE id = $1`
+	err = repo.db.QueryRow(query, job.ID).Scan(&initialCreatedAt, &initialUpdatedAt)
+	if err != nil {
+		t.Fatalf("Failed to query timestamps: %v", err)
+	}
+
+	// Verify created_at and updated_at are set
+	if initialCreatedAt.IsZero() {
+		t.Error("created_at should not be zero")
+	}
+	if initialUpdatedAt.IsZero() {
+		t.Error("updated_at should not be zero")
+	}
+
+	// On initial insert, created_at and updated_at should be approximately equal
+	timeDiff := initialUpdatedAt.Sub(initialCreatedAt).Abs()
+	if timeDiff > time.Second {
+		t.Errorf("created_at and updated_at should be nearly equal on insert, diff: %v", timeDiff)
+	}
+
+	// Wait to ensure timestamp difference
+	time.Sleep(2 * time.Second)
+
+	// Update the job
+	updatedJob := job.WithStatus(domain.StatusPaused)
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	// Query the timestamps again
+	var finalCreatedAt, finalUpdatedAt time.Time
+	err = repo.db.QueryRow(query, job.ID).Scan(&finalCreatedAt, &finalUpdatedAt)
+	if err != nil {
+		t.Fatalf("Failed to query updated timestamps: %v", err)
+	}
+
+	// Verify created_at hasn't changed
+	if !finalCreatedAt.Equal(initialCreatedAt) {
+		t.Errorf("created_at should not change on update. Initial: %v, Final: %v",
+			initialCreatedAt, finalCreatedAt)
+	}
+
+	// Verify updated_at has changed and is after the initial value
+	if !finalUpdatedAt.After(initialUpdatedAt) {
+		t.Errorf("updated_at should be after initial value. Initial: %v, Final: %v",
+			initialUpdatedAt, finalUpdatedAt)
+	}
+
+	// Verify updated_at changed by at least 1 second (we waited 2 seconds)
+	updateDiff := finalUpdatedAt.Sub(initialUpdatedAt)
+	if updateDiff < time.Second {
+		t.Errorf("updated_at should have changed by at least 1 second, got: %v", updateDiff)
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRepository_UpdatedAtMultipleUpdates(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a test job
+	job := domain.NewJob(
+		"Multi Update Test",
+		"test-org",
+		"testuser",
+		"test-user",
+		"0 * * * *",
+		domain.PayloadMessage,
+		map[string]interface{}{"test": "data"},
+	)
+	job.ID = "test-job-multi-update"
+
+	// Save initial job
+	if err := repo.Save(job); err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	query := `SELECT updated_at FROM jobs WHERE id = $1`
+	timestamps := make([]time.Time, 0, 3)
+
+	// Capture initial updated_at
+	var ts time.Time
+	repo.db.QueryRow(query, job.ID).Scan(&ts)
+	timestamps = append(timestamps, ts)
+
+	// Perform multiple updates with delays
+	for i := 0; i < 2; i++ {
+		time.Sleep(time.Second)
+
+		// Update job with different status
+		var newStatus domain.JobStatus
+		if i == 0 {
+			newStatus = domain.StatusRunning
+		} else {
+			newStatus = domain.StatusScheduled
+		}
+
+		updatedJob := job.WithStatus(newStatus)
+		if err := repo.Save(updatedJob); err != nil {
+			t.Fatalf("Failed to update job on iteration %d: %v", i, err)
+		}
+
+		// Capture updated_at
+		repo.db.QueryRow(query, job.ID).Scan(&ts)
+		timestamps = append(timestamps, ts)
+	}
+
+	// Verify all timestamps are different and monotonically increasing
+	for i := 1; i < len(timestamps); i++ {
+		if !timestamps[i].After(timestamps[i-1]) {
+			t.Errorf("Timestamp %d should be after timestamp %d. Got %v <= %v",
+				i, i-1, timestamps[i], timestamps[i-1])
+		}
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
