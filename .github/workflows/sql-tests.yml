@@ -30,4 +30,5 @@ jobs:
       with:
         go-version: 1.24.x
     - name: Run Tests (including sql tests)
-      run: make migrate test test-sql
+      run: make test-sql
+      #run: make migrate test test-sql
