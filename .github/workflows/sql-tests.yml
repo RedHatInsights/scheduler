@@ -32,6 +32,4 @@ jobs:
     - name: Run Tests (including sql tests)
       env:
         DB_TYPE: postgres
-      run: make test-sql
-
-      #run: make migrate test test-sql
+      run: make migrate test test-sql
