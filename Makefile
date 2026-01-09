@@ -48,7 +48,7 @@ test:
 	$(GOTEST) -v ./...
 
 test-sql: migrate
-	$(GOTEST) -run TestPostgres -v ./... -tags=sql
+	$(GOTEST) -v ./... -tags=sql
 
 # Install dependencies
 deps:
