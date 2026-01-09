@@ -145,6 +145,7 @@ func createMigration(cfg *config.Config) (*migrate.Migrate, error) {
 	}
 
 	migrationsPath := "file://db/migrations"
+	fmt.Println("databaseURL", databaseURL)
 	m, err := migrate.New(migrationsPath, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize migration: %w", err)
