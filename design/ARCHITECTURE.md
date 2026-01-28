@@ -26,8 +26,8 @@ The Insights Scheduler is a microservice that provides scheduled job execution f
 - Multiple payload types (Export, HTTP, Message, Command)
 - Job execution history tracking
 - Organization-based multi-tenancy
-- Integration with Red Hat Export Service
-- Kafka-based notifications
+- Integration with Red Hat Insights Platform Export Service notifications
+- Integration with Red Hat Insights Platform Notifications Service
 - PostgreSQL and SQLite support
 - Kubernetes/OpenShift deployment via Clowder
 
