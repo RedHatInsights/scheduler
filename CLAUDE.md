@@ -60,6 +60,7 @@ Handles all side effects and I/O:
 **Executor** (`internal/shell/executor/`):
 - `job_executor.go` - Generic job executor with map-based payload type dispatch
 - `export_job_executor.go` - Export service integration
+- `inventory_pdf_job_executor.go` - Inventory PDF generator service integration
 - `message_job_executor.go`, `http_job_executor.go`, `command_job_executor.go` - Simulated executors
 - `kafka_notifier.go` - Platform notifications integration
 - Job completion notification system with Kafka support
@@ -93,8 +94,9 @@ The service also accepts any valid 5-field cron expression (e.g., `30 14 * * MON
 
 ## Payload Types
 
-Jobs support four payload types:
+Jobs support five payload types:
 - `message` - Simple message processing
 - `http_request` - HTTP requests (simulated)
 - `command` - Command execution (simulated)
 - `export` - Red Hat Insights export service integration (production implementation)
+- `inventory-pdf` - Red Hat Insights Inventory PDF generator service integration (production implementation)
