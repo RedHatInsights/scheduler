@@ -254,6 +254,9 @@ func TestConfigValidation(t *testing.T) {
 				ExportService: ExportServiceConfig{
 					BaseURL: "http://localhost:9000",
 				},
+				InventoryPdfService: InventoryPdfServiceConfig{
+					BaseURL: "http://pdf-generator:8000",
+				},
 			}
 
 			// Apply test modification
