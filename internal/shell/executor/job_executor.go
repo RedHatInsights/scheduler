@@ -23,6 +23,10 @@ func NewJobExecutor(executors map[domain.PayloadType]JobExecutor, runRepo usecas
 func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 	log.Printf("Executing job: %s (%s)", job.Name, job.ID)
 
+	// Increment the currently running jobs metric
+	JobsCurrentlyRunning.Inc()
+	defer JobsCurrentlyRunning.Dec()
+
 	// Create a job run record
 	var jobRun domain.JobRun
 	if e.runRepo != nil {

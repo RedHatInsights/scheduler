@@ -12,6 +12,9 @@ func SetupRoutes(jobService *usecases.JobService, jobRunService *usecases.JobRun
 	handler := NewJobHandler(jobService)
 	runHandler := NewJobRunHandler(jobRunService)
 
+	// Apply logging middleware to all routes
+	router.Use(LoggingMiddleware)
+
 	// Apply identity middleware to all API routes
 	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
 	api.Use(identity.EnforceIdentity)
