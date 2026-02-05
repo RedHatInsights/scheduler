@@ -48,7 +48,7 @@ paths:
       tags:
         - Jobs
       summary: List all jobs
-      description: Retrieve all jobs for the authenticated organization. Supports filtering by status and name.
+      description: Retrieve all jobs for the authenticated organization. Supports filtering by status and name, with pagination.
       operationId: listJobs
       parameters:
         - name: status
@@ -63,15 +63,32 @@ paths:
           required: false
           schema:
             type: string
+        - name: offset
+          in: query
+          description: Number of items to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: limit
+          in: query
+          description: Maximum number of items to return (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
       responses:
         '200':
-          description: List of jobs
+          description: Paginated list of jobs
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Job'
+                $ref: '#/components/schemas/PaginatedJobsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':
@@ -350,17 +367,35 @@ paths:
       tags:
         - Job Runs
       summary: List all runs for a job
-      description: Retrieve all execution runs for a specific job. Returns runs in reverse chronological order (most recent first).
+      description: Retrieve all execution runs for a specific job. Returns runs in reverse chronological order (most recent first), with pagination support.
       operationId: getJobRuns
+      parameters:
+        - name: offset
+          in: query
+          description: Number of items to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: limit
+          in: query
+          description: Maximum number of items to return (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
       responses:
         '200':
-          description: List of job runs
+          description: Paginated list of job runs
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/JobRun'
+                $ref: '#/components/schemas/PaginatedJobRunsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -619,6 +654,76 @@ components:
           type: string
           description: Error message
           example: "Job not found"
+
+    PaginationMeta:
+      type: object
+      description: Pagination metadata
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          description: Total number of items across all pages
+          example: 100
+
+    PaginationLinks:
+      type: object
+      description: Navigation links for pagination
+      properties:
+        first:
+          type: string
+          format: uri
+          description: Link to the first page
+          example: "/api/scheduler/v1/jobs?limit=20&offset=0"
+        last:
+          type: string
+          format: uri
+          description: Link to the last page
+          example: "/api/scheduler/v1/jobs?limit=20&offset=80"
+        next:
+          type: string
+          format: uri
+          description: Link to the next page (if available)
+          example: "/api/scheduler/v1/jobs?limit=20&offset=20"
+        prev:
+          type: string
+          format: uri
+          description: Link to the previous page (if available)
+          example: "/api/scheduler/v1/jobs?limit=20&offset=0"
+
+    PaginatedJobsResponse:
+      type: object
+      description: Paginated response for jobs list
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+
+    PaginatedJobRunsResponse:
+      type: object
+      description: Paginated response for job runs list
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobRun'
 
   responses:
     BadRequest:
