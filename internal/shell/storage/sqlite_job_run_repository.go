@@ -152,17 +152,27 @@ func (r *SQLiteJobRunRepository) FindByID(id string) (domain.JobRun, error) {
 	return run, nil
 }
 
-func (r *SQLiteJobRunRepository) FindByJobID(jobID string) ([]domain.JobRun, error) {
+func (r *SQLiteJobRunRepository) FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+	// First get the total count
+	countQuery := `SELECT COUNT(*) FROM job_runs WHERE job_id = ?`
+	var total int
+	err := r.db.QueryRow(countQuery, jobID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count job runs: %w", err)
+	}
+
+	// Then get the paginated results
 	query := `
 		SELECT id, job_id, status, start_time, end_time, error_message, result
 		FROM job_runs
 		WHERE job_id = ?
 		ORDER BY start_time DESC
+		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, jobID)
+	rows, err := r.db.Query(query, jobID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query job runs: %w", err)
+		return nil, 0, fmt.Errorf("failed to query job runs: %w", err)
 	}
 	defer rows.Close()
 
@@ -184,13 +194,13 @@ func (r *SQLiteJobRunRepository) FindByJobID(jobID string) ([]domain.JobRun, err
 			&result,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan job run: %w", err)
+			return nil, 0, fmt.Errorf("failed to scan job run: %w", err)
 		}
 
 		// Parse start time
 		startTime, err := time.Parse(time.RFC3339, startTimeStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse start time: %w", err)
+			return nil, 0, fmt.Errorf("failed to parse start time: %w", err)
 		}
 		run.StartTime = startTime
 
@@ -198,7 +208,7 @@ func (r *SQLiteJobRunRepository) FindByJobID(jobID string) ([]domain.JobRun, err
 		if endTimeStr != nil {
 			endTime, err := time.Parse(time.RFC3339, *endTimeStr)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse end time: %w", err)
+				return nil, 0, fmt.Errorf("failed to parse end time: %w", err)
 			}
 			run.EndTime = &endTime
 		}
@@ -210,10 +220,11 @@ func (r *SQLiteJobRunRepository) FindByJobID(jobID string) ([]domain.JobRun, err
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating job runs: %w", err)
+		return nil, 0, fmt.Errorf("error iterating job runs: %w", err)
 	}
 
-	return runs, nil
+	log.Printf("[DEBUG] SQLiteJobRunRepository.FindByJobID - found %d runs for job %s (total: %d)", len(runs), jobID, total)
+	return runs, total, nil
 }
 
 func (r *SQLiteJobRunRepository) FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error) {

@@ -38,8 +38,10 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP GetJobRuns called - job_id=%s, org_id=%s", jobID, ident.Identity.OrgID)
 
+	offset, limit := parsePaginationParams(r.URL)
+
 	// Only get runs for jobs belonging to the user's organization
-	runs, err := h.jobRunService.GetJobRunsWithOrgCheck(jobID, ident.Identity.OrgID)
+	runs, total, err := h.jobRunService.GetJobRunsWithOrgCheck(jobID, ident.Identity.OrgID, offset, limit)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -52,8 +54,10 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP GetJobRuns success - found %d runs for job %s", len(runs), jobID)
 
+	response := buildPaginatedResponse(r.URL, offset, limit, total, runs)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(runs)
+	json.NewEncoder(w).Encode(response)
 }
 
 // GetJobRun retrieves a specific job run by ID

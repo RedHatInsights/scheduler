@@ -168,9 +168,24 @@ func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) 
 	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
 }
 
-func (r *PostgresJobRepository) FindByUserID(userID string) ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
-	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+func (r *PostgresJobRepository) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+	// First get the total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM jobs WHERE user_id = $1`
+	err := r.db.QueryRow(countQuery, userID).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Then get the paginated results
+	query := `SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
+	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+	jobs, err := r.queryJobs(query, userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return jobs, total, nil
 }
 
 func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]domain.Job, error) {
