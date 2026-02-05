@@ -18,6 +18,7 @@ type PostgresJobRunRepository struct {
 func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository, error) {
 
 	connStr := buildConnectionString(cfg)
+	fmt.Println("connStr: ", connStr)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -28,12 +29,18 @@ func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository,
 	}
 
 	repo := &PostgresJobRunRepository{db: db}
-	if err := repo.initSchema(); err != nil {
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
-	}
+	/*
+		if err := repo.initSchema(); err != nil {
+			return nil, fmt.Errorf("failed to initialize schema: %w", err)
+		}
+	*/
+
+	log.Printf("[DEBUG] PostgresJobRunRepository - database initialized successfully")
+
 	return repo, nil
 }
 
+/*
 func (r *PostgresJobRunRepository) initSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS job_runs (
@@ -58,6 +65,7 @@ func (r *PostgresJobRunRepository) initSchema() error {
 	log.Println("[DEBUG] Job runs table schema initialized")
 	return nil
 }
+*/
 
 func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	query := `

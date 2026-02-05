@@ -10,6 +10,12 @@ import (
 	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/spf13/cobra"
+
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
@@ -22,7 +28,142 @@ import (
 	"insights-scheduler/internal/shell/storage"
 )
 
+var (
+	configPath string
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "scheduler",
+	Short: "Insights Scheduler Service",
+	Long:  `A job scheduling service for Red Hat Insights with support for multiple backends and job execution types.`,
+	Run:   runServer,
+}
+
+func init() {
+	rootCmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to configuration file")
+	rootCmd.AddCommand(dbMigrationCmd)
+}
+
+var dbMigrationCmd = &cobra.Command{
+	Use:   "db_migration",
+	Short: "Database migration commands",
+	Long:  `Manage database migrations for the scheduler service.`,
+}
+
+var dbMigrationUpCmd = &cobra.Command{
+	Use:   "up",
+	Short: "Run database migrations",
+	Long:  `Apply all pending database migrations to bring the schema up to date.`,
+	RunE:  runDatabaseUp,
+}
+
+var dbMigrationDownCmd = &cobra.Command{
+	Use:   "down",
+	Short: "Rollback database migrations",
+	Long:  `Rollback the last database migration.`,
+	RunE:  runDatabaseDown,
+}
+
+func init() {
+	dbMigrationCmd.AddCommand(dbMigrationUpCmd)
+	dbMigrationCmd.AddCommand(dbMigrationDownCmd)
+}
+
+func runDatabaseUp(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	m, err := createMigration(cfg)
+	if err != nil {
+		return err
+	}
+	defer m.Close()
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	if err == migrate.ErrNoChange {
+		log.Println("No migrations to apply - database is up to date")
+	} else {
+		log.Println("Successfully applied database migrations")
+	}
+	return nil
+}
+
+func runDatabaseDown(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	m, err := createMigration(cfg)
+	if err != nil {
+		return err
+	}
+	defer m.Close()
+
+	if err := m.Steps(-1); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to rollback migration: %w", err)
+	}
+
+	if err == migrate.ErrNoChange {
+		log.Println("No migrations to rollback")
+	} else {
+		log.Println("Successfully rolled back last migration")
+	}
+	return nil
+}
+
+type loggerWrapper struct {
+	*log.Logger
+}
+
+func (lw loggerWrapper) Verbose() bool {
+	return true
+}
+
+func createMigration(cfg *config.Config) (*migrate.Migrate, error) {
+	var databaseURL string
+
+	switch cfg.Database.Type {
+	case "sqlite":
+		databaseURL = fmt.Sprintf("sqlite3://%s", cfg.Database.Path)
+	case "postgres", "postgresql":
+		databaseURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			cfg.Database.Username,
+			cfg.Database.Password,
+			cfg.Database.Host,
+			cfg.Database.Port,
+			cfg.Database.Name,
+			cfg.Database.SSLMode,
+		)
+	default:
+		return nil, fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
+	}
+
+	migrationsPath := "file://db/migrations"
+	fmt.Println("databaseURL", databaseURL)
+	m, err := migrate.New(migrationsPath, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize migration: %w", err)
+	}
+
+	m.Log = loggerWrapper{log.Default()}
+
+	return m, nil
+}
+
 func main() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func runServer(cmd *cobra.Command, args []string) {
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {

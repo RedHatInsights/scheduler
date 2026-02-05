@@ -38,6 +38,7 @@ WORKDIR /app
 COPY --from=builder /opt/app-root/src/scheduler .
 COPY --from=builder /opt/app-root/src/kafka-producer .
 COPY --from=builder /opt/app-root/src/trigger_swatch_report_gen.sh .
+COPY --from=builder /opt/app-root/src/db/migrations db/migrations/
 
 # Change ownership of the binary
 RUN chown scheduler:scheduler scheduler
