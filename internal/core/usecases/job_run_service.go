@@ -50,32 +50,32 @@ func (s *JobRunService) GetJobRunWithOrgCheck(runID string, orgID string) (domai
 }
 
 // GetJobRuns retrieves all runs for a specific job
-func (s *JobRunService) GetJobRuns(jobID string) ([]domain.JobRun, error) {
-	runs, err := s.runRepo.FindByJobID(jobID)
+func (s *JobRunService) GetJobRuns(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return runs, nil
+	return runs, total, nil
 }
 
 // GetJobRunsWithOrgCheck retrieves all runs for a job only if it belongs to the specified organization
-func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string) ([]domain.JobRun, error) {
+func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string, offset, limit int) ([]domain.JobRun, int, error) {
 	// First verify the job exists and belongs to this org
 	job, err := s.jobRepo.FindByID(jobID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if job.OrgID != orgID {
 		log.Printf("[DEBUG] JobRunService - org_id mismatch: job belongs to org_id=%s, requested org_id=%s", job.OrgID, orgID)
-		return nil, domain.ErrJobNotFound
+		return nil, 0, domain.ErrJobNotFound
 	}
 
-	runs, err := s.runRepo.FindByJobID(jobID)
+	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return runs, nil
+	return runs, total, nil
 }
 
 // CreateJobRun creates a new job run record
