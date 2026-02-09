@@ -282,10 +282,11 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Initialize payload-specific job executors
 	executors := map[domain.PayloadType]executor.JobExecutor{
-		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
-		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
-		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
-		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
+		domain.PayloadMessage:      executor.NewMessageJobExecutor(),
+		domain.PayloadHTTPRequest:  executor.NewHTTPJobExecutor(),
+		domain.PayloadCommand:      executor.NewCommandJobExecutor(),
+		domain.PayloadExport:       executor.NewExportJobExecutor(cfg, userValidator, notifier),
+		domain.PayloadInventoryPDF: executor.NewInventoryPdfJobExecutor(cfg, userValidator, notifier),
 	}
 
 	// Initialize job executor with map of executors
