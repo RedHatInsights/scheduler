@@ -1,14 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Insights Scheduler API
+  title: Scheduler API
   description: |
     A job scheduling service that allows users to create, manage, and execute scheduled jobs.
-
-    The service implements a functional core/imperative shell architecture pattern with:
-    - Pure business logic in the core domain layer
-    - Side effects handled in the shell layer
-    - Support for multiple payload types (message, HTTP request, command, export)
-    - Multi-tenant support with organization-level isolation
 
     ## Authentication
     All endpoints require Red Hat identity authentication via the `X-Rh-Identity` header.
@@ -17,17 +11,11 @@ info:
     Jobs can be scheduled using standard 5-field cron expressions:
     - Format: `minute hour day month weekday`
 
-    Common predefined schedules:
-    - Every 10 minutes: `*/10 * * * *`
-    - Every hour: `0 * * * *`
-    - Every day: `0 0 * * *`
-    - Every month: `0 0 1 * *`
   version: 1.0.0
   contact:
-    name: Red Hat Insights
+    name: Red Hat
+
 servers:
-  - url: http://localhost:5000/api/scheduler/v1
-    description: Local development server
   - url: https://console.redhat.com/api/scheduler/v1
     description: Production server
 
@@ -40,7 +28,7 @@ tags:
     description: Job run history and execution details
 
 security:
-  - RedHatIdentity: []
+  - ApiKeyAuth: []
 
 paths:
   /jobs:
@@ -107,31 +95,14 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateJobRequest'
             examples:
-              messageJob:
-                summary: Message payload job
-                value:
-                  name: "Daily Message Job"
-                  schedule: "0 0 0 * * *"
-                  type: "message"
-                  payload:
-                    message: "Hello, World!"
-              httpRequestJob:
-                summary: HTTP request job
-                value:
-                  name: "Hourly API Check"
-                  schedule: "0 0 * * * *"
-                  type: "http_request"
-                  payload:
-                    url: "https://api.example.com/health"
-                    method: "GET"
               exportJob:
                 summary: Export job
                 value:
-                  name: "Monthly Advisor Export"
-                  schedule: "0 0 0 1 * *"
+                  name: "Monthly Inventory Export"
+                  schedule: "0 0 1 * *"
                   type: "export"
                   payload:
-                    application: "advisor"
+                    application: "inventory"
                     resource: "recommendations"
                     format: "json"
       responses:
@@ -228,7 +199,7 @@ paths:
               updateSchedule:
                 summary: Update schedule only
                 value:
-                  schedule: "0 0 * * * *"
+                  schedule: "0 0 1 * *"
       responses:
         '200':
           description: Job updated successfully
@@ -451,7 +422,20 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 components:
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Rh-Identity
+      description: Base64-encoded JSON containing Red Hat identity information.
+
   schemas:
+    CronSchedule:
+      type: string
+      description: Cron expression defining when the job runs
+      example: "0 0 1 * *"
+
     Job:
       type: object
       description: A scheduled job (org_id, username, and user_id are extracted from X-Rh-Identity header)
@@ -470,11 +454,9 @@ components:
         name:
           type: string
           description: Human-readable name for the job
-          example: "Daily Report Generation"
+          example: "Monthly Report Generation"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 0 * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -522,11 +504,8 @@ components:
       type: string
       description: Type of job payload
       enum:
-        - message
-        - http_request
-        - command
         - export
-      example: "message"
+      example: "export"
 
     CreateJobRequest:
       type: object
@@ -540,11 +519,9 @@ components:
         name:
           type: string
           description: Human-readable name for the job
-          example: "Daily Report Generation"
+          example: "Monthly Report Generation"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 0 * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -565,9 +542,7 @@ components:
           description: Human-readable name for the job
           example: "Updated Job Name"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 * * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -584,9 +559,7 @@ components:
           description: Human-readable name for the job
           example: "Updated Job Name"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 * * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -750,30 +723,3 @@ components:
             type: string
             example: "Internal server error"
 
-  securitySchemes:
-    RedHatIdentity:
-      type: apiKey
-      in: header
-      name: X-Rh-Identity
-      description: |
-        Base64-encoded JSON containing Red Hat identity information.
-
-        The decoded JSON structure should contain:
-        ```json
-        {
-          "identity": {
-            "account_number": "000001",
-            "org_id": "000001",
-            "type": "User",
-            "auth_type": "jwt-auth",
-            "user": {
-              "username": "testuser",
-              "email": "test@example.com",
-              "user_id": "user-123"
-            },
-            "internal": {
-              "org_id": "000001"
-            }
-          }
-        }
-        ```
