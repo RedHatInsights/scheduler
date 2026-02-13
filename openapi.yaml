@@ -470,25 +470,7 @@ components:
           description: Timestamp of the last job execution
           example: "2025-11-03T10:00:00Z"
 
-    JobPayload:
-      description: |
-        Payload containing job execution details. Can be any valid JSON value:
-        - Object: {"key": "value"}
-        - Array: [1, 2, 3]
-        - String: "text"
-        - Number: 42
-        - Boolean: true
-        - Null: null
-      oneOf:
-        - type: object
-          additionalProperties: true
-        - type: array
-        - type: string
-        - type: number
-        - type: boolean
-        - type: 'null'
-      example:
-        message: "Hello, World!"
+    JobPayload: {}
 
     JobStatus:
       type: string
