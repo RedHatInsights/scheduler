@@ -117,16 +117,19 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 
 	statusFilter := r.URL.Query().Get("status")
 	nameFilter := r.URL.Query().Get("name")
+	offset, limit := parsePaginationParams(r.URL)
 
 	// Only get jobs for the current user
-	jobs, err := h.jobService.GetJobsByUserID(userID, statusFilter, nameFilter)
+	jobs, total, err := h.jobService.GetJobsByUserID(userID, statusFilter, nameFilter, offset, limit)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	response := buildPaginatedResponse(r.URL, offset, limit, total, ToJobResponseList(jobs))
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ToJobResponseList(jobs))
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
