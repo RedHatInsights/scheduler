@@ -118,17 +118,17 @@ docker-run: docker-build
 
 docker-compose-up:
 	@echo "Starting with docker-compose..."
-	docker-compose up --build
+	docker compose up --build
 
 docker-compose-down:
 	@echo "Stopping docker-compose services..."
-	docker-compose down
+	docker compose down
 
 docker-clean:
 	@echo "Cleaning Docker artifacts..."
 	docker container rm -f scheduler-container 2>/dev/null || true
 	docker image rm insights-scheduler 2>/dev/null || true
-	docker-compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
+	docker compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
 
 migrate: build
 	bin/scheduler db_migration up
