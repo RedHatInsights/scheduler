@@ -29,8 +29,10 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] GetJobRuns failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
@@ -61,8 +63,10 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] GetJobRuns failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
