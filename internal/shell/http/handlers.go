@@ -78,7 +78,6 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[DEBUG] HTTP CreateJob success - job created with ID: %s", job.ID)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Location", "/api/v1/jobs/"+job.ID)
 	w.WriteHeader(http.StatusCreated)
 
 	if err := json.NewEncoder(w).Encode(ToJobResponse(job)); err != nil {
