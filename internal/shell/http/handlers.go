@@ -40,31 +40,14 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		log.Printf("[DEBUG] HTTP CreateJob failed - missing org_id in identity")
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
+
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] CreateJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
-	username := ident.Identity.User.Username
-	if username == "" {
-		// Fallback to email if username is not available
-		username = ident.Identity.User.Email
-		if username == "" {
-			log.Printf("[DEBUG] HTTP CreateJob failed - missing username/email in identity")
-			http.Error(w, "Missing username in identity", http.StatusBadRequest)
-			return
-		}
-	}
-
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		log.Printf("[DEBUG] HTTP CreateJob failed - missing user_id in identity")
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, type=%s", req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Type)
+	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, type=%s", req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type)
 
 	if req.Name == "" || req.Schedule == "" || req.Type == "" {
 		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields: name=%s, schedule=%s, type=%s", req.Name, req.Schedule, req.Type)
@@ -80,7 +63,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
-	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Type, req.Payload)
+	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
@@ -109,9 +92,9 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] GetAllJobs failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
@@ -119,7 +102,7 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	nameFilter := r.URL.Query().Get("name")
 
 	// Only get jobs for the current user
-	jobs, err := h.jobService.GetJobsByUserID(userID, statusFilter, nameFilter)
+	jobs, err := h.jobService.GetJobsByUserID(ident.Identity.User.UserID, statusFilter, nameFilter)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -136,14 +119,14 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] GetJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
 	// Only get job if it belongs to the current user
-	job, err := h.jobService.GetJobWithUserCheck(id, userID)
+	job, err := h.jobService.GetJobWithUserCheck(id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -163,24 +146,10 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
-	if ident.Identity.OrgID == "" {
-		http.Error(w, "Missing organization ID in identity", http.StatusBadRequest)
-		return
-	}
 
-	username := ident.Identity.User.Username
-	if username == "" {
-		// Fallback to email if username is not available
-		username = ident.Identity.User.Email
-		if username == "" {
-			http.Error(w, "Missing username in identity", http.StatusBadRequest)
-			return
-		}
-	}
-
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] GetJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
@@ -207,7 +176,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, username, userID, req.Schedule, req.Type, req.Payload, req.Status)
+	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload, req.Status)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -232,9 +201,9 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] PatchJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
@@ -245,7 +214,7 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only patch job if it belongs to the current user
-	job, err := h.jobService.PatchJobWithUserCheck(id, userID, updates)
+	job, err := h.jobService.PatchJobWithUserCheck(id, ident.Identity.User.UserID, updates)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -270,14 +239,14 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] DeleteJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
 	// Only delete job if it belongs to the current user
-	err := h.jobService.DeleteJobWithUserCheck(id, userID)
+	err := h.jobService.DeleteJobWithUserCheck(id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -297,14 +266,14 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] RunJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
 	// Only run job if it belongs to the current user
-	err := h.jobService.RunJobWithUserCheck(id, userID)
+	err := h.jobService.RunJobWithUserCheck(id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -324,14 +293,14 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] PauseJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
 	// Only pause job if it belongs to the current user
-	job, err := h.jobService.PauseJobWithUserCheck(id, userID)
+	job, err := h.jobService.PauseJobWithUserCheck(id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -356,14 +325,14 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
-	userID := ident.Identity.User.UserID
-	if userID == "" {
-		http.Error(w, "Missing user ID in identity", http.StatusBadRequest)
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] ResumeJob failed - invalid identity")
+		http.Error(w, "Invalid identity", http.StatusBadRequest)
 		return
 	}
 
 	// Only resume job if it belongs to the current user
-	job, err := h.jobService.ResumeJobWithUserCheck(id, userID)
+	job, err := h.jobService.ResumeJobWithUserCheck(id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			http.Error(w, "Job not found", http.StatusNotFound)
@@ -379,4 +348,12 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ToJobResponse(job))
+}
+
+func isValidIdentity(ident identity.XRHID) bool {
+	if ident.Identity.User == nil || ident.Identity.User.Username == "" || ident.Identity.User.UserID == "" {
+		return false
+	}
+
+	return true
 }
