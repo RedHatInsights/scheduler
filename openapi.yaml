@@ -1,14 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Insights Scheduler API
+  title: Scheduler API
   description: |
     A job scheduling service that allows users to create, manage, and execute scheduled jobs.
-
-    The service implements a functional core/imperative shell architecture pattern with:
-    - Pure business logic in the core domain layer
-    - Side effects handled in the shell layer
-    - Support for multiple payload types (message, HTTP request, command, export)
-    - Multi-tenant support with organization-level isolation
 
     ## Authentication
     All endpoints require Red Hat identity authentication via the `X-Rh-Identity` header.
@@ -17,17 +11,11 @@ info:
     Jobs can be scheduled using standard 5-field cron expressions:
     - Format: `minute hour day month weekday`
 
-    Common predefined schedules:
-    - Every 10 minutes: `*/10 * * * *`
-    - Every hour: `0 * * * *`
-    - Every day: `0 0 * * *`
-    - Every month: `0 0 1 * *`
   version: 1.0.0
   contact:
-    name: Red Hat Insights
+    name: Red Hat
+
 servers:
-  - url: http://localhost:5000/api/scheduler/v1
-    description: Local development server
   - url: https://console.redhat.com/api/scheduler/v1
     description: Production server
 
@@ -40,7 +28,7 @@ tags:
     description: Job run history and execution details
 
 security:
-  - RedHatIdentity: []
+  - ApiKeyAuth: []
 
 paths:
   /jobs:
@@ -48,7 +36,7 @@ paths:
       tags:
         - Jobs
       summary: List all jobs
-      description: Retrieve all jobs for the authenticated organization. Supports filtering by status and name.
+      description: Retrieve all jobs for the authenticated organization. Supports filtering by status and name, with pagination.
       operationId: listJobs
       parameters:
         - name: status
@@ -63,15 +51,32 @@ paths:
           required: false
           schema:
             type: string
+        - name: offset
+          in: query
+          description: Number of items to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: limit
+          in: query
+          description: Maximum number of items to return (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
       responses:
         '200':
-          description: List of jobs
+          description: Paginated list of jobs
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Job'
+                $ref: '#/components/schemas/PaginatedJobsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':
@@ -90,31 +95,14 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateJobRequest'
             examples:
-              messageJob:
-                summary: Message payload job
-                value:
-                  name: "Daily Message Job"
-                  schedule: "0 0 0 * * *"
-                  type: "message"
-                  payload:
-                    message: "Hello, World!"
-              httpRequestJob:
-                summary: HTTP request job
-                value:
-                  name: "Hourly API Check"
-                  schedule: "0 0 * * * *"
-                  type: "http_request"
-                  payload:
-                    url: "https://api.example.com/health"
-                    method: "GET"
               exportJob:
                 summary: Export job
                 value:
-                  name: "Monthly Advisor Export"
-                  schedule: "0 0 0 1 * *"
+                  name: "Monthly Inventory Export"
+                  schedule: "0 0 1 * *"
                   type: "export"
                   payload:
-                    application: "advisor"
+                    application: "inventory"
                     resource: "recommendations"
                     format: "json"
       responses:
@@ -211,7 +199,7 @@ paths:
               updateSchedule:
                 summary: Update schedule only
                 value:
-                  schedule: "0 0 * * * *"
+                  schedule: "0 0 1 * *"
       responses:
         '200':
           description: Job updated successfully
@@ -350,17 +338,35 @@ paths:
       tags:
         - Job Runs
       summary: List all runs for a job
-      description: Retrieve all execution runs for a specific job. Returns runs in reverse chronological order (most recent first).
+      description: Retrieve all execution runs for a specific job. Returns runs in reverse chronological order (most recent first), with pagination support.
       operationId: getJobRuns
+      parameters:
+        - name: offset
+          in: query
+          description: Number of items to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: limit
+          in: query
+          description: Maximum number of items to return (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
       responses:
         '200':
-          description: List of job runs
+          description: Paginated list of job runs
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/JobRun'
+                $ref: '#/components/schemas/PaginatedJobRunsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
@@ -416,7 +422,20 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 components:
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Rh-Identity
+      description: Base64-encoded JSON containing Red Hat identity information.
+
   schemas:
+    CronSchedule:
+      type: string
+      description: Cron expression defining when the job runs
+      example: "0 0 1 * *"
+
     Job:
       type: object
       description: A scheduled job (org_id, username, and user_id are extracted from X-Rh-Identity header)
@@ -435,11 +454,9 @@ components:
         name:
           type: string
           description: Human-readable name for the job
-          example: "Daily Report Generation"
+          example: "Monthly Report Generation"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 0 * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -453,25 +470,7 @@ components:
           description: Timestamp of the last job execution
           example: "2025-11-03T10:00:00Z"
 
-    JobPayload:
-      description: |
-        Payload containing job execution details. Can be any valid JSON value:
-        - Object: {"key": "value"}
-        - Array: [1, 2, 3]
-        - String: "text"
-        - Number: 42
-        - Boolean: true
-        - Null: null
-      oneOf:
-        - type: object
-          additionalProperties: true
-        - type: array
-        - type: string
-        - type: number
-        - type: boolean
-        - type: 'null'
-      example:
-        message: "Hello, World!"
+    JobPayload: {}
 
     JobStatus:
       type: string
@@ -487,11 +486,8 @@ components:
       type: string
       description: Type of job payload
       enum:
-        - message
-        - http_request
-        - command
         - export
-      example: "message"
+      example: "export"
 
     CreateJobRequest:
       type: object
@@ -505,11 +501,9 @@ components:
         name:
           type: string
           description: Human-readable name for the job
-          example: "Daily Report Generation"
+          example: "Monthly Report Generation"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 0 * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -530,9 +524,7 @@ components:
           description: Human-readable name for the job
           example: "Updated Job Name"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 * * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -549,9 +541,7 @@ components:
           description: Human-readable name for the job
           example: "Updated Job Name"
         schedule:
-          type: string
-          description: Cron expression defining when the job runs
-          example: "0 0 * * * *"
+          $ref: '#/components/schemas/CronSchedule'
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
@@ -620,6 +610,76 @@ components:
           description: Error message
           example: "Job not found"
 
+    PaginationMeta:
+      type: object
+      description: Pagination metadata
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          description: Total number of items across all pages
+          example: 100
+
+    PaginationLinks:
+      type: object
+      description: Navigation links for pagination
+      properties:
+        first:
+          type: string
+          format: uri
+          description: Link to the first page
+          example: "/api/scheduler/v1/jobs?limit=20&offset=0"
+        last:
+          type: string
+          format: uri
+          description: Link to the last page
+          example: "/api/scheduler/v1/jobs?limit=20&offset=80"
+        next:
+          type: string
+          format: uri
+          description: Link to the next page (if available)
+          example: "/api/scheduler/v1/jobs?limit=20&offset=20"
+        prev:
+          type: string
+          format: uri
+          description: Link to the previous page (if available)
+          example: "/api/scheduler/v1/jobs?limit=20&offset=0"
+
+    PaginatedJobsResponse:
+      type: object
+      description: Paginated response for jobs list
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+
+    PaginatedJobRunsResponse:
+      type: object
+      description: Paginated response for job runs list
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        links:
+          $ref: '#/components/schemas/PaginationLinks'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobRun'
+
   responses:
     BadRequest:
       description: Bad request - Invalid input or missing required fields
@@ -645,30 +705,3 @@ components:
             type: string
             example: "Internal server error"
 
-  securitySchemes:
-    RedHatIdentity:
-      type: apiKey
-      in: header
-      name: X-Rh-Identity
-      description: |
-        Base64-encoded JSON containing Red Hat identity information.
-
-        The decoded JSON structure should contain:
-        ```json
-        {
-          "identity": {
-            "account_number": "000001",
-            "org_id": "000001",
-            "type": "User",
-            "auth_type": "jwt-auth",
-            "user": {
-              "username": "testuser",
-              "email": "test@example.com",
-              "user_id": "user-123"
-            },
-            "internal": {
-              "org_id": "000001"
-            }
-          }
-        }
-        ```

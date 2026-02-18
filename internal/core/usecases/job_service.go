@@ -14,14 +14,14 @@ type JobRepository interface {
 	FindByID(id string) (domain.Job, error)
 	FindAll() ([]domain.Job, error)
 	FindByOrgID(orgID string) ([]domain.Job, error)
-	FindByUserID(userID string) ([]domain.Job, error)
+	FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error)
 	Delete(id string) error
 }
 
 type JobRunRepository interface {
 	Save(run domain.JobRun) error
 	FindByID(id string) (domain.JobRun, error)
-	FindByJobID(jobID string) ([]domain.JobRun, error)
+	FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error)
 	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
 	FindAll() ([]domain.JobRun, error)
 }
@@ -184,10 +184,10 @@ func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter strin
 	return filtered, nil
 }
 
-func (s *JobService) GetJobsByUserID(userID string, statusFilter, nameFilter string) ([]domain.Job, error) {
-	jobs, err := s.repo.FindByUserID(userID)
+func (s *JobService) GetJobsByUserID(userID string, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
+	jobs, total, err := s.repo.FindByUserID(userID, offset, limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	filtered := make([]domain.Job, 0)
@@ -201,7 +201,7 @@ func (s *JobService) GetJobsByUserID(userID string, statusFilter, nameFilter str
 		filtered = append(filtered, job)
 	}
 
-	return filtered, nil
+	return filtered, total, nil
 }
 
 func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {

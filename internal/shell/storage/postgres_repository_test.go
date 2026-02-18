@@ -244,13 +244,17 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	}
 
 	// Test: User 1 should only see their own jobs
-	user1Jobs, err := repo.FindByUserID("user-1")
+	user1Jobs, total1, err := repo.FindByUserID("user-1", 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find jobs for user-1: %v", err)
 	}
 
 	if len(user1Jobs) != 2 {
 		t.Errorf("Expected 2 jobs for user-1, got %d", len(user1Jobs))
+	}
+
+	if total1 != 2 {
+		t.Errorf("Expected total count 2 for user-1, got %d", total1)
 	}
 
 	for _, job := range user1Jobs {
@@ -260,13 +264,17 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	}
 
 	// Test: User 2 should only see their own jobs
-	user2Jobs, err := repo.FindByUserID("user-2")
+	user2Jobs, total2, err := repo.FindByUserID("user-2", 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find jobs for user-2: %v", err)
 	}
 
 	if len(user2Jobs) != 2 {
 		t.Errorf("Expected 2 jobs for user-2, got %d", len(user2Jobs))
+	}
+
+	if total2 != 2 {
+		t.Errorf("Expected total count 2 for user-2, got %d", total2)
 	}
 
 	for _, job := range user2Jobs {
@@ -276,13 +284,17 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	}
 
 	// Test: User 3 should see no jobs
-	user3Jobs, err := repo.FindByUserID("user-3")
+	user3Jobs, total3, err := repo.FindByUserID("user-3", 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find jobs for user-3: %v", err)
 	}
 
 	if len(user3Jobs) != 0 {
 		t.Errorf("Expected 0 jobs for user-3, got %d", len(user3Jobs))
+	}
+
+	if total3 != 0 {
+		t.Errorf("Expected total count 0 for user-3, got %d", total3)
 	}
 
 	// Cleanup
@@ -553,9 +565,13 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	}
 
 	// Test: FindByJobID should return all runs for the job
-	jobRuns, err := runRepo.FindByJobID(job.ID)
+	jobRuns, total, err := runRepo.FindByJobID(job.ID, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find runs by job ID: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total count 3, got %d", total)
 	}
 
 	if len(jobRuns) != 3 {

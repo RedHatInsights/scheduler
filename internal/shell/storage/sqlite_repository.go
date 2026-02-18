@@ -411,20 +411,31 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	return jobs, nil
 }
 
-func (r *SQLiteJobRepository) FindByUserID(userID string) ([]domain.Job, error) {
-	log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - retrieving jobs for user: %s", userID)
+func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+	log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - retrieving jobs for user: %s (offset=%d, limit=%d)", userID, offset, limit)
 
+	// First get the total count
+	countQuery := `SELECT COUNT(*) FROM jobs WHERE user_id = ?`
+	var total int
+	err := r.db.QueryRow(countQuery, userID).Scan(&total)
+	if err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - count query error: %v", err)
+		return nil, 0, err
+	}
+
+	// Then get the paginated results
 	query := `
 		SELECT id, name, org_id, username, user_id, schedule, payload_type, payload_details, status, last_run
 		FROM jobs
 		WHERE user_id = ?
 		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, userID)
+	rows, err := r.db.Query(query, userID, limit, offset)
 	if err != nil {
 		log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - database error: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -440,7 +451,7 @@ func (r *SQLiteJobRepository) FindByUserID(userID string) ([]domain.Job, error) 
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - scan error: %v", err)
-			return nil, err
+			return nil, 0, err
 		}
 
 		// Unmarshal payload
@@ -461,11 +472,11 @@ func (r *SQLiteJobRepository) FindByUserID(userID string) ([]domain.Job, error) 
 
 	if err := rows.Err(); err != nil {
 		log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - rows error: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - found %d jobs for user %s", len(jobs), userID)
-	return jobs, nil
+	log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - found %d jobs for user %s (total: %d)", len(jobs), userID, total)
+	return jobs, total, nil
 }
 
 func (r *SQLiteJobRepository) Delete(id string) error {

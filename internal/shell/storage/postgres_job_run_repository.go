@@ -94,9 +94,24 @@ func (r *PostgresJobRunRepository) FindByID(id string) (domain.JobRun, error) {
 	return r.scanRun(r.db.QueryRow(query, id))
 }
 
-func (r *PostgresJobRunRepository) FindByJobID(jobID string) ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result
-		FROM job_runs WHERE job_id = $1 ORDER BY start_time DESC`, jobID)
+func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+	// First get the total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM job_runs WHERE job_id = $1`
+	err := r.db.QueryRow(countQuery, jobID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count job runs: %w", err)
+	}
+
+	// Then get the paginated results
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result
+		FROM job_runs WHERE job_id = $1 ORDER BY start_time DESC LIMIT $2 OFFSET $3`
+	runs, err := r.queryRuns(query, jobID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return runs, total, nil
 }
 
 func (r *PostgresJobRunRepository) FindByJobIDAndOrgID(jobID, orgID string) ([]domain.JobRun, error) {
