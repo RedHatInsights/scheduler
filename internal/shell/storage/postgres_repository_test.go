@@ -565,9 +565,13 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	}
 
 	// Test: FindByJobID should return all runs for the job
-	jobRuns, err := runRepo.FindByJobID(job.ID)
+	jobRuns, total, err := runRepo.FindByJobID(job.ID, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find runs by job ID: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total count 3, got %d", total)
 	}
 
 	if len(jobRuns) != 3 {
