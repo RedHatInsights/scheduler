@@ -380,12 +380,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
-          description: Job not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: "Job not found"
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -422,12 +417,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '404':
-          description: Job run not found
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: "Job run not found"
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
