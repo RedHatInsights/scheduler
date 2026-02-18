@@ -282,9 +282,14 @@ paths:
         '400':
           description: Bad request (e.g., job already paused)
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errors:
+                  - status: "400"
+                    title: "Job Already Paused"
+                    detail: "The job is already in a paused state"
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -316,9 +321,14 @@ paths:
         '400':
           description: Bad request (e.g., job not paused)
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errors:
+                  - status: "400"
+                    title: "Job Not Paused"
+                    detail: "The job is not in a paused state and cannot be resumed"
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -601,14 +611,39 @@ components:
         - failed
       example: "completed"
 
-    Error:
+    ErrorObject:
       type: object
-      description: Error response
+      description: JSON:API error object
+      required:
+        - status
+        - title
+        - detail
       properties:
-        message:
+        status:
           type: string
-          description: Error message
-          example: "Job not found"
+          description: HTTP status code as a string
+          example: "404"
+        title:
+          type: string
+          description: Short, human-readable summary of the problem
+          example: "Job Not Found"
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+          example: "The job with ID '550e8400-e29b-41d4-a716-446655440000' could not be found or you do not have permission to access it"
+
+    ErrorResponse:
+      type: object
+      description: JSON:API error response
+      required:
+        - errors
+      properties:
+        errors:
+          type: array
+          description: Array of error objects
+          items:
+            $ref: '#/components/schemas/ErrorObject'
+          minItems: 1
 
     PaginationMeta:
       type: object
@@ -684,24 +719,46 @@ components:
     BadRequest:
       description: Bad request - Invalid input or missing required fields
       content:
-        text/plain:
+        application/vnd.api+json:
           schema:
-            type: string
-            example: "Invalid JSON"
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidJSON:
+              summary: Invalid JSON
+              value:
+                errors:
+                  - status: "400"
+                    title: "Invalid JSON"
+                    detail: "The request body contains invalid JSON"
+            missingFields:
+              summary: Missing required fields
+              value:
+                errors:
+                  - status: "400"
+                    title: "Missing Required Fields"
+                    detail: "Missing required fields: name, schedule"
 
     NotFound:
       description: Resource not found
       content:
-        text/plain:
+        application/vnd.api+json:
           schema:
-            type: string
-            example: "Job not found"
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            errors:
+              - status: "404"
+                title: "Job Not Found"
+                detail: "The job with ID '550e8400-e29b-41d4-a716-446655440000' could not be found or you do not have permission to access it"
 
     InternalServerError:
       description: Internal server error
       content:
-        text/plain:
+        application/vnd.api+json:
           schema:
-            type: string
-            example: "Internal server error"
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            errors:
+              - status: "500"
+                title: "Internal Server Error"
+                detail: "An unexpected error occurred while processing your request"
 

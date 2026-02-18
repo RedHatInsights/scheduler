@@ -32,7 +32,7 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 
 	if !isValidIdentity(ident) {
 		log.Printf("[DEBUG] GetJobRuns failed - invalid identity")
-		http.Error(w, "Invalid identity", http.StatusBadRequest)
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
 
@@ -44,11 +44,11 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 	runs, total, err := h.jobRunService.GetJobRunsWithOrgCheck(jobID, ident.Identity.OrgID, offset, limit)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
-			http.Error(w, "Job not found", http.StatusNotFound)
+			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", jobID)})
 			return
 		}
 		log.Printf("[DEBUG] HTTP GetJobRuns failed - error: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
 
@@ -70,7 +70,7 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 
 	if !isValidIdentity(ident) {
 		log.Printf("[DEBUG] GetJobRuns failed - invalid identity")
-		http.Error(w, "Invalid identity", http.StatusBadRequest)
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
 
@@ -80,11 +80,11 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 	run, err := h.jobRunService.GetJobRunWithOrgCheck(runID, ident.Identity.OrgID)
 	if err != nil {
 		if err == domain.ErrJobRunNotFound {
-			http.Error(w, "Job run not found", http.StatusNotFound)
+			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job run", runID)})
 			return
 		}
 		log.Printf("[DEBUG] HTTP GetJobRun failed - error: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
 
