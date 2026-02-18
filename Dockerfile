@@ -1,5 +1,5 @@
 # Multi-stage build for smaller final image
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:9.7-1771417345 AS builder
 
 # Set working directory
 WORKDIR /opt/app-root/src
