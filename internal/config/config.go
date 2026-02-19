@@ -18,6 +18,9 @@ type Config struct {
 	// Database configuration (uses Clowder when available)
 	Database DatabaseConfig `json:"database"`
 
+	// Redis configuration
+	Redis RedisConfig `json:"redis"`
+
 	// Kafka configuration (uses Clowder when available)
 	Kafka KafkaConfig `json:"kafka"`
 
@@ -89,6 +92,27 @@ type DatabaseConfig struct {
 
 	// ConnectionMaxLifetime for connection recycling
 	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
+}
+
+// RedisConfig contains Redis connection settings
+type RedisConfig struct {
+	// Enabled indicates if Redis integration is active
+	Enabled bool `json:"enabled"`
+
+	// Host for Redis server
+	Host string `json:"host"`
+
+	// Port for Redis server
+	Port int `json:"port"`
+
+	// Password for Redis authentication (optional)
+	Password string `json:"password"`
+
+	// DB number to use (0-15)
+	DB int `json:"db"`
+
+	// PoolSize for connection pooling
+	PoolSize int `json:"pool_size"`
 }
 
 // KafkaConfig contains Kafka connection settings
@@ -239,6 +263,9 @@ func LoadConfig() (*Config, error) {
 	// Load database configuration with Clowder integration
 	config.Database = loadDatabaseConfig(clowderConfig)
 
+	// Load Redis configuration
+	config.Redis = loadRedisConfig()
+
 	// Load Kafka configuration with Clowder integration
 	config.Kafka = loadKafkaConfig(clowderConfig)
 
@@ -324,6 +351,18 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 		MaxOpenConnections:    getEnvAsInt("DB_MAX_OPEN_CONNECTIONS", 25),
 		MaxIdleConnections:    getEnvAsInt("DB_MAX_IDLE_CONNECTIONS", 5),
 		ConnectionMaxLifetime: getEnvAsDuration("DB_CONNECTION_MAX_LIFETIME", 5*time.Minute),
+	}
+}
+
+// loadRedisConfig loads Redis configuration from environment variables
+func loadRedisConfig() RedisConfig {
+	return RedisConfig{
+		Enabled:  getEnvAsBool("REDIS_ENABLED", false),
+		Host:     getEnv("REDIS_HOST", "localhost"),
+		Port:     getEnvAsInt("REDIS_PORT", 6379),
+		Password: getEnv("REDIS_PASSWORD", ""),
+		DB:       getEnvAsInt("REDIS_DB", 0),
+		PoolSize: getEnvAsInt("REDIS_POOL_SIZE", 10),
 	}
 }
 
