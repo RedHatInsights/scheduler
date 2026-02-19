@@ -13,8 +13,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application binaries
+# Main scheduler binary (supports: server, api, worker, db_migration subcommands)
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o scheduler cmd/server/main.go
+# Kafka producer utility
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o kafka-producer cmd/kafka-producer/main.go
 
 # Final stage - minimal runtime image
@@ -34,14 +36,14 @@ RUN mkdir -p /data && chown scheduler:scheduler /data
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
+# Copy binaries from builder stage
 COPY --from=builder /opt/app-root/src/scheduler .
 COPY --from=builder /opt/app-root/src/kafka-producer .
 COPY --from=builder /opt/app-root/src/trigger_swatch_report_gen.sh .
 COPY --from=builder /opt/app-root/src/db/migrations db/migrations/
 
-# Change ownership of the binary
-RUN chown scheduler:scheduler scheduler
+# Change ownership of the binaries
+RUN chown scheduler:scheduler scheduler kafka-producer
 
 # Switch to non-root user
 USER 1001
