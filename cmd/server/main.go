@@ -1,5 +1,19 @@
 package main
 
+// Legacy Single-Process Server
+//
+// This is the original single-process implementation that combines the API server
+// and job scheduler in one binary. It's suitable for:
+// - Local development and testing
+// - Small deployments with minimal traffic
+// - SQLite-based deployments
+//
+// For production Kubernetes deployments with horizontal scaling, use:
+// - cmd/api/main.go - API server (handles REST requests, writes to Postgres + Redis)
+// - cmd/worker/main.go - Worker (executes jobs from Redis, writes history to Postgres)
+//
+// See docs/KUBERNETES_DEPLOYMENT.md for the scalable multi-pod architecture.
+
 import (
 	"context"
 	"fmt"

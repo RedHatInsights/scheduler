@@ -1,5 +1,29 @@
 version: '3.8'
 
+# Insights Scheduler - Docker Compose Configuration
+#
+# This compose file runs the distributed multi-pod architecture locally:
+# - postgres: Source of truth for job metadata and run history
+# - redis: Distributed scheduling coordinator (sorted sets)
+# - api: REST API server (handles CRUD, writes to Postgres + Redis)
+# - worker: Job executor (polls Redis, executes jobs, writes results to Postgres)
+# - kafka/zookeeper/kafka-ui: Optional messaging infrastructure
+#
+# Quick Start:
+#   docker-compose up -d postgres redis    # Start databases only
+#   docker-compose up -d                    # Start everything (api + worker)
+#   docker-compose logs -f api worker       # View logs
+#
+# Access:
+#   API:       http://localhost:5000/api/v1/jobs
+#   Metrics:   http://localhost:8080/metrics
+#   Kafka UI:  http://localhost:8090
+#
+# To use the legacy single-process server instead:
+#   1. Comment out the 'api' and 'worker' services
+#   2. Uncomment the 'scheduler' service
+#   3. docker-compose up -d
+
 services:
   # PostgreSQL Database
   postgres:
@@ -17,6 +41,21 @@ services:
       test: ["CMD-SHELL", "pg_isready -U insights -d scheduler"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  # Redis (distributed scheduling coordinator)
+  redis:
+    image: redis:7-alpine
+    container_name: scheduler-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 5
 
   # Zookeeper (required by Kafka)
@@ -65,32 +104,6 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
 
-  # Scheduler service (optional - uncomment to run in container)
-  # scheduler:
-  #   build: .
-  #   container_name: scheduler-app
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     kafka:
-  #       condition: service_healthy
-  #   ports:
-  #     - "5000:5000"
-  #     - "8080:8080"
-  #   environment:
-  #     DB_TYPE: postgres
-  #     DB_HOST: postgres
-  #     DB_PORT: 5432
-  #     DB_NAME: scheduler
-  #     DB_USERNAME: insights
-  #     DB_PASSWORD: insights
-  #     DB_SSL_MODE: disable
-  #     KAFKA_BROKERS: kafka:29092
-  #     KAFKA_TOPIC: platform.notifications.ingress
-  #     USER_VALIDATOR_IMPL: fake
-  #     JOB_COMPLETION_NOTIFIER_IMPL: notifications
-  #     PORT: 5000
-  #     METRICS_PORT: 8080
-
 volumes:
   postgres_data:
+  redis_data:
