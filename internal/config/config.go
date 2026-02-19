@@ -27,6 +27,9 @@ type Config struct {
 	// Export service configuration
 	ExportService ExportServiceConfig `json:"export_service"`
 
+	// Inventory PDF generator service configuration
+	InventoryPdfService InventoryPdfServiceConfig `json:"inventory_pdf_service"`
+
 	// BOP service configuration
 	Bop BopConfig `json:"bop"`
 
@@ -216,6 +219,24 @@ type BopConfig struct {
 	EphemeralMode bool `json:"ephemeral_mode"`
 }
 
+// InventoryPdfServiceConfig contains Inventory PDF generator service client settings
+type InventoryPdfServiceConfig struct {
+	// BaseURL for the Inventory PDF generator service API
+	BaseURL string `json:"base_url"`
+
+	// Timeout for Inventory PDF service requests
+	Timeout time.Duration `json:"timeout"`
+
+	// MaxRetries for failed requests
+	MaxRetries int `json:"max_retries"`
+
+	// PollMaxRetries is the maximum number of times to poll for PDF completion
+	PollMaxRetries int `json:"poll_max_retries"`
+
+	// PollInterval is the duration to wait between polling attempts
+	PollInterval time.Duration `json:"poll_interval"`
+}
+
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
 func LoadConfig() (*Config, error) {
 	var clowderConfig *clowder.AppConfig
@@ -247,6 +268,9 @@ func LoadConfig() (*Config, error) {
 
 	// Load export service configuration (no Clowder integration needed)
 	config.ExportService = loadExportServiceConfig()
+
+	// Load Inventory PDF service configuration (no Clowder integration needed)
+	config.InventoryPdfService = loadInventoryPdfServiceConfig()
 
 	// Load BOP configuration
 	config.Bop = loadBopConfig()
@@ -430,6 +454,17 @@ func loadExportServiceConfig() ExportServiceConfig {
 	}
 }
 
+// loadInventoryPdfServiceConfig loads Inventory PDF service configuration from environment
+func loadInventoryPdfServiceConfig() InventoryPdfServiceConfig {
+	return InventoryPdfServiceConfig{
+		BaseURL:        getEnv("INVENTORY_PDF_SERVICE_URL", "http://pdf-generator:8000/api/crc-pdf-generator"),
+		Timeout:        getEnvAsDuration("INVENTORY_PDF_SERVICE_TIMEOUT", 5*time.Minute),
+		MaxRetries:     getEnvAsInt("INVENTORY_PDF_SERVICE_MAX_RETRIES", 3),
+		PollMaxRetries: getEnvAsInt("INVENTORY_PDF_SERVICE_POLL_MAX_RETRIES", 60),
+		PollInterval:   getEnvAsDuration("INVENTORY_PDF_SERVICE_POLL_INTERVAL", 10*time.Second),
+	}
+}
+
 // loadBopConfig loads BOP configuration from environment
 func loadBopConfig() BopConfig {
 	apiToken := getEnv("BOP_API_TOKEN", "")
@@ -507,6 +542,11 @@ func (c *Config) Validate() error {
 	// Validate export service configuration
 	if c.ExportService.BaseURL == "" {
 		return fmt.Errorf("export service base URL is required")
+	}
+
+	// Validate Inventory PDF service configuration
+	if c.InventoryPdfService.BaseURL == "" {
+		return fmt.Errorf("Inventory PDF service base URL is required")
 	}
 
 	// Validate BOP configuration (only if enabled)
