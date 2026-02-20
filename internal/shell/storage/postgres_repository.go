@@ -19,7 +19,6 @@ type PostgresJobRepository struct {
 func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error) {
 
 	connStr := buildConnectionString(cfg)
-	fmt.Println("connStr: ", connStr)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -30,79 +29,10 @@ func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error
 	}
 
 	repo := &PostgresJobRepository{db: db}
-	/*
-		if err := repo.initSchema(); err != nil {
-			return nil, err
-		}
-	*/
 
 	log.Printf("[DEBUG] PostgresJobRepository - database initialized successfully")
 	return repo, nil
 }
-
-/*
-func (r *PostgresJobRepository) initSchema() error {
-	if err := r.runMigrations(); err != nil {
-		return err
-	}
-
-	schema := `
-CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    org_id TEXT NOT NULL,
-    username TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    schedule TEXT NOT NULL,
-    payload_type TEXT NOT NULL,
-    payload_details TEXT NOT NULL,
-    status TEXT NOT NULL,
-    last_run TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_jobs_org_id ON jobs(org_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
-
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = CURRENT_TIMESTAMP; RETURN NEW; END; $$ language 'plpgsql';
-
-DROP TRIGGER IF EXISTS update_jobs_updated_at ON jobs;
-CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-`
-	_, err := r.db.Exec(schema)
-	return err
-}
-
-func (r *PostgresJobRepository) runMigrations() error {
-	var tableExists bool
-	r.db.QueryRow(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'jobs')`).Scan(&tableExists)
-	if !tableExists {
-		return nil
-	}
-
-	migrations := []struct {
-		column, defaultVal string
-	}{
-		{"org_id", "default-org"},
-		{"username", "unknown"},
-		{"user_id", "unknown-id"},
-	}
-
-	for _, m := range migrations {
-		var exists bool
-		r.db.QueryRow(`SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = $1)`, m.column).Scan(&exists)
-		if !exists {
-			if _, err := r.db.Exec(`ALTER TABLE jobs ADD COLUMN ` + m.column + ` TEXT DEFAULT '` + m.defaultVal + `'`); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-*/
 
 func (r *PostgresJobRepository) Save(job domain.Job) error {
 	payloadJSON, err := json.Marshal(job.Payload)

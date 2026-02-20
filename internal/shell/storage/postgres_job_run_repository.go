@@ -18,7 +18,6 @@ type PostgresJobRunRepository struct {
 func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository, error) {
 
 	connStr := buildConnectionString(cfg)
-	fmt.Println("connStr: ", connStr)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -29,43 +28,11 @@ func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository,
 	}
 
 	repo := &PostgresJobRunRepository{db: db}
-	/*
-		if err := repo.initSchema(); err != nil {
-			return nil, fmt.Errorf("failed to initialize schema: %w", err)
-		}
-	*/
 
 	log.Printf("[DEBUG] PostgresJobRunRepository - database initialized successfully")
 
 	return repo, nil
 }
-
-/*
-func (r *PostgresJobRunRepository) initSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS job_runs (
-		id TEXT PRIMARY KEY,
-		job_id TEXT NOT NULL,
-		status TEXT NOT NULL,
-		start_time TEXT NOT NULL,
-		end_time TEXT,
-		error_message TEXT,
-		result TEXT,
-		created_at TEXT NOT NULL,
-		FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-	);
-	CREATE INDEX IF NOT EXISTS idx_job_runs_job_id ON job_runs(job_id);
-	CREATE INDEX IF NOT EXISTS idx_job_runs_status ON job_runs(status);
-	CREATE INDEX IF NOT EXISTS idx_job_runs_start_time ON job_runs(start_time);
-	`
-	_, err := r.db.Exec(schema)
-	if err != nil {
-		return fmt.Errorf("failed to create schema: %w", err)
-	}
-	log.Println("[DEBUG] Job runs table schema initialized")
-	return nil
-}
-*/
 
 func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	query := `
