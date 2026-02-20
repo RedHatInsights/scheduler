@@ -59,19 +59,9 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload)
 	if err != nil {
-		if err == domain.ErrInvalidSchedule {
+		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("schedule", err.Error())})
-			return
-		}
-		if err == domain.ErrInvalidPayload {
-			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("payload", err.Error())})
-			return
-		}
-		if err == domain.ErrInvalidOrgID {
-			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("org_id", err.Error())})
+			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
 		}
 		log.Printf("[DEBUG] HTTP CreateJob failed - internal error: %v", err)
@@ -185,22 +175,12 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
 			return
 		}
-		if err == domain.ErrInvalidSchedule {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("schedule", err.Error())})
+		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidOrgID {
+			log.Printf("[DEBUG] HTTP UpdateJob failed - validation error: %v", err)
+			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
 		}
-		if err == domain.ErrInvalidPayload {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("payload", err.Error())})
-			return
-		}
-		if err == domain.ErrInvalidStatus {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("status", err.Error())})
-			return
-		}
-		if err == domain.ErrInvalidOrgID {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("org_id", err.Error())})
-			return
-		}
+		log.Printf("[DEBUG] HTTP UpdateJob failed - internal error: %v", err)
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
@@ -235,22 +215,12 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
 			return
 		}
-		if err == domain.ErrInvalidSchedule {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("schedule", err.Error())})
+		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidOrgID {
+			log.Printf("[DEBUG] HTTP PatchJob failed - validation error: %v", err)
+			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
 		}
-		if err == domain.ErrInvalidPayload {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("payload", err.Error())})
-			return
-		}
-		if err == domain.ErrInvalidStatus {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("status", err.Error())})
-			return
-		}
-		if err == domain.ErrInvalidOrgID {
-			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidField("org_id", err.Error())})
-			return
-		}
+		log.Printf("[DEBUG] HTTP PatchJob failed - internal error: %v", err)
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}

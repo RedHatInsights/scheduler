@@ -85,11 +85,11 @@ func errorMissingFields() ErrorObject {
 	}
 }
 
-func errorInvalidField(field, reason string) ErrorObject {
+func errorBadRequest() ErrorObject {
 	return ErrorObject{
 		Status: "400",
-		Title:  "Invalid Field",
-		Detail: "The field '" + field + "' is invalid: " + reason,
+		Title:  "Bad Request",
+		Detail: "The request could not be processed due to invalid input",
 	}
 }
 
