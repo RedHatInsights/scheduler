@@ -568,17 +568,41 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 	// On startup, sync jobs from Postgres to Redis (for resilience)
 	// This ensures Redis has all scheduled jobs even after Redis restart
-	log.Println("[WORKER] Syncing jobs from Postgres to Redis (one-time on startup)")
-	allJobs, err := jobRepo.FindAll()
+	// Use leader election to prevent thundering herd (only one worker syncs)
+	log.Println("[WORKER] Checking if database sync is needed...")
+
+	// First, check if Redis already has jobs
+	jobCount, err := redisScheduler.GetScheduledJobCount()
 	if err != nil {
-		log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
-		log.Println("[WORKER] Continuing with jobs already in Redis...")
+		log.Printf("[WORKER] WARNING: Failed to check Redis job count: %v", err)
+	} else if jobCount > 0 {
+		log.Printf("[WORKER] Redis already has %d jobs, skipping sync", jobCount)
 	} else {
-		if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
-			log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+		// Redis is empty, try to become sync leader
+		log.Println("[WORKER] Redis is empty, attempting to acquire sync leader lock...")
+
+		isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
+		if err != nil {
+			log.Printf("[WORKER] WARNING: Failed to acquire leader lock: %v", err)
+			log.Println("[WORKER] Continuing without sync...")
+		} else if !isLeader {
+			log.Println("[WORKER] Another worker is syncing, skipping...")
 		} else {
-			count, _ := redisScheduler.GetScheduledJobCount()
-			log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
+			// This worker is the leader, perform sync
+			log.Println("[WORKER] Elected as sync leader, performing database sync")
+
+			allJobs, err := jobRepo.FindAll()
+			if err != nil {
+				log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
+			} else {
+				log.Printf("[WORKER] Loaded %d jobs from Postgres, syncing to Redis...", len(allJobs))
+				if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
+					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+				} else {
+					count, _ := redisScheduler.GetScheduledJobCount()
+					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
+				}
+			}
 		}
 	}
 
