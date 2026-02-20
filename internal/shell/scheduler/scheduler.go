@@ -8,17 +8,17 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"insights-scheduler/internal/core/domain"
-	"insights-scheduler/internal/core/usecases"
+	"insights-scheduler/internal/core/ports"
 )
 
 type CronScheduler struct {
-	jobService *usecases.DefaultJobService
+	jobService ports.SchedulerJobService
 	cron       *cron.Cron
 	jobEntries map[string]cron.EntryID // jobID -> cronEntryID mapping
 	mu         sync.RWMutex
 }
 
-func NewCronScheduler(jobService *usecases.DefaultJobService) *CronScheduler {
+func NewCronScheduler(jobService ports.SchedulerJobService) *CronScheduler {
 	return &CronScheduler{
 		jobService: jobService,
 		cron:       cron.New(), // Standard 5-field format (minute hour dom month dow)

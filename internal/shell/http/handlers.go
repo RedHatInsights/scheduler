@@ -13,10 +13,10 @@ import (
 )
 
 type JobHandler struct {
-	jobService ports.JobService
+	jobService ports.AuthorizedJobService
 }
 
-func NewJobHandler(jobService ports.JobService) *JobHandler {
+func NewJobHandler(jobService ports.AuthorizedJobService) *JobHandler {
 	return &JobHandler{
 		jobService: jobService,
 	}
@@ -58,7 +58,8 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
-	job, err := h.jobService.CreateJob(r.Context(), req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Timezone, req.Type, req.Payload)
+	// Call service with identity - authorization is handled by the service
+	job, err := h.jobService.CreateJob(r.Context(), ident, req.Name, req.Schedule, req.Timezone, req.Type, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID || err == domain.ErrInvalidTimezone {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
@@ -97,8 +98,8 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	nameFilter := r.URL.Query().Get("name")
 	offset, limit := parsePaginationParams(r.URL)
 
-	// Only get jobs for the current user
-	jobs, total, err := h.jobService.GetJobsByUserID(r.Context(), ident.Identity.User.UserID, statusFilter, nameFilter, offset, limit)
+	// Service automatically filters by identity
+	jobs, total, err := h.jobService.ListJobs(r.Context(), ident, statusFilter, nameFilter, offset, limit)
 	if err != nil {
 		log.Printf("[DEBUG] GetAllJobs failed - unable to retrieve jobs")
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
@@ -124,8 +125,8 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only get job if it belongs to the current user
-	job, err := h.jobService.GetJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
+	// Service handles authorization check
+	job, err := h.jobService.GetJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -170,7 +171,8 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.jobService.UpdateJob(r.Context(), id, req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload, req.Status)
+	// Service handles authorization check
+	job, err := h.jobService.UpdateJob(r.Context(), ident, id, req.Name, req.Schedule, req.Type, req.Payload, req.Status)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -209,8 +211,8 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only patch job if it belongs to the current user
-	job, err := h.jobService.PatchJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID, updates)
+	// Service handles authorization check
+	job, err := h.jobService.PatchJob(r.Context(), ident, id, updates)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -243,8 +245,8 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only delete job if it belongs to the current user
-	err := h.jobService.DeleteJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
+	// Service handles authorization check
+	err := h.jobService.DeleteJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -270,8 +272,8 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only run job if it belongs to the current user
-	err := h.jobService.RunJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
+	// Service handles authorization check
+	err := h.jobService.RunJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -297,8 +299,8 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only pause job if it belongs to the current user
-	job, err := h.jobService.PauseJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
+	// Service handles authorization check
+	job, err := h.jobService.PauseJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -329,8 +331,8 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only resume job if it belongs to the current user
-	job, err := h.jobService.ResumeJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
+	// Service handles authorization check
+	job, err := h.jobService.ResumeJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})

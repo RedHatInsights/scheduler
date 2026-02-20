@@ -8,7 +8,7 @@ import (
 	"insights-scheduler/internal/core/usecases"
 )
 
-func SetupRoutes(jobService ports.JobService, jobRunService *usecases.JobRunService) *mux.Router {
+func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.JobRunService) *mux.Router {
 	router := mux.NewRouter()
 	handler := NewJobHandler(jobService)
 	runHandler := NewJobRunHandler(jobRunService)

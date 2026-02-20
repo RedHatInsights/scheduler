@@ -292,17 +292,21 @@ func runServer(cmd *cobra.Command, args []string) {
 	jobExecutor := executor.NewJobExecutor(executors, runRepo)
 
 	// Create functional core service
-	jobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
+	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
-	// Create cron scheduler
-	cronScheduler := scheduler.NewCronScheduler(jobService)
+	// Create adapters for different consumers
+	httpJobService := usecases.NewAuthorizedJobService(coreJobService)
+	schedulerJobService := usecases.NewSchedulerJobService(coreJobService)
 
-	// Connect job service to cron scheduler
-	jobService.SetCronScheduler(cronScheduler)
+	// Create cron scheduler with scheduler service adapter
+	cronScheduler := scheduler.NewCronScheduler(schedulerJobService)
 
-	// Setup HTTP routes
-	router := httpShell.SetupRoutes(jobService, jobRunService)
+	// Connect core job service to cron scheduler
+	coreJobService.SetCronScheduler(cronScheduler)
+
+	// Setup HTTP routes with authorized service adapter
+	router := httpShell.SetupRoutes(httpJobService, jobRunService)
 
 	// Create HTTP server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
