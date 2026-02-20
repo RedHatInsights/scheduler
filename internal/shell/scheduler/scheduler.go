@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 
@@ -42,7 +41,9 @@ func (s *CronScheduler) Start(ctx context.Context) {
 
 func (s *CronScheduler) Stop() {
 	log.Println("Stopping cron scheduler")
+	s.mu.Lock()
 	ctx := s.cron.Stop()
+	s.mu.Unlock()
 	<-ctx.Done()
 	log.Println("Cron scheduler stopped")
 }
@@ -122,15 +123,14 @@ func (s *CronScheduler) UnscheduleJob(jobID string) {
 // loadAndScheduleAllJobs loads all scheduled jobs from the repository and schedules them
 func (s *CronScheduler) loadAndScheduleAllJobs() {
 	jobs, err := s.jobService.ListJobs()
-	fmt.Println("inside loadAndScheduleAllJobs - jobs: ", jobs)
 	if err != nil {
 		log.Printf("Error loading jobs: %v", err)
 		return
 	}
 
+	log.Printf("Loading %d jobs for scheduling", len(jobs))
+
 	for _, job := range jobs {
-		fmt.Printf("Scheduling job: %v\n", job)
-		fmt.Printf("job.Status: %v\n", job.Status)
 		// Only schedule jobs that are scheduled or failed
 		if job.Status == domain.StatusScheduled || job.Status == domain.StatusFailed {
 			if err := s.ScheduleJob(job); err != nil {

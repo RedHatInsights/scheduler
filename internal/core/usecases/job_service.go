@@ -642,10 +642,10 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 	}
 
 	err = s.executor.Execute(runningJob)
-	fmt.Println("err: ", err)
 
 	var finalStatus domain.JobStatus
 	if err != nil {
+		log.Printf("Job execution failed for job %s: %v", job.ID, err)
 		finalStatus = domain.StatusFailed
 	} else {
 		finalStatus = domain.StatusScheduled

@@ -399,8 +399,8 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 
 		// Unmarshal payload
 		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
-			log.Printf("[DEBUG] SQLiteJobRepository.FindAll - failed to unmarshal payload for job %s: %v", job.ID, err)
-			continue
+			log.Printf("ERROR: SQLiteJobRepository.FindAll - failed to unmarshal payload for job %s: %v", job.ID, err)
+			job.Payload = nil // Include job with nil payload rather than silently dropping it
 		}
 
 		// Parse last_run_at time
@@ -463,8 +463,8 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 
 		// Unmarshal payload
 		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
-			log.Printf("[DEBUG] SQLiteJobRepository.FindByOrgID - failed to unmarshal payload for job %s: %v", job.ID, err)
-			continue
+			log.Printf("ERROR: SQLiteJobRepository.FindByOrgID - failed to unmarshal payload for job %s: %v", job.ID, err)
+			job.Payload = nil // Include job with nil payload rather than silently dropping it
 		}
 
 		// Parse last_run_at time
@@ -538,8 +538,8 @@ func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]
 
 		// Unmarshal payload
 		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
-			log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - failed to unmarshal payload for job %s: %v", job.ID, err)
-			continue
+			log.Printf("ERROR: SQLiteJobRepository.FindByUserID - failed to unmarshal payload for job %s: %v", job.ID, err)
+			job.Payload = nil // Include job with nil payload rather than silently dropping it
 		}
 
 		// Parse last_run_at time

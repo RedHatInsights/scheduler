@@ -146,7 +146,8 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
-			continue
+			log.Printf("ERROR: Failed to unmarshal payload for job %s: %v", job.ID, err)
+			job.Payload = nil // Include job with nil payload rather than silently dropping it
 		}
 		if lastRunAtStr.Valid {
 			if t, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {

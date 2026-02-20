@@ -24,7 +24,6 @@ type BopUserValidator struct {
 
 // NewBopUserValidator creates a new BopUserValidator with the given base URL and credentials
 func NewBopUserValidator(baseURL, apiToken, clientID, insightsEnv string) *BopUserValidator {
-	fmt.Println("Using BOP based user validator")
 	return &BopUserValidator{
 		baseURL:     baseURL,
 		apiToken:    apiToken,
@@ -82,14 +81,19 @@ func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, us
 	// Construct the request URL
 	url := fmt.Sprintf("%s/v1/users", v.baseURL)
 
-	postBody := fmt.Sprintf("{ \"users\": [ \"%s\" ] }", username)
-	postBodyReader := strings.NewReader(postBody)
-
-	fmt.Println("BOP URL: ", url)
-	fmt.Println("BOP post body: ", postBody)
+	// Use proper JSON marshaling to prevent injection
+	requestBody := struct {
+		Users []string `json:"users"`
+	}{
+		Users: []string{username},
+	}
+	postBodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
 
 	// Create HTTP request with context
-	req, err := http.NewRequestWithContext(ctx, "POST", url, postBodyReader)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(postBodyBytes)))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -118,8 +122,6 @@ func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, us
 	if err := json.NewDecoder(resp.Body).Decode(&validationResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
-
-	fmt.Printf("validationResp: %+v\n", validationResp)
 
 	if len(validationResp) != 1 {
 		return "", fmt.Errorf("invalid response: expected 1 user, got %d", len(validationResp))

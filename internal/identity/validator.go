@@ -20,7 +20,6 @@ type FakeUserValidator struct{}
 
 // NewFakeUserValidator creates a new FakeUserValidator
 func NewFakeUserValidator() *FakeUserValidator {
-	fmt.Println("Using FAKE user validator")
 	return &FakeUserValidator{}
 }
 
