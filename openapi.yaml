@@ -709,7 +709,7 @@ components:
     BadRequest:
       description: Bad request - Invalid input or missing required fields
       content:
-        application/vnd.api+json:
+        application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
           examples:
@@ -731,7 +731,7 @@ components:
     NotFound:
       description: Resource not found
       content:
-        application/vnd.api+json:
+        application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
           example:
@@ -743,7 +743,7 @@ components:
     InternalServerError:
       description: Internal server error
       content:
-        application/vnd.api+json:
+        application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
           example:
