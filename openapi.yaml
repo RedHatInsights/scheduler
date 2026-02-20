@@ -10,6 +10,7 @@ info:
     ## Schedule Format
     Jobs can be scheduled using standard 5-field cron expressions:
     - Format: `minute hour day month weekday`
+    - All schedules are interpreted in UTC timezone
 
   version: 1.0.0
   contact:
@@ -457,18 +458,31 @@ components:
           example: "Monthly Report Generation"
         schedule:
           $ref: '#/components/schemas/CronSchedule'
+        timezone:
+          type: string
+          description: |
+            IANA timezone for interpreting the schedule (e.g., "America/New_York", "Europe/London", "UTC").
+            The schedule is interpreted in this timezone, but next_run_at is always returned in UTC.
+          example: "America/New_York"
+          default: "UTC"
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:
           $ref: '#/components/schemas/JobPayload'
         status:
           $ref: '#/components/schemas/JobStatus'
-        last_run:
+        last_run_at:
           type: string
           format: date-time
           nullable: true
-          description: Timestamp of the last job execution
-          example: "2025-11-03T10:00:00Z"
+          description: Timestamp of the last job execution in the job's timezone. Stored internally in UTC but returned in the job's timezone with the appropriate offset (e.g., "2025-11-03T05:00:00-05:00" for America/New_York).
+          example: "2025-11-03T05:00:00-05:00"
+        next_run_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the next scheduled job execution in the job's timezone. Calculated from the cron schedule in the job's timezone and returned with the appropriate offset (e.g., "2025-12-01T09:00:00-05:00" for a 9 AM job in America/New_York).
+          example: "2025-12-01T09:00:00-05:00"
 
     JobPayload: {}
 
@@ -504,6 +518,14 @@ components:
           example: "Monthly Report Generation"
         schedule:
           $ref: '#/components/schemas/CronSchedule'
+        timezone:
+          type: string
+          description: |
+            IANA timezone for interpreting the schedule (e.g., "America/New_York", "Europe/London", "UTC").
+            Defaults to "UTC" if not specified. The schedule will be interpreted in this timezone,
+            but next_run_at is always returned in UTC.
+          example: "America/New_York"
+          default: "UTC"
         type:
           $ref: '#/components/schemas/PayloadType'
         payload:

@@ -62,6 +62,7 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 		"testuser",
 		"test-user-123",
 		"*/15 * * * *",
+		"UTC",
 		domain.PayloadMessage,
 		payload,
 	)
@@ -105,9 +106,10 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", job.Status, retrievedJob.Status)
 	}
 
-	// Test Update
+	// Test Update with LastRunAt and NextRunAt
 	now := time.Now().UTC()
-	updatedJob := retrievedJob.WithStatus(domain.StatusRunning).WithLastRun(now)
+	nextRunAt := time.Now().UTC().Add(1 * time.Hour)
+	updatedJob := retrievedJob.WithStatus(domain.StatusRunning).WithLastRunAt(now).WithNextRunAt(nextRunAt)
 
 	err = repo.Save(updatedJob)
 	if err != nil {
@@ -123,12 +125,21 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", domain.StatusRunning, retrievedUpdated.Status)
 	}
 
-	if retrievedUpdated.LastRun == nil {
-		t.Error("Expected LastRun to be set")
+	if retrievedUpdated.LastRunAt == nil {
+		t.Error("Expected LastRunAt to be set")
 	} else {
 		// Allow 1 second difference due to precision
-		if retrievedUpdated.LastRun.Sub(now).Abs() > time.Second {
-			t.Errorf("Expected LastRun near %v, got %v", now, *retrievedUpdated.LastRun)
+		if retrievedUpdated.LastRunAt.Sub(now).Abs() > time.Second {
+			t.Errorf("Expected LastRunAt near %v, got %v", now, *retrievedUpdated.LastRunAt)
+		}
+	}
+
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedUpdated.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt near %v, got %v", nextRunAt, *retrievedUpdated.NextRunAt)
 		}
 	}
 
@@ -150,16 +161,16 @@ func TestPostgresJobRepository_OrgIsolation(t *testing.T) {
 	defer repo.Close()
 
 	// Create jobs for different orgs
-	orgAJob1 := domain.NewJob("Org A Job 1", "org-a", "user1", "user-a-1", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob1 := domain.NewJob("Org A Job 1", "org-a", "user1", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	orgAJob1.ID = "test-job-org-a-1"
 
-	orgAJob2 := domain.NewJob("Org A Job 2", "org-a", "user2", "user-a-2", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob2 := domain.NewJob("Org A Job 2", "org-a", "user2", "user-a-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	orgAJob2.ID = "test-job-org-a-2"
 
-	orgBJob1 := domain.NewJob("Org B Job 1", "org-b", "user3", "user-b-1", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob1 := domain.NewJob("Org B Job 1", "org-b", "user3", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	orgBJob1.ID = "test-job-org-b-1"
 
-	orgBJob2 := domain.NewJob("Org B Job 2", "org-b", "user4", "user-b-2", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob2 := domain.NewJob("Org B Job 2", "org-b", "user4", "user-b-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	orgBJob2.ID = "test-job-org-b-2"
 
 	// Save all jobs
@@ -223,16 +234,16 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	defer repo.Close()
 
 	// Create jobs for different users (same org)
-	user1Job1 := domain.NewJob("User 1 Job 1", "shared-org", "alice", "user-1", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	user1Job1 := domain.NewJob("User 1 Job 1", "shared-org", "alice", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	user1Job1.ID = "test-job-user-1-1"
 
-	user1Job2 := domain.NewJob("User 1 Job 2", "shared-org", "alice", "user-1", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	user1Job2 := domain.NewJob("User 1 Job 2", "shared-org", "alice", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	user1Job2.ID = "test-job-user-1-2"
 
-	user2Job1 := domain.NewJob("User 2 Job 1", "shared-org", "bob", "user-2", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	user2Job1 := domain.NewJob("User 2 Job 1", "shared-org", "bob", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	user2Job1.ID = "test-job-user-2-1"
 
-	user2Job2 := domain.NewJob("User 2 Job 2", "shared-org", "bob", "user-2", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	user2Job2 := domain.NewJob("User 2 Job 2", "shared-org", "bob", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	user2Job2.ID = "test-job-user-2-2"
 
 	// Save all jobs
@@ -314,6 +325,7 @@ func TestPostgresJobRepository_CrossOrgAccess(t *testing.T) {
 		"admin",
 		"admin-123",
 		"0 0 * * *",
+		"UTC",
 		domain.PayloadExport,
 		map[string]interface{}{"data": "confidential"},
 	)
@@ -376,7 +388,7 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 	defer runRepo.Close()
 
 	// Create a job first
-	job := domain.NewJob("Test Job for Runs", "test-org", "testuser", "test-user", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	job := domain.NewJob("Test Job for Runs", "test-org", "testuser", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	job.ID = "test-job-runs-1"
 
 	err := jobRepo.Save(job)
@@ -454,10 +466,10 @@ func TestPostgresJobRunRepository_OrgIsolation(t *testing.T) {
 	defer runRepo.Close()
 
 	// Create jobs for different orgs
-	orgAJob := domain.NewJob("Org A Job", "org-a", "user1", "user-a-1", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob := domain.NewJob("Org A Job", "org-a", "user1", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	orgAJob.ID = "test-job-run-org-a"
 
-	orgBJob := domain.NewJob("Org B Job", "org-b", "user2", "user-b-1", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob := domain.NewJob("Org B Job", "org-b", "user2", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	orgBJob.ID = "test-job-run-org-b"
 
 	jobRepo.Save(orgAJob)
@@ -528,7 +540,7 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	defer runRepo.Close()
 
 	// Create a job
-	job := domain.NewJob("Multi-Run Job", "test-org", "testuser", "test-user", "0 * * * *", domain.PayloadMessage, map[string]interface{}{})
+	job := domain.NewJob("Multi-Run Job", "test-org", "testuser", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	job.ID = "test-job-multi-runs"
 
 	err := jobRepo.Save(job)
@@ -606,6 +618,7 @@ func TestPostgresJobRepository_UpdatedAtColumn(t *testing.T) {
 		"testuser",
 		"test-user-updated-at",
 		"*/30 * * * *",
+		"UTC",
 		domain.PayloadMessage,
 		payload,
 	)
@@ -689,6 +702,7 @@ func TestPostgresJobRepository_UpdatedAtMultipleUpdates(t *testing.T) {
 		"testuser",
 		"test-user",
 		"0 * * * *",
+		"UTC",
 		domain.PayloadMessage,
 		map[string]interface{}{"test": "data"},
 	)
@@ -734,6 +748,182 @@ func TestPostgresJobRepository_UpdatedAtMultipleUpdates(t *testing.T) {
 		if !timestamps[i].After(timestamps[i-1]) {
 			t.Errorf("Timestamp %d should be after timestamp %d. Got %v <= %v",
 				i, i-1, timestamps[i], timestamps[i-1])
+		}
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRepository_TimezoneAndTimestamps(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a job with a non-UTC timezone
+	payload := map[string]interface{}{
+		"message": "Test timezone and timestamps",
+	}
+
+	job := domain.NewJob(
+		"Timezone Test Job",
+		"test-org-tz",
+		"testuser",
+		"test-user-tz",
+		"0 9 * * *",
+		"America/New_York",
+		domain.PayloadMessage,
+		payload,
+	)
+	job.ID = "test-job-timezone-1"
+
+	// Set last_run_at and next_run_at
+	lastRunAt := time.Date(2026, 2, 20, 14, 0, 0, 0, time.UTC) // 9 AM EST
+	nextRunAt := time.Date(2026, 2, 21, 14, 0, 0, 0, time.UTC) // 9 AM EST next day
+	job = job.WithLastRunAt(lastRunAt).WithNextRunAt(nextRunAt)
+
+	// Save the job
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Retrieve the job
+	retrievedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job by ID: %v", err)
+	}
+
+	// Verify timezone is preserved
+	if retrievedJob.Timezone != "America/New_York" {
+		t.Errorf("Expected timezone 'America/New_York', got '%s'", retrievedJob.Timezone)
+	}
+
+	// Verify last_run_at is preserved
+	if retrievedJob.LastRunAt == nil {
+		t.Error("Expected LastRunAt to be set, got nil")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedJob.LastRunAt.Sub(lastRunAt).Abs() > time.Second {
+			t.Errorf("Expected LastRunAt %v, got %v", lastRunAt, *retrievedJob.LastRunAt)
+		}
+	}
+
+	// Verify next_run_at is preserved
+	if retrievedJob.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set, got nil")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedJob.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt %v, got %v", nextRunAt, *retrievedJob.NextRunAt)
+		}
+	}
+
+	// Update only next_run_at (simulating job execution scheduling)
+	newNextRunAt := time.Date(2026, 2, 22, 14, 0, 0, 0, time.UTC)
+	updatedJob := retrievedJob.WithNextRunAt(newNextRunAt)
+
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	// Retrieve and verify update
+	retrievedUpdated, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find updated job: %v", err)
+	}
+
+	// Verify timezone unchanged
+	if retrievedUpdated.Timezone != "America/New_York" {
+		t.Errorf("Timezone should not change on update, got '%s'", retrievedUpdated.Timezone)
+	}
+
+	// Verify last_run_at unchanged
+	if retrievedUpdated.LastRunAt == nil {
+		t.Error("LastRunAt should still be set after update")
+	} else {
+		if retrievedUpdated.LastRunAt.Sub(lastRunAt).Abs() > time.Second {
+			t.Errorf("LastRunAt should not change, expected %v, got %v", lastRunAt, *retrievedUpdated.LastRunAt)
+		}
+	}
+
+	// Verify next_run_at updated
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("NextRunAt should be set after update")
+	} else {
+		if retrievedUpdated.NextRunAt.Sub(newNextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt %v, got %v", newNextRunAt, *retrievedUpdated.NextRunAt)
+		}
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRepository_NullTimestamps(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a job without setting last_run_at or next_run_at
+	job := domain.NewJob(
+		"Null Timestamps Test",
+		"test-org",
+		"testuser",
+		"test-user",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"test": "data"},
+	)
+	job.ID = "test-job-null-timestamps"
+
+	// Save the job
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Retrieve the job
+	retrievedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job by ID: %v", err)
+	}
+
+	// Verify both timestamps are nil
+	if retrievedJob.LastRunAt != nil {
+		t.Errorf("Expected LastRunAt to be nil, got %v", *retrievedJob.LastRunAt)
+	}
+
+	if retrievedJob.NextRunAt != nil {
+		t.Errorf("Expected NextRunAt to be nil, got %v", *retrievedJob.NextRunAt)
+	}
+
+	// Now set only next_run_at
+	nextRunAt := time.Now().UTC().Add(1 * time.Hour)
+	updatedJob := retrievedJob.WithNextRunAt(nextRunAt)
+
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	// Retrieve and verify
+	retrievedUpdated, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find updated job: %v", err)
+	}
+
+	// Verify last_run_at is still nil
+	if retrievedUpdated.LastRunAt != nil {
+		t.Errorf("Expected LastRunAt to still be nil, got %v", *retrievedUpdated.LastRunAt)
+	}
+
+	// Verify next_run_at is now set
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set")
+	} else {
+		if retrievedUpdated.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt %v, got %v", nextRunAt, *retrievedUpdated.NextRunAt)
 		}
 	}
 

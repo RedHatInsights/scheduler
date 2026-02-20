@@ -88,7 +88,7 @@ func TestNewJob(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := NewJob("Test Job", "org-123", "testuser", "user-123", Schedule1Hour, PayloadMessage, payload)
+	job := NewJob("Test Job", "org-123", "testuser", "user-123", Schedule1Hour, "UTC", PayloadMessage, payload)
 
 	if job.ID == "" {
 		t.Error("Job ID should not be empty")
@@ -122,13 +122,13 @@ func TestNewJob(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", StatusScheduled, job.Status)
 	}
 
-	if job.LastRun != nil {
-		t.Error("LastRun should be nil for new job")
+	if job.LastRunAt != nil {
+		t.Error("LastRunAt should be nil for new job")
 	}
 }
 
 func TestJobUpdateFields(t *testing.T) {
-	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, PayloadMessage, map[string]interface{}{
+	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, "UTC", PayloadMessage, map[string]interface{}{
 		"msg": "original",
 	})
 

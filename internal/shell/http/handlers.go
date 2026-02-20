@@ -28,6 +28,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name     string             `json:"name"`
 		Schedule string             `json:"schedule"`
+		Timezone string             `json:"timezone"` // Optional, defaults to UTC
 		Type     domain.PayloadType `json:"type"`
 		Payload  interface{}        `json:"payload"`
 	}
@@ -47,7 +48,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, type=%s", req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type)
+	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, timezone=%s, type=%s", req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Timezone, req.Type)
 
 	if req.Name == "" || req.Schedule == "" || req.Type == "" || req.Payload == nil {
 		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields")
@@ -57,9 +58,9 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
-	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload)
+	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Timezone, req.Type, req.Payload)
 	if err != nil {
-		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID {
+		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID || err == domain.ErrInvalidTimezone {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return

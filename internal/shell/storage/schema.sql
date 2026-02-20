@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL, -- JSON string
     status TEXT NOT NULL,
-    last_run DATETIME NULL,
+    last_run_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -23,7 +23,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_name ON jobs(name);
 CREATE INDEX IF NOT EXISTS idx_jobs_username ON jobs(username);
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_last_run ON jobs(last_run);
+CREATE INDEX IF NOT EXISTS idx_jobs_last_run_at ON jobs(last_run_at);
 
 -- Trigger to update updated_at timestamp
 CREATE TRIGGER IF NOT EXISTS update_jobs_updated_at 

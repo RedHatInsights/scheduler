@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"insights-scheduler/internal/core/domain"
 )
 
@@ -58,8 +59,44 @@ func (s *JobService) SetCronScheduler(cronScheduler CronScheduler) {
 	s.cronScheduler = cronScheduler
 }
 
-func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
-	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, payload type: %s", name, orgID, username, userID, schedule, payloadType)
+// calculateNextRunAt calculates the next run time for a job based on its cron schedule
+// The schedule is interpreted in the specified timezone, but the result is always returned in UTC
+func calculateNextRunAt(schedule string, timezone string) (*time.Time, error) {
+	// Default to UTC if not specified
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	// Load the timezone
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timezone %s: %w", timezone, err)
+	}
+
+	// Parse the cron expression
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	cronSchedule, err := parser.Parse(schedule)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get current time in the specified timezone
+	nowInTz := time.Now().In(loc)
+
+	// Calculate next run in the specified timezone
+	nextInTz := cronSchedule.Next(nowInTz)
+
+	// Convert to UTC for storage
+	nextRunAtUTC := nextInTz.UTC()
+
+	log.Printf("[DEBUG] Schedule '%s' in timezone '%s': next run is %s (%s UTC)",
+		schedule, timezone, nextInTz.Format(time.RFC3339), nextRunAtUTC.Format(time.RFC3339))
+
+	return &nextRunAtUTC, nil
+}
+
+func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, username, userID, schedule, timezone, payloadType)
 
 	// Validate org_id
 	if orgID == "" {
@@ -67,6 +104,18 @@ func (s *JobService) CreateJob(name string, orgID string, username string, userI
 		return domain.Job{}, domain.ErrInvalidOrgID
 	}
 	log.Printf("[DEBUG] CreateJob - org_id validation passed: %s", orgID)
+
+	// Default to UTC if timezone not specified
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	// Validate timezone
+	if !domain.IsValidTimezone(timezone) {
+		log.Printf("[DEBUG] CreateJob failed - invalid timezone: %s", timezone)
+		return domain.Job{}, domain.ErrInvalidTimezone
+	}
+	log.Printf("[DEBUG] CreateJob - timezone validation passed: %s", timezone)
 
 	if !domain.IsValidSchedule(schedule) {
 		log.Printf("[DEBUG] CreateJob failed - invalid schedule: %s", schedule)
@@ -80,10 +129,20 @@ func (s *JobService) CreateJob(name string, orgID string, username string, userI
 	}
 	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
 
-	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), payloadType, payload)
-	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s", job.ID, job.Status)
+	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), timezone, payloadType, payload)
+	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s, timezone: %s", job.ID, job.Status, job.Timezone)
 
-	err := s.repo.Save(job)
+	// Calculate next run time using the job's timezone
+	nextRunAt, err := calculateNextRunAt(schedule, timezone)
+	if err != nil {
+		log.Printf("[DEBUG] CreateJob - failed to calculate next run time: %v", err)
+		// Continue without next_run if calculation fails
+	} else if nextRunAt != nil {
+		job = job.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] CreateJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
+	err = s.repo.Save(job)
 	if err != nil {
 		log.Printf("[DEBUG] CreateJob failed - repository save error: %v", err)
 		return domain.Job{}, err
@@ -237,6 +296,17 @@ func (s *JobService) UpdateJob(id string, name string, orgID string, username st
 
 	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
 
+	// Recalculate next run time if schedule changed
+	if schedule != string(job.Schedule) {
+		nextRunAt, calcErr := calculateNextRunAt(schedule, updatedJob.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] UpdateJob - failed to calculate next run time: %v", calcErr)
+		} else if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] UpdateJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+		}
+	}
+
 	err = s.repo.Save(updatedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -340,6 +410,17 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	}
 
 	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
+
+	// Recalculate next run time if schedule was updated
+	if schedule != nil {
+		nextRunAt, calcErr := calculateNextRunAt(string(*schedule), updatedJob.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] PatchJobWithOrgCheck - failed to calculate next run time: %v", calcErr)
+		} else if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] PatchJobWithOrgCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+		}
+	}
 
 	err = s.repo.Save(updatedJob)
 	if err != nil {
@@ -448,6 +529,17 @@ func (s *JobService) PatchJobWithUserCheck(id string, userUserID string, updates
 
 	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
 
+	// Recalculate next run time if schedule was updated
+	if schedule != nil {
+		nextRunAt, calcErr := calculateNextRunAt(string(*schedule), updatedJob.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] PatchJobWithUserCheck - failed to calculate next run time: %v", calcErr)
+		} else if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] PatchJobWithUserCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+		}
+	}
+
 	err = s.repo.Save(updatedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -524,7 +616,7 @@ func (s *JobService) RunJob(id string) error {
 		return err
 	}
 
-	runningJob := job.WithStatus(domain.StatusRunning).WithLastRun(time.Now())
+	runningJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(time.Now().UTC())
 	err = s.repo.Save(runningJob)
 	if err != nil {
 		return err
@@ -541,6 +633,16 @@ func (s *JobService) RunJob(id string) error {
 	}
 
 	finalJob := runningJob.WithStatus(finalStatus)
+
+	// Calculate next run time after execution
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] RunJob - failed to calculate next run time for job %s: %v", id, calcErr)
+	} else if nextRunAt != nil {
+		finalJob = finalJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
+	}
+
 	return s.repo.Save(finalJob)
 }
 
@@ -637,6 +739,16 @@ func (s *JobService) ResumeJob(id string) (domain.Job, error) {
 	}
 
 	resumedJob := job.WithStatus(domain.StatusScheduled)
+
+	// Recalculate next run time when resuming
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ResumeJob - failed to calculate next run time: %v", calcErr)
+	} else if nextRunAt != nil {
+		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ResumeJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
 	err = s.repo.Save(resumedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -668,6 +780,16 @@ func (s *JobService) ResumeJobWithOrgCheck(id string, orgID string) (domain.Job,
 	}
 
 	resumedJob := job.WithStatus(domain.StatusScheduled)
+
+	// Recalculate next run time when resuming
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ResumeJobWithOrgCheck - failed to calculate next run time: %v", calcErr)
+	} else if nextRunAt != nil {
+		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ResumeJobWithOrgCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
 	err = s.repo.Save(resumedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -699,6 +821,16 @@ func (s *JobService) ResumeJobWithUserCheck(id string, userID string) (domain.Jo
 	}
 
 	resumedJob := job.WithStatus(domain.StatusScheduled)
+
+	// Recalculate next run time when resuming
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ResumeJobWithUserCheck - failed to calculate next run time: %v", calcErr)
+	} else if nextRunAt != nil {
+		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ResumeJobWithUserCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
 	err = s.repo.Save(resumedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -750,7 +882,7 @@ func (s *JobService) GetScheduledJobs() ([]domain.Job, error) {
 
 	scheduled := make([]domain.Job, 0)
 	for _, job := range jobs {
-		if job.Status == domain.StatusScheduled && s.scheduler.ShouldRun(job, time.Now()) {
+		if job.Status == domain.StatusScheduled && s.scheduler.ShouldRun(job, time.Now().UTC()) {
 			scheduled = append(scheduled, job)
 		}
 	}

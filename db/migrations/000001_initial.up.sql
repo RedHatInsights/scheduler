@@ -5,10 +5,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     username TEXT NOT NULL,
     user_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL,
     status TEXT NOT NULL,
-    last_run TEXT,
+    last_run_at TEXT,
+    next_run_at TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -16,7 +18,10 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_org_id ON jobs(org_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_timezone ON jobs(timezone);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_last_run_at ON jobs(last_run_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_next_run_at ON jobs(next_run_at);
 
 --CREATE OR REPLACE FUNCTION update_updated_at_column()
 --RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = CURRENT_TIMESTAMP; RETURN NEW; END; $$ language 'plpgsql';
