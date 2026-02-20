@@ -282,7 +282,7 @@ paths:
         '400':
           description: Bad request (e.g., job already paused)
           content:
-            application/vnd.api+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
@@ -321,7 +321,7 @@ paths:
         '400':
           description: Bad request (e.g., job not paused)
           content:
-            application/vnd.api+json:
+            application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
@@ -726,7 +726,7 @@ components:
                 errors:
                   - status: "400"
                     title: "Missing Required Fields"
-                    detail: "Missing required fields: name, schedule"
+                    detail: "Missing Required Fields"
 
     NotFound:
       description: Resource not found

@@ -30,7 +30,7 @@ func respondWithError(w http.ResponseWriter, statusCode int, title, detail strin
 
 // respondWithErrors sends multiple JSON:API errors
 func respondWithErrors(w http.ResponseWriter, statusCode int, errors []ErrorObject) {
-	w.Header().Set("Content-Type", "application/vnd.api+json")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
 	// Ensure status is set for all errors
@@ -77,18 +77,11 @@ func errorInvalidJSON(err error) ErrorObject {
 	}
 }
 
-func errorMissingFields(fields []string) ErrorObject {
-	detail := "Missing required fields: "
-	for i, field := range fields {
-		if i > 0 {
-			detail += ", "
-		}
-		detail += field
-	}
+func errorMissingFields() ErrorObject {
 	return ErrorObject{
 		Status: "400",
 		Title:  "Missing Required Fields",
-		Detail: detail,
+		Detail: "Missing Required Fields",
 	}
 }
 

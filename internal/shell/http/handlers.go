@@ -49,23 +49,9 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, type=%s", req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type)
 
-	var missingFields []string
-	if req.Name == "" {
-		missingFields = append(missingFields, "name")
-	}
-	if req.Schedule == "" {
-		missingFields = append(missingFields, "schedule")
-	}
-	if req.Type == "" {
-		missingFields = append(missingFields, "type")
-	}
-	if req.Payload == nil {
-		missingFields = append(missingFields, "payload")
-	}
-
-	if len(missingFields) > 0 {
-		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields: %v", missingFields)
-		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorMissingFields(missingFields)})
+	if req.Name == "" || req.Schedule == "" || req.Type == "" || req.Payload == nil {
+		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields")
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorMissingFields()})
 		return
 	}
 
@@ -188,25 +174,8 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var missingFields []string
-	if req.Name == "" {
-		missingFields = append(missingFields, "name")
-	}
-	if req.Schedule == "" {
-		missingFields = append(missingFields, "schedule")
-	}
-	if req.Type == "" {
-		missingFields = append(missingFields, "type")
-	}
-	if req.Status == "" {
-		missingFields = append(missingFields, "status")
-	}
-	if req.Payload == nil {
-		missingFields = append(missingFields, "payload")
-	}
-
-	if len(missingFields) > 0 {
-		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorMissingFields(missingFields)})
+	if req.Name == "" || req.Schedule == "" || req.Type == "" || req.Status == "" || req.Payload == nil {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorMissingFields()})
 		return
 	}
 
