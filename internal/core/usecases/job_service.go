@@ -616,7 +616,7 @@ func (s *JobService) RunJob(id string) error {
 		return err
 	}
 
-	runningJob := job.WithStatus(domain.StatusRunning).WithLastRun(time.Now().UTC())
+	runningJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(time.Now().UTC())
 	err = s.repo.Save(runningJob)
 	if err != nil {
 		return err

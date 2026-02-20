@@ -46,7 +46,7 @@ type Job struct {
 	Type      PayloadType `json:"type"`
 	Payload   interface{} `json:"payload,omitempty"`
 	Status    JobStatus   `json:"status"`
-	LastRun   *time.Time  `json:"last_run,omitempty"`
+	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
 	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
 }
 
@@ -67,7 +67,7 @@ func NewJob(name string, orgID string, username string, userID string, schedule 
 		Type:      payloadType,
 		Payload:   payload,
 		Status:    StatusScheduled,
-		LastRun:   nil,
+		LastRunAt: nil,
 		NextRunAt: nil,
 	}
 }
@@ -84,12 +84,12 @@ func (j Job) WithStatus(status JobStatus) Job {
 		Type:      j.Type,
 		Payload:   j.Payload,
 		Status:    status,
-		LastRun:   j.LastRun,
+		LastRunAt: j.LastRunAt,
 		NextRunAt: j.NextRunAt,
 	}
 }
 
-func (j Job) WithLastRun(lastRun time.Time) Job {
+func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 	return Job{
 		ID:        j.ID,
 		Name:      j.Name,
@@ -101,7 +101,7 @@ func (j Job) WithLastRun(lastRun time.Time) Job {
 		Type:      j.Type,
 		Payload:   j.Payload,
 		Status:    j.Status,
-		LastRun:   &lastRun,
+		LastRunAt: &lastRunAt,
 		NextRunAt: j.NextRunAt,
 	}
 }
@@ -118,7 +118,7 @@ func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 		Type:      j.Type,
 		Payload:   j.Payload,
 		Status:    j.Status,
-		LastRun:   j.LastRun,
+		LastRunAt: j.LastRunAt,
 		NextRunAt: &nextRunAt,
 	}
 }

@@ -16,25 +16,25 @@ type JobResponse struct {
 	Type      string      `json:"type"`
 	Payload   interface{} `json:"payload,omitempty"`
 	Status    string      `json:"status"`
-	LastRun   *time.Time  `json:"last_run,omitempty"`
+	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
 	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
 }
 
 // ToJobResponse converts a domain.Job to a JobResponse DTO
-// Timestamps (LastRun, NextRunAt) are converted from UTC to the job's timezone
+// Timestamps (LastRunAt, NextRunAt) are converted from UTC to the job's timezone
 func ToJobResponse(job domain.Job) JobResponse {
 	// Convert timestamps from UTC to the job's timezone
-	var lastRunInTz *time.Time
+	var lastRunAtInTz *time.Time
 	var nextRunAtInTz *time.Time
 
 	if job.Timezone != "" {
 		// Load the timezone location
 		loc, err := time.LoadLocation(job.Timezone)
 		if err == nil {
-			// Convert LastRun to job's timezone
-			if job.LastRun != nil {
-				convertedLastRun := job.LastRun.In(loc)
-				lastRunInTz = &convertedLastRun
+			// Convert LastRunAt to job's timezone
+			if job.LastRunAt != nil {
+				convertedLastRunAt := job.LastRunAt.In(loc)
+				lastRunAtInTz = &convertedLastRunAt
 			}
 
 			// Convert NextRunAt to job's timezone
@@ -44,12 +44,12 @@ func ToJobResponse(job domain.Job) JobResponse {
 			}
 		} else {
 			// If timezone is invalid, fall back to UTC (shouldn't happen due to validation)
-			lastRunInTz = job.LastRun
+			lastRunAtInTz = job.LastRunAt
 			nextRunAtInTz = job.NextRunAt
 		}
 	} else {
 		// No timezone specified, use UTC
-		lastRunInTz = job.LastRun
+		lastRunAtInTz = job.LastRunAt
 		nextRunAtInTz = job.NextRunAt
 	}
 
@@ -61,7 +61,7 @@ func ToJobResponse(job domain.Job) JobResponse {
 		Type:      string(job.Type),
 		Payload:   job.Payload,
 		Status:    string(job.Status),
-		LastRun:   lastRunInTz,
+		LastRunAt: lastRunAtInTz,
 		NextRunAt: nextRunAtInTz,
 	}
 }

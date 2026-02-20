@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL, -- JSON string
     status TEXT NOT NULL,
-    last_run DATETIME NULL,
+    last_run_at DATETIME NULL,
     next_run_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_name ON jobs(name);
 CREATE INDEX IF NOT EXISTS idx_jobs_username ON jobs(username);
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_last_run ON jobs(last_run);
+CREATE INDEX IF NOT EXISTS idx_jobs_last_run_at ON jobs(last_run_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_next_run_at ON jobs(next_run_at);
 
 -- Trigger to update updated_at timestamp
@@ -282,10 +282,10 @@ func (r *SQLiteJobRepository) Save(job domain.Job) error {
 		return err
 	}
 
-	// Convert last_run to SQLite format
-	var lastRun interface{}
-	if job.LastRun != nil {
-		lastRun = job.LastRun.Format(time.RFC3339)
+	// Convert last_run_at to SQLite format
+	var lastRunAt interface{}
+	if job.LastRunAt != nil {
+		lastRunAt = job.LastRunAt.Format(time.RFC3339)
 	}
 
 	// Convert next_run_at to SQLite format
@@ -296,7 +296,7 @@ func (r *SQLiteJobRepository) Save(job domain.Job) error {
 
 	// Use UPSERT (INSERT OR REPLACE)
 	query := `
-		INSERT OR REPLACE INTO jobs (id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run, next_run_at, created_at, updated_at)
+		INSERT OR REPLACE INTO jobs (id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			COALESCE((SELECT created_at FROM jobs WHERE id = ?), CURRENT_TIMESTAMP),
 			CURRENT_TIMESTAMP
@@ -304,7 +304,7 @@ func (r *SQLiteJobRepository) Save(job domain.Job) error {
 	`
 
 	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.Username, job.UserID, string(job.Schedule), job.Timezone, string(job.Type),
-		string(payloadJSON), string(job.Status), lastRun, nextRunAt, job.ID)
+		string(payloadJSON), string(job.Status), lastRunAt, nextRunAt, job.ID)
 
 	if err != nil {
 		log.Printf("[DEBUG] SQLiteJobRepository.Save - database error: %v", err)
@@ -319,7 +319,7 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindByID - searching for job: %s", id)
 
 	query := `
-		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run, next_run_at
+		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 		FROM jobs
 		WHERE id = ?
 	`
@@ -328,10 +328,10 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 
 	var job domain.Job
 	var payloadJSON string
-	var lastRunStr, nextRunAtStr sql.NullString
+	var lastRunAtStr, nextRunAtStr sql.NullString
 
 	err := row.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-		&payloadJSON, &job.Status, &lastRunStr, &nextRunAtStr)
+		&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -348,10 +348,10 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 		return domain.Job{}, err
 	}
 
-	// Parse last_run time
-	if lastRunStr.Valid {
-		if parsedTime, err := time.Parse(time.RFC3339, lastRunStr.String); err == nil {
-			job.LastRun = &parsedTime
+	// Parse last_run_at time
+	if lastRunAtStr.Valid {
+		if parsedTime, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {
+			job.LastRunAt = &parsedTime
 		}
 	}
 
@@ -370,7 +370,7 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindAll - retrieving all jobs")
 
 	query := `
-		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run, next_run_at
+		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 		FROM jobs
 		ORDER BY created_at DESC
 	`
@@ -387,10 +387,10 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 	for rows.Next() {
 		var job domain.Job
 		var payloadJSON string
-		var lastRunStr, nextRunAtStr sql.NullString
+		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-			&payloadJSON, &job.Status, &lastRunStr, &nextRunAtStr)
+			&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindAll - scan error: %v", err)
@@ -403,10 +403,10 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 			continue
 		}
 
-		// Parse last_run time
-		if lastRunStr.Valid {
-			if parsedTime, err := time.Parse(time.RFC3339, lastRunStr.String); err == nil {
-				job.LastRun = &parsedTime
+		// Parse last_run_at time
+		if lastRunAtStr.Valid {
+			if parsedTime, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {
+				job.LastRunAt = &parsedTime
 			}
 		}
 
@@ -433,7 +433,7 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindByOrgID - retrieving jobs for org: %s", orgID)
 
 	query := `
-		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run, next_run_at
+		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 		FROM jobs
 		WHERE org_id = ?
 		ORDER BY created_at DESC
@@ -451,10 +451,10 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	for rows.Next() {
 		var job domain.Job
 		var payloadJSON string
-		var lastRunStr, nextRunAtStr sql.NullString
+		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-			&payloadJSON, &job.Status, &lastRunStr, &nextRunAtStr)
+			&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindByOrgID - scan error: %v", err)
@@ -467,10 +467,10 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 			continue
 		}
 
-		// Parse last_run time
-		if lastRunStr.Valid {
-			if parsedTime, err := time.Parse(time.RFC3339, lastRunStr.String); err == nil {
-				job.LastRun = &parsedTime
+		// Parse last_run_at time
+		if lastRunAtStr.Valid {
+			if parsedTime, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {
+				job.LastRunAt = &parsedTime
 			}
 		}
 
@@ -507,7 +507,7 @@ func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]
 
 	// Then get the paginated results
 	query := `
-		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run, next_run_at
+		SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 		FROM jobs
 		WHERE user_id = ?
 		ORDER BY created_at DESC
@@ -526,10 +526,10 @@ func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]
 	for rows.Next() {
 		var job domain.Job
 		var payloadJSON string
-		var lastRunStr, nextRunAtStr sql.NullString
+		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-			&payloadJSON, &job.Status, &lastRunStr, &nextRunAtStr)
+			&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - scan error: %v", err)
@@ -542,10 +542,10 @@ func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]
 			continue
 		}
 
-		// Parse last_run time
-		if lastRunStr.Valid {
-			if parsedTime, err := time.Parse(time.RFC3339, lastRunStr.String); err == nil {
-				job.LastRun = &parsedTime
+		// Parse last_run_at time
+		if lastRunAtStr.Valid {
+			if parsedTime, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {
+				job.LastRunAt = &parsedTime
 			}
 		}
 

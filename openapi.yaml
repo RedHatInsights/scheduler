@@ -471,7 +471,7 @@ components:
           $ref: '#/components/schemas/JobPayload'
         status:
           $ref: '#/components/schemas/JobStatus'
-        last_run:
+        last_run_at:
           type: string
           format: date-time
           nullable: true

@@ -137,24 +137,24 @@ func TestToJobResponseList(t *testing.T) {
 	}
 }
 
-func TestJobResponseWithLastRun(t *testing.T) {
-	// Create a job with last_run set
+func TestJobResponseWithLastRunAt(t *testing.T) {
+	// Create a job with last_run_at set
 	payload := map[string]interface{}{
 		"message": "test message",
 	}
 
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 	now := time.Now()
-	job = job.WithLastRun(now)
+	job = job.WithLastRunAt(now)
 
 	// Convert to response DTO
 	response := ToJobResponse(job)
 
-	// Verify LastRun is set
-	if response.LastRun == nil {
-		t.Error("Expected LastRun to be set")
-	} else if response.LastRun.Unix() != now.Unix() {
-		t.Errorf("Expected LastRun %v, got %v", now, response.LastRun)
+	// Verify LastRunAt is set
+	if response.LastRunAt == nil {
+		t.Error("Expected LastRunAt to be set")
+	} else if response.LastRunAt.Unix() != now.Unix() {
+		t.Errorf("Expected LastRunAt %v, got %v", now, response.LastRunAt)
 	}
 }
 

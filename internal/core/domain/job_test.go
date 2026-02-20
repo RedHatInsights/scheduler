@@ -122,8 +122,8 @@ func TestNewJob(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", StatusScheduled, job.Status)
 	}
 
-	if job.LastRun != nil {
-		t.Error("LastRun should be nil for new job")
+	if job.LastRunAt != nil {
+		t.Error("LastRunAt should be nil for new job")
 	}
 }
 

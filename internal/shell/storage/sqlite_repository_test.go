@@ -96,10 +96,10 @@ func TestSQLiteJobRepository(t *testing.T) {
 		t.Errorf("Expected 1 job, found %d", len(jobs))
 	}
 
-	// Test Update with LastRun and NextRunAt
+	// Test Update with LastRunAt and NextRunAt
 	now := time.Now()
 	nextRunAt := time.Now().Add(1 * time.Hour)
-	updatedJob := job.WithStatus(domain.StatusRunning).WithLastRun(now).WithNextRunAt(nextRunAt)
+	updatedJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(now).WithNextRunAt(nextRunAt)
 	if err := repo.Save(updatedJob); err != nil {
 		t.Fatalf("Failed to update job: %v", err)
 	}
@@ -113,10 +113,10 @@ func TestSQLiteJobRepository(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", domain.StatusRunning, retrievedUpdated.Status)
 	}
 
-	if retrievedUpdated.LastRun == nil {
-		t.Error("Expected LastRun to be set")
-	} else if retrievedUpdated.LastRun.Unix() != now.Unix() {
-		t.Errorf("Expected LastRun %v, got %v", now, retrievedUpdated.LastRun)
+	if retrievedUpdated.LastRunAt == nil {
+		t.Error("Expected LastRunAt to be set")
+	} else if retrievedUpdated.LastRunAt.Unix() != now.Unix() {
+		t.Errorf("Expected LastRunAt %v, got %v", now, retrievedUpdated.LastRunAt)
 	}
 
 	if retrievedUpdated.NextRunAt == nil {
