@@ -19,6 +19,7 @@ objects:
     database:
       name: scheduler
       version: 16
+    inMemoryDb: true
     kafkaTopics:
     - replicas: 3
       partitions: 16
@@ -62,6 +63,7 @@ objects:
               memory: 128Mi
         command:
           - ./scheduler
+          - api
         #livenessProbe:
         #  failureThreshold: 3
         #  httpGet:
@@ -144,6 +146,74 @@ objects:
           value: ${USER_VALIDATOR_IMPL}
         - name: JOB_COMPLETION_NOTIFIER_IMPL
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: REDIS_ENABLED
+          value: "true"
+
+    - name: worker
+      webServices:
+        private:
+          enabled: False
+        public:
+          enabled: False
+        metrics:
+          enabled: True
+      minReplicas: ${{WORKER_REPLICAS}}
+      podSpec:
+        minReadySeconds: 15
+        progressDeadlineSeconds: 600
+        image: ${IMAGE}:${IMAGE_TAG}
+        command:
+          - ./scheduler
+          - worker
+        terminationGracePeriodSeconds: 300
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: ${WORKER_CPU_LIMIT}
+            memory: ${WORKER_MEMORY_LIMIT}
+          requests:
+            cpu: ${WORKER_CPU_REQUEST}
+            memory: ${WORKER_MEMORY_REQUEST}
+        env:
+        - name: LOG_LEVEL
+          value: INFO
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "25"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "5"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 5m
+        - name: REDIS_ENABLED
+          value: "true"
+        - name: ENABLE_PERIODIC_SYNC
+          value: "true"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: METRICS_NAMESPACE
+          value: insights
+        - name: METRICS_SUBSYSTEM
+          value: scheduler_worker
 
 parameters:
 - description: Initial amount of memory the insights-scheduler container will request.
@@ -166,6 +236,28 @@ parameters:
   name: CPU_LIMIT
   required: true
   value: 500m
+
+- description: Initial amount of memory the insights-scheduler worker container will request.
+  displayName: Worker Memory Request
+  name: WORKER_MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the insights-scheduler worker.
+  displayName: Worker Memory Limit
+  name: WORKER_MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: Initial amount of cpu the insights-scheduler worker container will request.
+  displayName: Worker CPU Request
+  name: WORKER_CPU_REQUEST
+  required: true
+  value: 200m
+- description: Maximum amount of cpu the insights-scheduler worker container can use.
+  displayName: Worker CPU Limit
+  name: WORKER_CPU_LIMIT
+  required: true
+  value: 1000m
+
 - description: The log level to use for logging
   displayName: The log level to use for logging
   name: LOG_LEVEL
@@ -176,6 +268,9 @@ parameters:
 - description: The number of replicas to use for the insights-scheduler api
   name: API_REPLICAS
   value: '1'
+- description: The number of replicas to use for the insights-scheduler worker
+  name: WORKER_REPLICAS
+  value: '3'
 - description: The number of replicas to use for the insights-scheduler api
   name: MQTT_CONSUMER_REPLICAS
   value: '1'

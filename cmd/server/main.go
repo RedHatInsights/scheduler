@@ -1,5 +1,26 @@
 package main
 
+// Insights Scheduler - Unified Binary with Subcommands
+//
+// This binary supports multiple operating modes via subcommands:
+//
+// 1. Legacy Single-Process Server (default):
+//    ./scheduler  OR  ./scheduler server
+//    - Combines API server and job scheduler in one process
+//    - Suitable for local development, testing, small deployments
+//    - Supports SQLite or PostgreSQL
+//
+// 2. Multi-Pod Architecture (production):
+//    ./scheduler api     - API server only (handles REST, writes to Postgres + Redis)
+//    ./scheduler worker  - Worker only (executes jobs from Redis, writes history to Postgres)
+//    - Independent scaling of API and worker components
+//    - Redis-based distributed scheduling
+//    - See docs/KUBERNETES_DEPLOYMENT.md for details
+//
+// 3. Database Migrations:
+//    ./scheduler db_migration up    - Apply migrations
+//    ./scheduler db_migration down  - Rollback migrations
+
 import (
 	"context"
 	"fmt"
@@ -8,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
@@ -35,13 +57,35 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "scheduler",
 	Short: "Insights Scheduler Service",
-	Long:  `A job scheduling service for Red Hat Insights with support for multiple backends and job execution types.`,
-	Run:   runServer,
+	Long: `A job scheduling service for Red Hat Insights with support for multiple backends and job execution types.
+
+Operating modes (via subcommands):
+  scheduler          - Run legacy single-process server (API + scheduler + executor)
+  scheduler api      - Run API server only (for multi-pod deployments)
+  scheduler worker   - Run worker only (for multi-pod deployments)
+  scheduler db_migration - Manage database migrations`,
+	Run: runServer,
 }
 
 func init() {
 	rootCmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to configuration file")
 	rootCmd.AddCommand(dbMigrationCmd)
+	rootCmd.AddCommand(apiCmd)
+	rootCmd.AddCommand(workerCmd)
+}
+
+var apiCmd = &cobra.Command{
+	Use:   "api",
+	Short: "Run the API server",
+	Long:  `Run the API server for handling REST API requests. Writes to Postgres and Redis.`,
+	Run:   runAPI,
+}
+
+var workerCmd = &cobra.Command{
+	Use:   "worker",
+	Short: "Run the worker",
+	Long:  `Run the worker for executing scheduled jobs. Polls Redis and writes job run history to Postgres.`,
+	Run:   runWorker,
 }
 
 var dbMigrationCmd = &cobra.Command{
@@ -375,4 +419,236 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	log.Println("Server exited")
+}
+
+// runAPI runs the API server
+// API Server - Handles REST API requests only
+// Writes to both Postgres (source of truth) and Redis (scheduling)
+// Scales horizontally without coordination
+func runAPI(cmd *cobra.Command, args []string) {
+	log.Println("[API] Starting Scheduler API server")
+
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("[API] Failed to load configuration: %v", err)
+	}
+
+	// Initialize PostgreSQL repository (source of truth)
+	jobRepo, err := storage.NewPostgresJobRepository(cfg)
+	if err != nil {
+		log.Fatalf("[API] Failed to initialize Postgres repository: %v", err)
+	}
+
+	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	if err != nil {
+		log.Fatalf("[API] Failed to initialize Postgres job run repository: %v", err)
+	}
+
+	// Initialize dummy executors (API doesn't actually execute jobs)
+	dummyExecutors := map[domain.PayloadType]executor.JobExecutor{
+		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
+		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
+		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
+		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Use message executor as dummy
+	}
+	dummyExecutor := executor.NewJobExecutor(dummyExecutors, jobRunRepo)
+
+	// Initialize scheduling service
+	schedService := usecases.NewDefaultSchedulingService()
+	jobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
+
+	// Initialize Redis client for scheduling coordination
+	var redisScheduler *scheduler.RedisScheduler
+	if cfg.Redis.Enabled {
+		redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+		log.Printf("[API] Connecting to Redis at %s", redisAddr)
+
+		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor)
+		if err != nil {
+			log.Fatalf("[API] Failed to connect to Redis: %v", err)
+		}
+		defer redisScheduler.Close()
+
+		log.Println("[API] Connected to Redis successfully")
+
+		// Set Redis scheduler for job service (so Create/Update/Delete sync to Redis)
+		jobService.SetCronScheduler(redisScheduler)
+	} else {
+		log.Println("[API] WARNING: Redis is disabled. Scheduling will not work!")
+	}
+
+	jobRunService := usecases.NewJobRunService(jobRunRepo, jobRepo)
+
+	// Setup HTTP routes
+	router := httpShell.SetupRoutes(jobService, jobRunService)
+
+	// Create HTTP server
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:      router,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
+	// Start server in background
+	go func() {
+		log.Printf("[API] Server listening on port %d", cfg.Server.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[API] Server error: %v", err)
+		}
+	}()
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	log.Println("[API] Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("[API] Server forced to shutdown: %v", err)
+	}
+
+	log.Println("[API] Server exited")
+}
+
+// runWorker runs the worker
+// Worker - Executes scheduled jobs from Redis
+// Reads from Redis (scheduling state)
+// Writes to Postgres (job run history)
+// Scales horizontally with distributed locking
+func runWorker(cmd *cobra.Command, args []string) {
+	log.Println("[WORKER] Starting Scheduler Worker")
+
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to load configuration: %v", err)
+	}
+
+	// Initialize PostgreSQL repository for job run history
+	jobRepo, err := storage.NewPostgresJobRepository(cfg)
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to initialize Postgres job repository: %v", err)
+	}
+
+	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to initialize Postgres job run repository: %v", err)
+	}
+
+	// Initialize job executors (worker actually executes jobs)
+	executors := map[domain.PayloadType]executor.JobExecutor{
+		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
+		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
+		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
+		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Simplified for now
+	}
+	jobExecutor := executor.NewJobExecutor(executors, jobRunRepo)
+
+	// Initialize Redis scheduler
+	if !cfg.Redis.Enabled {
+		log.Fatalf("[WORKER] Redis must be enabled for worker pods. Set REDIS_ENABLED=true")
+	}
+
+	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	log.Printf("[WORKER] Connecting to Redis at %s", redisAddr)
+
+	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor)
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
+	}
+	defer redisScheduler.Close()
+
+	log.Println("[WORKER] Connected to Redis successfully")
+
+	// On startup, sync jobs from Postgres to Redis (for resilience)
+	// This ensures Redis has all scheduled jobs even after Redis restart
+	// Use leader election to prevent thundering herd (only one worker syncs)
+	log.Println("[WORKER] Checking if database sync is needed...")
+
+	// First, check if Redis already has jobs
+	jobCount, err := redisScheduler.GetScheduledJobCount()
+	if err != nil {
+		log.Printf("[WORKER] WARNING: Failed to check Redis job count: %v", err)
+	} else if jobCount > 0 {
+		log.Printf("[WORKER] Redis already has %d jobs, skipping sync", jobCount)
+	} else {
+		// Redis is empty, try to become sync leader
+		log.Println("[WORKER] Redis is empty, attempting to acquire sync leader lock...")
+
+		isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
+		if err != nil {
+			log.Printf("[WORKER] WARNING: Failed to acquire leader lock: %v", err)
+			log.Println("[WORKER] Continuing without sync...")
+		} else if !isLeader {
+			log.Println("[WORKER] Another worker is syncing, skipping...")
+		} else {
+			// This worker is the leader, perform sync
+			log.Println("[WORKER] Elected as sync leader, performing database sync")
+
+			allJobs, err := jobRepo.FindAll()
+			if err != nil {
+				log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
+			} else {
+				log.Printf("[WORKER] Loaded %d jobs from Postgres, syncing to Redis...", len(allJobs))
+				if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
+					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+				} else {
+					count, _ := redisScheduler.GetScheduledJobCount()
+					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
+				}
+			}
+		}
+	}
+
+	// Start Redis scheduler (blocking)
+	log.Println("[WORKER] Starting job execution loop...")
+
+	// Run scheduler in background
+	go redisScheduler.Start()
+
+	// Optional: Periodic re-sync from Postgres to catch any missed updates
+	// This is a safety mechanism in case API pods fail to update Redis
+	if os.Getenv("ENABLE_PERIODIC_SYNC") == "true" {
+		syncInterval := 1 * time.Hour // Sync every hour
+		go func() {
+			ticker := time.NewTicker(syncInterval)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				log.Println("[WORKER] Performing periodic sync from Postgres to Redis")
+				jobs, err := jobRepo.FindAll()
+				if err != nil {
+					log.Printf("[WORKER] Periodic sync failed to load jobs: %v", err)
+					continue
+				}
+
+				if err := redisScheduler.SyncJobsFromDB(jobs); err != nil {
+					log.Printf("[WORKER] Periodic sync failed: %v", err)
+				} else {
+					count, _ := redisScheduler.GetScheduledJobCount()
+					log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis", count)
+				}
+			}
+		}()
+	}
+
+	// Wait for shutdown signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	log.Println("[WORKER] Shutting down worker...")
+	redisScheduler.Stop()
+
+	// Give in-flight jobs a chance to complete (up to 30 seconds)
+	log.Println("[WORKER] Waiting for in-flight jobs to complete (max 30s)...")
+	time.Sleep(30 * time.Second)
+
+	log.Println("[WORKER] Worker exited")
 }

@@ -23,6 +23,8 @@ build:
 	@echo "Building server..."
 	@mkdir -p bin
 	$(GOBUILD) -o $(BINARY_PATH) cmd/server/main.go
+	$(GOBUILD) -o api_server cmd/api/main.go
+	$(GOBUILD) -o worker cmd/worker/main.go
 
 # Build test client
 build-test:
