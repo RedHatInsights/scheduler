@@ -12,13 +12,13 @@ import (
 )
 
 type CronScheduler struct {
-	jobService *usecases.JobService
+	jobService *usecases.DefaultJobService
 	cron       *cron.Cron
 	jobEntries map[string]cron.EntryID // jobID -> cronEntryID mapping
 	mu         sync.RWMutex
 }
 
-func NewCronScheduler(jobService *usecases.JobService) *CronScheduler {
+func NewCronScheduler(jobService *usecases.DefaultJobService) *CronScheduler {
 	return &CronScheduler{
 		jobService: jobService,
 		cron:       cron.New(), // Standard 5-field format (minute hour dom month dow)
@@ -74,7 +74,7 @@ func (s *CronScheduler) ScheduleJob(job domain.Job) error {
 		log.Printf("Executing cron job: %s (%s)", job.Name, job.ID)
 
 		// Get the latest job state from repository
-		currentJob, err := s.jobService.GetJob(job.ID)
+		currentJob, err := s.jobService.GetJob(context.Background(), job.ID)
 		if err != nil {
 			log.Printf("Error getting job %s for execution: %v", job.ID, err)
 			return

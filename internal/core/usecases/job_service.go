@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 )
 
 type JobRepository interface {
@@ -40,22 +42,26 @@ type CronScheduler interface {
 	UnscheduleJob(jobID string)
 }
 
-type JobService struct {
+// DefaultJobService is the default implementation of ports.JobService
+type DefaultJobService struct {
 	repo          JobRepository
 	scheduler     SchedulingService
 	executor      JobExecutor
 	cronScheduler CronScheduler
 }
 
-func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor) *JobService {
-	return &JobService{
+// Ensure DefaultJobService implements ports.JobService
+var _ ports.JobService = (*DefaultJobService)(nil)
+
+func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor) *DefaultJobService {
+	return &DefaultJobService{
 		repo:      repo,
 		scheduler: scheduler,
 		executor:  executor,
 	}
 }
 
-func (s *JobService) SetCronScheduler(cronScheduler CronScheduler) {
+func (s *DefaultJobService) SetCronScheduler(cronScheduler CronScheduler) {
 	s.cronScheduler = cronScheduler
 }
 
@@ -95,7 +101,7 @@ func calculateNextRunAt(schedule string, timezone string) (*time.Time, error) {
 	return &nextRunAtUTC, nil
 }
 
-func (s *JobService) CreateJob(name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
 	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, username, userID, schedule, timezone, payloadType)
 
 	// Validate org_id
@@ -169,11 +175,11 @@ func (s *JobService) CreateJob(name string, orgID string, username string, userI
 	return job, nil
 }
 
-func (s *JobService) GetJob(id string) (domain.Job, error) {
+func (s *DefaultJobService) GetJob(ctx context.Context, id string) (domain.Job, error) {
 	return s.repo.FindByID(id)
 }
 
-func (s *JobService) GetJobWithOrgCheck(id string, orgID string) (domain.Job, error) {
+func (s *DefaultJobService) GetJobWithOrgCheck(ctx context.Context, id string, orgID string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -186,7 +192,7 @@ func (s *JobService) GetJobWithOrgCheck(id string, orgID string) (domain.Job, er
 	return job, nil
 }
 
-func (s *JobService) GetJobWithUserCheck(id string, userID string) (domain.Job, error) {
+func (s *DefaultJobService) GetJobWithUserCheck(ctx context.Context, id string, userID string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -199,11 +205,11 @@ func (s *JobService) GetJobWithUserCheck(id string, userID string) (domain.Job, 
 	return job, nil
 }
 
-func (s *JobService) ListJobs() ([]domain.Job, error) {
+func (s *DefaultJobService) ListJobs() ([]domain.Job, error) {
 	return s.repo.FindAll()
 }
 
-func (s *JobService) GetAllJobs(statusFilter, nameFilter string) ([]domain.Job, error) {
+func (s *DefaultJobService) GetAllJobs(statusFilter, nameFilter string) ([]domain.Job, error) {
 	jobs, err := s.repo.FindAll()
 	if err != nil {
 		return nil, err
@@ -223,12 +229,13 @@ func (s *JobService) GetAllJobs(statusFilter, nameFilter string) ([]domain.Job, 
 	return filtered, nil
 }
 
-func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter string) ([]domain.Job, error) {
+func (s *DefaultJobService) GetJobsByOrgID(ctx context.Context, orgID string, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
 	jobs, err := s.repo.FindByOrgID(orgID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
+	// Apply filters
 	filtered := make([]domain.Job, 0)
 	for _, job := range jobs {
 		if statusFilter != "" && string(job.Status) != statusFilter {
@@ -240,10 +247,22 @@ func (s *JobService) GetJobsByOrgID(orgID string, statusFilter, nameFilter strin
 		filtered = append(filtered, job)
 	}
 
-	return filtered, nil
+	total := len(filtered)
+
+	// Apply pagination
+	if offset >= len(filtered) {
+		return []domain.Job{}, total, nil
+	}
+
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	return filtered[offset:end], total, nil
 }
 
-func (s *JobService) GetJobsByUserID(userID string, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
+func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
 	jobs, total, err := s.repo.FindByUserID(userID, offset, limit)
 	if err != nil {
 		return nil, 0, err
@@ -263,7 +282,7 @@ func (s *JobService) GetJobsByUserID(userID string, statusFilter, nameFilter str
 	return filtered, total, nil
 }
 
-func (s *JobService) UpdateJob(id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -325,7 +344,7 @@ func (s *JobService) UpdateJob(id string, name string, orgID string, username st
 	return updatedJob, nil
 }
 
-func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates map[string]interface{}) (domain.Job, error) {
+func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string, userOrgID string, updates map[string]interface{}) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -440,7 +459,7 @@ func (s *JobService) PatchJobWithOrgCheck(id string, userOrgID string, updates m
 	return updatedJob, nil
 }
 
-func (s *JobService) PatchJobWithUserCheck(id string, userUserID string, updates map[string]interface{}) (domain.Job, error) {
+func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string, userUserID string, updates map[string]interface{}) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -558,7 +577,7 @@ func (s *JobService) PatchJobWithUserCheck(id string, userUserID string, updates
 	return updatedJob, nil
 }
 
-func (s *JobService) DeleteJob(id string) error {
+func (s *DefaultJobService) DeleteJob(id string) error {
 	_, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -572,7 +591,7 @@ func (s *JobService) DeleteJob(id string) error {
 	return s.repo.Delete(id)
 }
 
-func (s *JobService) DeleteJobWithOrgCheck(id string, orgID string) error {
+func (s *DefaultJobService) DeleteJobWithOrgCheck(ctx context.Context, id string, orgID string) error {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -591,7 +610,7 @@ func (s *JobService) DeleteJobWithOrgCheck(id string, orgID string) error {
 	return s.repo.Delete(id)
 }
 
-func (s *JobService) DeleteJobWithUserCheck(id string, userID string) error {
+func (s *DefaultJobService) DeleteJobWithUserCheck(ctx context.Context, id string, userID string) error {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -610,7 +629,7 @@ func (s *JobService) DeleteJobWithUserCheck(id string, userID string) error {
 	return s.repo.Delete(id)
 }
 
-func (s *JobService) RunJob(id string) error {
+func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -646,7 +665,7 @@ func (s *JobService) RunJob(id string) error {
 	return s.repo.Save(finalJob)
 }
 
-func (s *JobService) PauseJob(id string) (domain.Job, error) {
+func (s *DefaultJobService) PauseJob(id string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -670,7 +689,7 @@ func (s *JobService) PauseJob(id string) (domain.Job, error) {
 	return pausedJob, nil
 }
 
-func (s *JobService) PauseJobWithOrgCheck(id string, orgID string) (domain.Job, error) {
+func (s *DefaultJobService) PauseJobWithOrgCheck(ctx context.Context, id string, orgID string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -699,7 +718,7 @@ func (s *JobService) PauseJobWithOrgCheck(id string, orgID string) (domain.Job, 
 	return pausedJob, nil
 }
 
-func (s *JobService) PauseJobWithUserCheck(id string, userID string) (domain.Job, error) {
+func (s *DefaultJobService) PauseJobWithUserCheck(ctx context.Context, id string, userID string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -728,7 +747,7 @@ func (s *JobService) PauseJobWithUserCheck(id string, userID string) (domain.Job
 	return pausedJob, nil
 }
 
-func (s *JobService) ResumeJob(id string) (domain.Job, error) {
+func (s *DefaultJobService) ResumeJob(ctx context.Context, id string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -764,7 +783,7 @@ func (s *JobService) ResumeJob(id string) (domain.Job, error) {
 	return resumedJob, nil
 }
 
-func (s *JobService) ResumeJobWithOrgCheck(id string, orgID string) (domain.Job, error) {
+func (s *DefaultJobService) ResumeJobWithOrgCheck(ctx context.Context, id string, orgID string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -805,7 +824,7 @@ func (s *JobService) ResumeJobWithOrgCheck(id string, orgID string) (domain.Job,
 	return resumedJob, nil
 }
 
-func (s *JobService) ResumeJobWithUserCheck(id string, userID string) (domain.Job, error) {
+func (s *DefaultJobService) ResumeJobWithUserCheck(ctx context.Context, id string, userID string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -846,7 +865,7 @@ func (s *JobService) ResumeJobWithUserCheck(id string, userID string) (domain.Jo
 	return resumedJob, nil
 }
 
-func (s *JobService) RunJobWithOrgCheck(id string, orgID string) error {
+func (s *DefaultJobService) RunJobWithOrgCheck(ctx context.Context, id string, orgID string) error {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -857,10 +876,10 @@ func (s *JobService) RunJobWithOrgCheck(id string, orgID string) error {
 		return domain.ErrJobNotFound // Don't reveal existence of job from other orgs
 	}
 
-	return s.RunJob(id)
+	return s.RunJob(ctx, id)
 }
 
-func (s *JobService) RunJobWithUserCheck(id string, userID string) error {
+func (s *DefaultJobService) RunJobWithUserCheck(ctx context.Context, id string, userID string) error {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return err
@@ -871,10 +890,10 @@ func (s *JobService) RunJobWithUserCheck(id string, userID string) error {
 		return domain.ErrJobNotFound // Don't reveal existence of job from other users
 	}
 
-	return s.RunJob(id)
+	return s.RunJob(ctx, id)
 }
 
-func (s *JobService) GetScheduledJobs() ([]domain.Job, error) {
+func (s *DefaultJobService) GetScheduledJobs() ([]domain.Job, error) {
 	jobs, err := s.repo.FindAll()
 	if err != nil {
 		return nil, err
@@ -890,6 +909,7 @@ func (s *JobService) GetScheduledJobs() ([]domain.Job, error) {
 	return scheduled, nil
 }
 
-func (s *JobService) ExecuteScheduledJob(job domain.Job) error {
-	return s.RunJob(job.ID)
+func (s *DefaultJobService) ExecuteScheduledJob(job domain.Job) error {
+	// Use background context for scheduled job execution
+	return s.RunJob(context.Background(), job.ID)
 }

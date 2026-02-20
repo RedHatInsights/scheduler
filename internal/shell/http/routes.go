@@ -4,10 +4,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
 
+	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/core/usecases"
 )
 
-func SetupRoutes(jobService *usecases.JobService, jobRunService *usecases.JobRunService) *mux.Router {
+func SetupRoutes(jobService ports.JobService, jobRunService *usecases.JobRunService) *mux.Router {
 	router := mux.NewRouter()
 	handler := NewJobHandler(jobService)
 	runHandler := NewJobRunHandler(jobRunService)

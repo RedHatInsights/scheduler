@@ -9,14 +9,14 @@ import (
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
 
 	"insights-scheduler/internal/core/domain"
-	"insights-scheduler/internal/core/usecases"
+	"insights-scheduler/internal/core/ports"
 )
 
 type JobHandler struct {
-	jobService *usecases.JobService
+	jobService ports.JobService
 }
 
-func NewJobHandler(jobService *usecases.JobService) *JobHandler {
+func NewJobHandler(jobService ports.JobService) *JobHandler {
 	return &JobHandler{
 		jobService: jobService,
 	}
@@ -58,7 +58,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
-	job, err := h.jobService.CreateJob(req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Timezone, req.Type, req.Payload)
+	job, err := h.jobService.CreateJob(r.Context(), req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Timezone, req.Type, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID || err == domain.ErrInvalidTimezone {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
@@ -98,7 +98,7 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	offset, limit := parsePaginationParams(r.URL)
 
 	// Only get jobs for the current user
-	jobs, total, err := h.jobService.GetJobsByUserID(ident.Identity.User.UserID, statusFilter, nameFilter, offset, limit)
+	jobs, total, err := h.jobService.GetJobsByUserID(r.Context(), ident.Identity.User.UserID, statusFilter, nameFilter, offset, limit)
 	if err != nil {
 		log.Printf("[DEBUG] GetAllJobs failed - unable to retrieve jobs")
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
@@ -125,7 +125,7 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only get job if it belongs to the current user
-	job, err := h.jobService.GetJobWithUserCheck(id, ident.Identity.User.UserID)
+	job, err := h.jobService.GetJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -170,7 +170,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.jobService.UpdateJob(id, req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload, req.Status)
+	job, err := h.jobService.UpdateJob(r.Context(), id, req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Type, req.Payload, req.Status)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -210,7 +210,7 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only patch job if it belongs to the current user
-	job, err := h.jobService.PatchJobWithUserCheck(id, ident.Identity.User.UserID, updates)
+	job, err := h.jobService.PatchJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID, updates)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -244,7 +244,7 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only delete job if it belongs to the current user
-	err := h.jobService.DeleteJobWithUserCheck(id, ident.Identity.User.UserID)
+	err := h.jobService.DeleteJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -271,7 +271,7 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only run job if it belongs to the current user
-	err := h.jobService.RunJobWithUserCheck(id, ident.Identity.User.UserID)
+	err := h.jobService.RunJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -298,7 +298,7 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only pause job if it belongs to the current user
-	job, err := h.jobService.PauseJobWithUserCheck(id, ident.Identity.User.UserID)
+	job, err := h.jobService.PauseJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -330,7 +330,7 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Only resume job if it belongs to the current user
-	job, err := h.jobService.ResumeJobWithUserCheck(id, ident.Identity.User.UserID)
+	job, err := h.jobService.ResumeJobWithUserCheck(r.Context(), id, ident.Identity.User.UserID)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
