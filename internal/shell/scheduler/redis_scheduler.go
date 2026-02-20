@@ -45,8 +45,14 @@ const (
 	// Redis key for job execution locks
 	jobLockKeyPrefix = "scheduler:lock:"
 
+	// Redis key for sync leader election
+	syncLeaderKey = "scheduler:sync:leader"
+
 	// Lock TTL - prevents stuck locks if worker crashes
 	lockTTL = 5 * time.Minute
+
+	// Leader TTL - prevents stuck leader lock if worker crashes during sync
+	leaderTTL = 5 * time.Minute
 )
 
 // NewRedisScheduler creates a new Redis-based scheduler
@@ -293,6 +299,22 @@ func (s *RedisScheduler) SyncJobsFromDB(jobs []domain.Job) error {
 // GetScheduledJobCount returns the number of scheduled jobs in Redis
 func (s *RedisScheduler) GetScheduledJobCount() (int64, error) {
 	return s.client.ZCard(s.ctx, scheduledJobsKey).Result()
+}
+
+// TryAcquireLeader attempts to become the sync leader
+// Returns true if this worker should perform the database sync
+// Uses Redis SetNX to ensure only one worker syncs at a time
+func (s *RedisScheduler) TryAcquireLeader(ttl time.Duration) (bool, error) {
+	if ttl == 0 {
+		ttl = leaderTTL
+	}
+
+	result, err := s.client.SetNX(s.ctx, syncLeaderKey, "1", ttl).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to check leader status: %w", err)
+	}
+
+	return result, nil
 }
 
 // Close closes the Redis connection
