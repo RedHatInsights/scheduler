@@ -105,9 +105,10 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 		t.Errorf("Expected status %s, got %s", job.Status, retrievedJob.Status)
 	}
 
-	// Test Update
+	// Test Update with LastRun and NextRunAt
 	now := time.Now().UTC()
-	updatedJob := retrievedJob.WithStatus(domain.StatusRunning).WithLastRun(now)
+	nextRunAt := time.Now().UTC().Add(1 * time.Hour)
+	updatedJob := retrievedJob.WithStatus(domain.StatusRunning).WithLastRun(now).WithNextRunAt(nextRunAt)
 
 	err = repo.Save(updatedJob)
 	if err != nil {
@@ -129,6 +130,15 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 		// Allow 1 second difference due to precision
 		if retrievedUpdated.LastRun.Sub(now).Abs() > time.Second {
 			t.Errorf("Expected LastRun near %v, got %v", now, *retrievedUpdated.LastRun)
+		}
+	}
+
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedUpdated.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt near %v, got %v", nextRunAt, *retrievedUpdated.NextRunAt)
 		}
 	}
 

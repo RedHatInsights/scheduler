@@ -88,7 +88,7 @@ func TestNewJob(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := NewJob("Test Job", "org-123", "testuser", "user-123", Schedule1Hour, PayloadMessage, payload)
+	job := NewJob("Test Job", "org-123", "testuser", "user-123", Schedule1Hour, "UTC", PayloadMessage, payload)
 
 	if job.ID == "" {
 		t.Error("Job ID should not be empty")
@@ -128,7 +128,7 @@ func TestNewJob(t *testing.T) {
 }
 
 func TestJobUpdateFields(t *testing.T) {
-	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, PayloadMessage, map[string]interface{}{
+	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, "UTC", PayloadMessage, map[string]interface{}{
 		"msg": "original",
 	})
 

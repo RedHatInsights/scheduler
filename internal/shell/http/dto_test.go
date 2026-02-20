@@ -14,7 +14,7 @@ func TestToJobResponse(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", domain.PayloadMessage, payload)
+	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 
 	// Convert to response DTO
 	response := ToJobResponse(job)
@@ -93,8 +93,8 @@ func TestToJobResponseList(t *testing.T) {
 		"message": "test message 2",
 	}
 
-	job1 := domain.NewJob("Test Job 1", "org-123", "testuser", "user-123", "*/15 * * * *", domain.PayloadMessage, payload1)
-	job2 := domain.NewJob("Test Job 2", "org-456", "testuser2", "user-456", "0 * * * *", domain.PayloadCommand, payload2)
+	job1 := domain.NewJob("Test Job 1", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload1)
+	job2 := domain.NewJob("Test Job 2", "org-456", "testuser2", "user-456", "0 * * * *", "UTC", domain.PayloadCommand, payload2)
 
 	jobs := []domain.Job{job1, job2}
 
@@ -143,7 +143,7 @@ func TestJobResponseWithLastRun(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", domain.PayloadMessage, payload)
+	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 	now := time.Now()
 	job = job.WithLastRun(now)
 
@@ -155,6 +155,101 @@ func TestJobResponseWithLastRun(t *testing.T) {
 		t.Error("Expected LastRun to be set")
 	} else if response.LastRun.Unix() != now.Unix() {
 		t.Errorf("Expected LastRun %v, got %v", now, response.LastRun)
+	}
+}
+
+func TestJobResponseTimezoneConversion(t *testing.T) {
+	// Create a job with America/New_York timezone
+	payload := map[string]interface{}{
+		"message": "test message",
+	}
+
+	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "America/New_York", domain.PayloadMessage, payload)
+
+	// Set next_run_at to a known UTC time: 2026-02-21 14:00:00 UTC
+	// This should be 2026-02-21 09:00:00 EST (America/New_York is UTC-5 in winter)
+	utcTime := time.Date(2026, 2, 21, 14, 0, 0, 0, time.UTC)
+	job = job.WithNextRunAt(utcTime)
+
+	// Convert to response DTO
+	response := ToJobResponse(job)
+
+	// Verify NextRunAt is set
+	if response.NextRunAt == nil {
+		t.Fatal("Expected NextRunAt to be set")
+	}
+
+	// Verify the time is in America/New_York timezone
+	expectedLoc, _ := time.LoadLocation("America/New_York")
+	expectedTime := utcTime.In(expectedLoc)
+
+	if response.NextRunAt.Location().String() != "America/New_York" {
+		t.Errorf("Expected timezone America/New_York, got %s", response.NextRunAt.Location().String())
+	}
+
+	// Verify the hour matches (should be 9 AM in NY, not 2 PM UTC)
+	if response.NextRunAt.Hour() != 9 {
+		t.Errorf("Expected hour 9 (EST), got %d", response.NextRunAt.Hour())
+	}
+
+	// Verify the times are equal (same absolute time, different representation)
+	if !response.NextRunAt.Equal(utcTime) {
+		t.Errorf("Expected times to be equal: got %v, want %v", response.NextRunAt, expectedTime)
+	}
+
+	// Marshal to JSON and verify it includes timezone offset
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// The JSON should contain a timestamp with timezone offset (e.g., -05:00 for EST)
+	// Not just Z for UTC
+	if contains(jsonString, "\"next_run_at\":\"2026-02-21T14:00:00Z\"") {
+		t.Error("NextRunAt should not be in UTC (Z suffix), should be in America/New_York timezone")
+	}
+
+	// Should contain the EST time (9 AM) with offset
+	if !contains(jsonString, "2026-02-21T09:00:00-05:00") {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("NextRunAt should be in America/New_York timezone (09:00:00-05:00)")
+	}
+}
+
+func TestJobResponseUTCTimezone(t *testing.T) {
+	// Create a job with UTC timezone
+	payload := map[string]interface{}{
+		"message": "test message",
+	}
+
+	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
+
+	// Set next_run_at to a known UTC time
+	utcTime := time.Date(2026, 2, 21, 14, 0, 0, 0, time.UTC)
+	job = job.WithNextRunAt(utcTime)
+
+	// Convert to response DTO
+	response := ToJobResponse(job)
+
+	// Verify NextRunAt is set and remains in UTC
+	if response.NextRunAt == nil {
+		t.Fatal("Expected NextRunAt to be set")
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// Should contain the UTC time with Z suffix
+	if !contains(jsonString, "2026-02-21T14:00:00Z") {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("NextRunAt should be in UTC timezone (Z suffix)")
 	}
 }
 

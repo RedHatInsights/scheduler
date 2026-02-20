@@ -82,14 +82,15 @@ The `cmd/server/main.go` wires everything together:
 
 The service accepts standard 5-field cron expressions:
 - Format: `minute hour day-of-month month day-of-week`
+- **All schedules are interpreted in UTC timezone**
 
 Common predefined schedules (available as constants):
 - `*/10 * * * *` - Every 10 minutes (Schedule10Minutes)
 - `0 * * * *` - Every hour at minute 0 (Schedule1Hour)
-- `0 0 * * *` - Every day at midnight (Schedule1Day)
-- `0 0 1 * *` - Every month on the 1st at midnight (Schedule1Month)
+- `0 0 * * *` - Every day at midnight UTC (Schedule1Day)
+- `0 0 1 * *` - Every month on the 1st at midnight UTC (Schedule1Month)
 
-The service also accepts any valid 5-field cron expression (e.g., `30 14 * * MON-FRI` for weekdays at 2:30 PM)
+The service also accepts any valid 5-field cron expression (e.g., `30 14 * * MON-FRI` for weekdays at 2:30 PM UTC)
 
 ## Payload Types
 

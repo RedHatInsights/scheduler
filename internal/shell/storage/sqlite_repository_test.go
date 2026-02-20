@@ -26,7 +26,7 @@ func TestSQLiteJobRepository(t *testing.T) {
 		"count":   42,
 	}
 
-	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", domain.PayloadMessage, payload)
+	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 
 	// Test Save
 	if err := repo.Save(job); err != nil {
@@ -96,9 +96,10 @@ func TestSQLiteJobRepository(t *testing.T) {
 		t.Errorf("Expected 1 job, found %d", len(jobs))
 	}
 
-	// Test Update
+	// Test Update with LastRun and NextRunAt
 	now := time.Now()
-	updatedJob := job.WithStatus(domain.StatusRunning).WithLastRun(now)
+	nextRunAt := time.Now().Add(1 * time.Hour)
+	updatedJob := job.WithStatus(domain.StatusRunning).WithLastRun(now).WithNextRunAt(nextRunAt)
 	if err := repo.Save(updatedJob); err != nil {
 		t.Fatalf("Failed to update job: %v", err)
 	}
@@ -116,6 +117,12 @@ func TestSQLiteJobRepository(t *testing.T) {
 		t.Error("Expected LastRun to be set")
 	} else if retrievedUpdated.LastRun.Unix() != now.Unix() {
 		t.Errorf("Expected LastRun %v, got %v", now, retrievedUpdated.LastRun)
+	}
+
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set")
+	} else if retrievedUpdated.NextRunAt.Unix() != nextRunAt.Unix() {
+		t.Errorf("Expected NextRunAt %v, got %v", nextRunAt, retrievedUpdated.NextRunAt)
 	}
 
 	// Test Delete
@@ -161,9 +168,9 @@ func TestSQLiteJobRepository_FindByOrgID(t *testing.T) {
 		"command": "org2 job",
 	}
 
-	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", domain.PayloadMessage, payload1)
-	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 * * * *", domain.PayloadCommand, payload2)
-	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 12 * * *", domain.PayloadMessage, payload1)
+	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", "UTC", domain.PayloadMessage, payload1)
+	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 * * * *", "UTC", domain.PayloadCommand, payload2)
+	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 12 * * *", "UTC", domain.PayloadMessage, payload1)
 
 	// Save all jobs
 	if err := repo.Save(job1); err != nil {
