@@ -463,7 +463,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
-	jobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
+	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
 
 	// Initialize Redis client for scheduling coordination
 	var redisScheduler *scheduler.RedisScheduler
@@ -480,15 +480,17 @@ func runAPI(cmd *cobra.Command, args []string) {
 		log.Println("[API] Connected to Redis successfully")
 
 		// Set Redis scheduler for job service (so Create/Update/Delete sync to Redis)
-		jobService.SetCronScheduler(redisScheduler)
+		coreJobService.SetCronScheduler(redisScheduler)
 	} else {
 		log.Println("[API] WARNING: Redis is disabled. Scheduling will not work!")
 	}
 
+	// Create adapter for HTTP handlers (enforces authorization)
+	httpJobService := usecases.NewAuthorizedJobService(coreJobService)
 	jobRunService := usecases.NewJobRunService(jobRunRepo, jobRepo)
 
-	// Setup HTTP routes
-	router := httpShell.SetupRoutes(jobService, jobRunService)
+	// Setup HTTP routes with authorized service adapter
+	router := httpShell.SetupRoutes(httpJobService, jobRunService)
 
 	// Create HTTP server
 	server := &http.Server{
