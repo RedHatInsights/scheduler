@@ -64,24 +64,26 @@ objects:
         command:
           - ./scheduler
           - api
-        #livenessProbe:
-        #  failureThreshold: 3
-        #  httpGet:
-        #    path: /liveness
-        #    port: 10000
-        #    scheme: HTTP
-        #  periodSeconds: 10
-        #  successThreshold: 1
-        #  timeoutSeconds: 1
-        #readinessProbe:
-        #  failureThreshold: 3
-        #  httpGet:
-        #    path: /readiness
-        #    port: 10000
-        #    scheme: HTTP
-        #  periodSeconds: 10
-        #  successThreshold: 1
-        #  timeoutSeconds: 1
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
         resources:
           limits:
             cpu: ${CPU_LIMIT}
