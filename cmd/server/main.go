@@ -364,26 +364,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	// Create metrics server
-	var metricsServer *http.Server
-	if cfg.Metrics.Enabled {
-		metricsAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Metrics.Port)
-		metricsMux := http.NewServeMux()
-		metricsMux.Handle(cfg.Metrics.Path, promhttp.Handler())
-
-		metricsServer = &http.Server{
-			Addr:    metricsAddr,
-			Handler: metricsMux,
-		}
-
-		// Start metrics server
-		go func() {
-			log.Printf("Starting metrics server on %s%s", metricsAddr, cfg.Metrics.Path)
-			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Printf("Metrics server error: %v", err)
-			}
-		}()
-	}
+	metricsServer := startMetricsServer(cfg)
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -418,12 +399,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	// Shutdown metrics server if enabled
-	if cfg.Metrics.Enabled && metricsServer != nil {
-		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Metrics server forced to shutdown: %v", err)
-		}
-	}
+	stopMetricsServer(metricsServer, shutdownCtx)
 
 	log.Println("Server exited")
 }
@@ -508,6 +484,8 @@ func runAPI(cmd *cobra.Command, args []string) {
 		}
 	}()
 
+	metricsServer := startMetricsServer(cfg)
+
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -521,6 +499,8 @@ func runAPI(cmd *cobra.Command, args []string) {
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("[API] Server forced to shutdown: %v", err)
 	}
+
+	stopMetricsServer(metricsServer, ctx)
 
 	log.Println("[API] Server exited")
 }
@@ -549,6 +529,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to initialize Postgres job run repository: %v", err)
 	}
+
+	metricsServer := startMetricsServer(cfg)
 
 	// Initialize job executors (worker actually executes jobs)
 	executors := map[domain.PayloadType]executor.JobExecutor{
@@ -659,5 +641,34 @@ func runWorker(cmd *cobra.Command, args []string) {
 	log.Println("[WORKER] Waiting for in-flight jobs to complete (max 30s)...")
 	time.Sleep(30 * time.Second)
 
+	stopMetricsServer(metricsServer, context.TODO())
+
 	log.Println("[WORKER] Worker exited")
+}
+
+func startMetricsServer(cfg *config.Config) *http.Server {
+	var metricsServer *http.Server
+	metricsAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Metrics.Port)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle(cfg.Metrics.Path, promhttp.Handler())
+
+	metricsServer = &http.Server{
+		Addr:    metricsAddr,
+		Handler: metricsMux,
+	}
+
+	go func() {
+		log.Printf("Starting metrics server on %s%s", metricsAddr, cfg.Metrics.Path)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Metrics server error: %v", err)
+		}
+	}()
+
+	return metricsServer
+}
+
+func stopMetricsServer(metricsServer *http.Server, shutdownCtx context.Context) {
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Metrics server forced to shutdown: %v", err)
+	}
 }
