@@ -20,10 +20,11 @@ const (
 type PayloadType string
 
 const (
-	PayloadMessage     PayloadType = "message"
-	PayloadHTTPRequest PayloadType = "http_request"
-	PayloadCommand     PayloadType = "command"
-	PayloadExport      PayloadType = "export"
+	PayloadMessage      PayloadType = "message"
+	PayloadHTTPRequest  PayloadType = "http_request"
+	PayloadCommand      PayloadType = "command"
+	PayloadExport       PayloadType = "export"
+	PayloadInventoryPDF PayloadType = "inventory-pdf"
 )
 
 type Schedule string
@@ -179,7 +180,7 @@ func IsValidSchedule(s string) bool {
 
 func IsValidPayloadType(pt string) bool {
 	switch PayloadType(pt) {
-	case PayloadMessage, PayloadHTTPRequest, PayloadCommand, PayloadExport:
+	case PayloadMessage, PayloadHTTPRequest, PayloadCommand, PayloadExport, PayloadInventoryPDF:
 		return true
 	default:
 		return false
