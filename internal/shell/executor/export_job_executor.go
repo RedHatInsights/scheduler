@@ -102,6 +102,8 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 		JobID:       job.ID,
 		AccountID:   "", // FIXME: account
 		OrgID:       job.OrgID,
+		Username:    job.Username,
+		UserID:      job.UserID,
 		Status:      string(finalStatus.Status),
 		DownloadURL: downloadURL,
 		ErrorMsg:    errorMsg,
