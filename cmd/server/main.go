@@ -276,35 +276,18 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 	log.Printf("Database initialized successfully")
 
-	var userValidator identity.UserValidator
-	switch cfg.UserValidatorImpl {
-	case "bop":
-		log.Println("Initializing BOP User Validator")
-		userValidator = identity.NewBopUserValidator(
-			cfg.Bop.BaseURL,
-			cfg.Bop.APIToken,
-			cfg.Bop.ClientID,
-			cfg.Bop.InsightsEnv,
-		)
-	case "fake":
-		log.Println("Initializing FAKE User Validator")
-		userValidator = identity.NewFakeUserValidator()
-	default:
-		log.Fatalf("Unsupported UserValidator type: %s", cfg.UserValidatorImpl)
-	}
+	userValidator := createUserValidator(cfg)
 
 	schedulingService := usecases.NewDefaultSchedulingService()
 
-	var kafkaProducer *messaging.KafkaProducer
 	var notifier executor.JobCompletionNotifier
-
 	// Initialize job completion notifier based on configuration
 	switch cfg.JobCompletionNotifierImpl {
 	case "notifications":
 		log.Printf("Initializing platform notifications job completion notifier")
 		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
-		kafkaProducer, err = messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+		kafkaProducer, err := messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 		if err != nil {
 			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
@@ -532,12 +515,44 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 	metricsServer := startMetricsServer(cfg)
 
+	userValidator := createUserValidator(cfg)
+
+	var notifier executor.JobCompletionNotifier
+	// Initialize job completion notifier based on configuration
+	switch cfg.JobCompletionNotifierImpl {
+	case "notifications":
+		log.Printf("Initializing platform notifications job completion notifier")
+		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
+
+		kafkaProducer, err := messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+		if err != nil {
+			log.Fatalf("Failed to initialize Kafka producer: %v", err)
+		}
+
+		// Ensure Kafka producer is closed on shutdown
+		defer func() {
+			if closeErr := kafkaProducer.Close(); closeErr != nil {
+				log.Printf("Error closing Kafka producer: %v", closeErr)
+			}
+		}()
+
+		// Create notifications-based notifier
+		notifier = executor.NewNotificationsBasedJobCompletionNotifier(kafkaProducer)
+		log.Printf("Job completion notifier initialized (platform notifications)")
+	case "null":
+		// Use null object pattern - no-op notifier
+		notifier = executor.NewNullJobCompletionNotifier()
+		log.Printf("Using null notifier (no notifications will be sent)")
+	default:
+		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
+	}
+
 	// Initialize job executors (worker actually executes jobs)
 	executors := map[domain.PayloadType]executor.JobExecutor{
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
-		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Simplified for now
+		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
 	}
 	jobExecutor := executor.NewJobExecutor(executors, jobRunRepo)
 
@@ -644,6 +659,27 @@ func runWorker(cmd *cobra.Command, args []string) {
 	stopMetricsServer(metricsServer, context.TODO())
 
 	log.Println("[WORKER] Worker exited")
+}
+
+func createUserValidator(cfg *config.Config) identity.UserValidator {
+	var userValidator identity.UserValidator
+	switch cfg.UserValidatorImpl {
+	case "bop":
+		log.Println("Initializing BOP User Validator")
+		userValidator = identity.NewBopUserValidator(
+			cfg.Bop.BaseURL,
+			cfg.Bop.APIToken,
+			cfg.Bop.ClientID,
+			cfg.Bop.InsightsEnv,
+		)
+	case "fake":
+		log.Println("Initializing FAKE User Validator")
+		userValidator = identity.NewFakeUserValidator()
+	default:
+		log.Fatalf("Unsupported UserValidator type: %s", cfg.UserValidatorImpl)
+	}
+
+	return userValidator
 }
 
 func startMetricsServer(cfg *config.Config) *http.Server {
