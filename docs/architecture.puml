@@ -46,11 +46,11 @@ API --> Cache : Schedule jobs
 API ..> BOP : Validate identity\n(X-Rh-Identity)
 
 ' Worker connections
-Worker --> Cache : Poll scheduled jobs\nAcquire locks\nLeader election
+Worker --> Cache : Poll scheduled jobs
 Worker --> DB : Update job runs
 Worker --> BOP : Validate users
-Worker --> Export : Create export\nPoll status
-Worker --> Kafka : Send notifications
+Worker --> Export : Create export &\nPoll status
+Worker --> Kafka : Send message to notifications
 
 ' External service flow
 Kafka --> Notif : Event stream
