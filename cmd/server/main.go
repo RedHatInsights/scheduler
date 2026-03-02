@@ -430,7 +430,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 		redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 		log.Printf("[API] Connecting to Redis at %s", redisAddr)
 
-		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor)
+		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor, jobRepo)
 		if err != nil {
 			log.Fatalf("[API] Failed to connect to Redis: %v", err)
 		}
@@ -564,7 +564,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	log.Printf("[WORKER] Connecting to Redis at %s", redisAddr)
 
-	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor)
+	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor, jobRepo)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
 	}

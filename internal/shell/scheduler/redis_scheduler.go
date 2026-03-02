@@ -17,6 +17,7 @@ import (
 type RedisScheduler struct {
 	client   *redis.Client
 	executor JobExecutor
+	jobRepo  JobRepository
 	parser   cron.Parser
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -25,6 +26,12 @@ type RedisScheduler struct {
 // JobExecutor executes jobs
 type JobExecutor interface {
 	Execute(job domain.Job) error
+}
+
+// JobRepository provides access to job storage
+type JobRepository interface {
+	Save(job domain.Job) error
+	FindByID(id string) (domain.Job, error)
 }
 
 // ScheduledJob represents a job stored in Redis
@@ -56,7 +63,7 @@ const (
 )
 
 // NewRedisScheduler creates a new Redis-based scheduler
-func NewRedisScheduler(redisAddr string, executor JobExecutor) (*RedisScheduler, error) {
+func NewRedisScheduler(redisAddr string, executor JobExecutor, jobRepo JobRepository) (*RedisScheduler, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: "", // no password set
@@ -74,6 +81,7 @@ func NewRedisScheduler(redisAddr string, executor JobExecutor) (*RedisScheduler,
 	return &RedisScheduler{
 		client:   client,
 		executor: executor,
+		jobRepo:  jobRepo,
 		parser:   cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
 		ctx:      ctx,
 		cancel:   cancel,
@@ -241,6 +249,10 @@ func (s *RedisScheduler) executeJob(jobID string) {
 
 	log.Printf("[RedisScheduler] scheduledJob %+v", scheduledJob)
 
+	// Update last_run_at before execution
+	now := time.Now()
+	scheduledJob.Job = scheduledJob.Job.WithLastRunAt(now)
+
 	// Execute the job
 	log.Printf("[RedisScheduler] Executing job %s", jobID)
 	if err := s.executor.Execute(scheduledJob.Job); err != nil {
@@ -258,7 +270,21 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	scheduledJob.NextRun = nextRun
 	scheduledJob.LastUpdate = time.Now()
 
-	// Update job data and sorted set score
+	// Update next_run_at on the Job domain object
+	scheduledJob.Job = scheduledJob.Job.WithNextRunAt(nextRun)
+
+	// Persist updated job to PostgreSQL (if repository is available)
+	if s.jobRepo != nil {
+		if err := s.jobRepo.Save(scheduledJob.Job); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to save job %s to database: %v", jobID, err)
+			// Continue with Redis update even if database save fails
+		} else {
+			log.Printf("[RedisScheduler] Saved job %s to database with last_run_at=%s, next_run_at=%s",
+				jobID, scheduledJob.Job.LastRunAt.Format(time.RFC3339), scheduledJob.Job.NextRunAt.Format(time.RFC3339))
+		}
+	}
+
+	// Update job data and sorted set score in Redis
 	updatedJobData, err := json.Marshal(scheduledJob)
 	if err != nil {
 		log.Printf("[RedisScheduler] Error marshaling job %s: %v", jobID, err)
