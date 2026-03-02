@@ -34,6 +34,10 @@ objects:
         metrics:
           enabled: False
       minReplicas: ${{API_REPLICAS}}
+      deploymentStrategy:
+        rollingParams:
+          maxSurge: 25%
+          maxUnavailable: 25%
       podSpec:
         minReadySeconds: 15
         progressDeadlineSeconds: 600
@@ -160,6 +164,10 @@ objects:
         metrics:
           enabled: True
       minReplicas: ${{WORKER_REPLICAS}}
+      deploymentStrategy:
+        rollingParams:
+          maxSurge: 1
+          maxUnavailable: 1
       podSpec:
         minReadySeconds: 15
         progressDeadlineSeconds: 600
@@ -168,6 +176,13 @@ objects:
           - ./scheduler
           - worker
         terminationGracePeriodSeconds: 300
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - sleep 15
         livenessProbe:
           failureThreshold: 3
           httpGet:
@@ -220,6 +235,44 @@ objects:
           value: ${USER_VALIDATOR_IMPL}
         - name: JOB_COMPLETION_NOTIFIER_IMPL
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: EXPORT_SERVICE_TIMEOUT
+          value: 5m
+        - name: EXPORT_SERVICE_MAX_RETRIES
+          value: "3"
+        - name: EXPORT_SERVICE_POLL_INTERVAL
+          value: 5s
+        - name: EXPORT_SERVICE_POLL_MAX_RETRIES
+          value: "60"
+        - name: SHUTDOWN_TIMEOUT
+          value: 300s
+        - name: KAFKA_CLIENT_ID
+          value: insights-scheduler-worker
+        - name: KAFKA_TIMEOUT
+          value: 30s
+        - name: KAFKA_RETRIES
+          value: "5"
+        - name: KAFKA_COMPRESSION
+          value: snappy
+        - name: KAFKA_REQUIRED_ACKS
+          value: "-1"
+        - name: BOP_ENABLED
+          value: "true"
+        - name: BOP_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: backoffice
+              key: token
+        - name: BOP_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: backoffice
+              key: client-id
+        - name: BOP_INSIGHTS_ENV
+          value: ${ENV_NAME}
+        - name: BOP_URL
+          value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
+        - name: BOP_EPHEMERAL_MODE
+          value: "true"
 
 parameters:
 - description: Initial amount of memory the insights-scheduler container will request.
