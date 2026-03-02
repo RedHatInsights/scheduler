@@ -239,6 +239,8 @@ func (s *RedisScheduler) executeJob(jobID string) {
 		return
 	}
 
+	log.Printf("[RedisScheduler] scheduledJob %+v", scheduledJob)
+
 	// Execute the job
 	log.Printf("[RedisScheduler] Executing job %s", jobID)
 	if err := s.executor.Execute(scheduledJob.Job); err != nil {
