@@ -216,6 +216,10 @@ objects:
           value: insights
         - name: METRICS_SUBSYSTEM
           value: scheduler_worker
+        - name: USER_VALIDATOR_IMPL
+          value: ${USER_VALIDATOR_IMPL}
+        - name: JOB_COMPLETION_NOTIFIER_IMPL
+          value: ${JOB_COMPLETION_NOTIFIER_IMPL}
 
 parameters:
 - description: Initial amount of memory the insights-scheduler container will request.
