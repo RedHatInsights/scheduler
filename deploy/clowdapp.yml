@@ -15,7 +15,7 @@ objects:
       - ingress
       - export-service
     testing:
-      iqePlugin: insights-scheduler
+      iqePlugin: scheduler
     database:
       name: scheduler
       version: 16
