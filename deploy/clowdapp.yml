@@ -68,7 +68,7 @@ objects:
           failureThreshold: 3
           httpGet:
             path: /metrics
-            port: 8080
+            port: 9000
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 30
@@ -78,7 +78,7 @@ objects:
           failureThreshold: 3
           httpGet:
             path: /metrics
-            port: 8080
+            port: 9000
             scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 10
@@ -172,7 +172,7 @@ objects:
           failureThreshold: 3
           httpGet:
             path: /metrics
-            port: 8080
+            port: 9000
             scheme: HTTP
           initialDelaySeconds: 30
           periodSeconds: 30
@@ -182,7 +182,7 @@ objects:
           failureThreshold: 3
           httpGet:
             path: /metrics
-            port: 8080
+            port: 9000
             scheme: HTTP
           initialDelaySeconds: 10
           periodSeconds: 10
