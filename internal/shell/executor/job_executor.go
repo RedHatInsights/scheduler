@@ -39,9 +39,6 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 		}
 	}
 
-	log.Printf("job.Type: %+v", job.Type)
-	log.Printf("executors map: %+v", e.executors)
-
 	// Execute the job using the appropriate executor
 	var execErr error
 	executor, ok := e.executors[job.Type]
