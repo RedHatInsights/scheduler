@@ -8,7 +8,7 @@ A Go REST API service for programmatic job scheduling using the declarative shel
 ## Architecture
 
 ![Architecture diagram](/design/architecture.png)
-![Data flow diagram](/docs/data_flow.png)
+![Data flow diagram](/design/data_flow.png)
 
 ## Features
 
