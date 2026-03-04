@@ -18,6 +18,9 @@ type Config struct {
 	// Database configuration (uses Clowder when available)
 	Database DatabaseConfig `json:"database"`
 
+	// Redis configuration
+	Redis RedisConfig `json:"redis"`
+
 	// Kafka configuration (uses Clowder when available)
 	Kafka KafkaConfig `json:"kafka"`
 
@@ -89,6 +92,27 @@ type DatabaseConfig struct {
 
 	// ConnectionMaxLifetime for connection recycling
 	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
+}
+
+// RedisConfig contains Redis connection settings
+type RedisConfig struct {
+	// Enabled indicates if Redis integration is active
+	Enabled bool `json:"enabled"`
+
+	// Host for Redis server
+	Host string `json:"host"`
+
+	// Port for Redis server
+	Port int `json:"port"`
+
+	// Password for Redis authentication (optional)
+	Password string `json:"password"`
+
+	// DB number to use (0-15)
+	DB int `json:"db"`
+
+	// PoolSize for connection pooling
+	PoolSize int `json:"pool_size"`
 }
 
 // KafkaConfig contains Kafka connection settings
@@ -239,6 +263,9 @@ func LoadConfig() (*Config, error) {
 	// Load database configuration with Clowder integration
 	config.Database = loadDatabaseConfig(clowderConfig)
 
+	// Load Redis configuration with Clowder integration
+	config.Redis = loadRedisConfig(clowderConfig)
+
 	// Load Kafka configuration with Clowder integration
 	config.Kafka = loadKafkaConfig(clowderConfig)
 
@@ -324,6 +351,56 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 		MaxOpenConnections:    getEnvAsInt("DB_MAX_OPEN_CONNECTIONS", 25),
 		MaxIdleConnections:    getEnvAsInt("DB_MAX_IDLE_CONNECTIONS", 5),
 		ConnectionMaxLifetime: getEnvAsDuration("DB_CONNECTION_MAX_LIFETIME", 5*time.Minute),
+	}
+}
+
+// loadRedisConfig loads Redis configuration with Clowder integration
+func loadRedisConfig(clowderConfig *clowder.AppConfig) RedisConfig {
+	// Default values from environment
+	enabled := getEnvAsBool("REDIS_ENABLED", false)
+	host := getEnv("REDIS_HOST", "localhost")
+	port := getEnvAsInt("REDIS_PORT", 6379)
+	password := getEnv("REDIS_PASSWORD", "")
+	db := getEnvAsInt("REDIS_DB", 0)
+	poolSize := getEnvAsInt("REDIS_POOL_SIZE", 10)
+
+	// Override with Clowder InMemoryDb values if available
+	if clowderConfig != nil && clowderConfig.InMemoryDb != nil {
+		fmt.Println("Loading Redis configuration from Clowder InMemoryDb")
+		enabled = true // Clowder provides Redis, so enable it
+		host = clowderConfig.InMemoryDb.Hostname
+		port = clowderConfig.InMemoryDb.Port
+		fmt.Printf("Redis (from Clowder): %s:%d\n", host, port)
+
+		// Use password if provided by Clowder
+		if clowderConfig.InMemoryDb.Password != nil && *clowderConfig.InMemoryDb.Password != "" {
+			password = *clowderConfig.InMemoryDb.Password
+			fmt.Println("Redis authentication: password configured")
+		}
+
+		// Use username if provided (some Redis configs use username for ACLs)
+		// Note: go-redis client doesn't use username in basic auth, but we log it for awareness
+		if clowderConfig.InMemoryDb.Username != nil && *clowderConfig.InMemoryDb.Username != "" {
+			fmt.Printf("Redis username provided: %s (note: currently only password auth is used)\n", *clowderConfig.InMemoryDb.Username)
+			// Could be used for Redis 6+ ACL authentication if needed in the future
+			// For now, we only use password-based auth which is compatible with both old and new Redis
+		}
+	} else {
+		fmt.Println("Loading Redis configuration from environment variables")
+		if enabled {
+			fmt.Printf("Redis: %s:%d\n", host, port)
+		} else {
+			fmt.Println("Redis: disabled")
+		}
+	}
+
+	return RedisConfig{
+		Enabled:  enabled,
+		Host:     host,
+		Port:     port,
+		Password: password,
+		DB:       db,
+		PoolSize: poolSize,
 	}
 }
 
@@ -501,6 +578,16 @@ func (c *Config) Validate() error {
 		}
 		if c.Kafka.Topic == "" {
 			return fmt.Errorf("kafka topic is required when kafka is enabled")
+		}
+	}
+
+	// Validate Redis configuration
+	if c.Redis.Enabled {
+		if c.Redis.Host == "" {
+			return fmt.Errorf("redis host is required when redis is enabled")
+		}
+		if c.Redis.Port < 1 || c.Redis.Port > 65535 {
+			return fmt.Errorf("invalid redis port: %d", c.Redis.Port)
 		}
 	}
 
