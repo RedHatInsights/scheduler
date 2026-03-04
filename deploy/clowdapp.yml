@@ -176,12 +176,6 @@ parameters:
 - description: The number of replicas to use for the insights-scheduler api
   name: API_REPLICAS
   value: '1'
-- description: The number of replicas to use for the insights-scheduler api
-  name: MQTT_CONSUMER_REPLICAS
-  value: '1'
-- description: The number of replicas to use for the insights-scheduler api
-  name: KAFKA_CONSUMER_REPLICAS
-  value: '1'
 - description: Image
   name: IMAGE
   required: true
