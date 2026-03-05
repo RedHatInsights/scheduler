@@ -18,7 +18,7 @@ objects:
       iqePlugin: scheduler
     database:
       name: scheduler
-      version: 16
+      version: 17
     kafkaTopics:
     - replicas: 3
       partitions: 16
