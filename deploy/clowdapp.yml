@@ -273,6 +273,8 @@ objects:
           value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
         - name: BOP_EPHEMERAL_MODE
           value: "true"
+        - name: 3SCALE_URL
+          value: ${3SCALE_URL}
 
 parameters:
 - description: Initial amount of memory the scheduler api container will request.
@@ -344,6 +346,9 @@ parameters:
 - name: USER_VALIDATOR_IMPL
   value: "bop"
   required: true
+- name: 3SCALE_URL
+  value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
+
 
 - name: JOB_COMPLETION_NOTIFIER_IMPL
   value: "notifications"

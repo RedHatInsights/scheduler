@@ -36,6 +36,9 @@ type Config struct {
 	// Scheduler configuration
 	Scheduler SchedulerConfig `json:"scheduler"`
 
+	// 3scale service configuration
+	ThreeScale ThreeScaleConfig `json:"threescale"`
+
 	UserValidatorImpl         string
 	JobCompletionNotifierImpl string
 }
@@ -255,6 +258,18 @@ type SchedulerConfig struct {
 	DBToRedisSyncInterval time.Duration `json:"db_to_redis_sync_interval"`
 }
 
+// ThreeScaleConfig contains 3scale API Management service settings
+type ThreeScaleConfig struct {
+	// BaseURL for the 3scale API
+	BaseURL string `json:"base_url"`
+
+	// APIToken for 3scale authentication
+	APIToken string `json:"api_token"`
+
+	// Enabled indicates if 3scale integration is active
+	Enabled bool `json:"enabled"`
+}
+
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
 func LoadConfig() (*Config, error) {
 	var clowderConfig *clowder.AppConfig
@@ -295,6 +310,9 @@ func LoadConfig() (*Config, error) {
 
 	// Load scheduler configuration
 	config.Scheduler = loadSchedulerConfig()
+
+	// Load 3scale configuration
+	config.ThreeScale = loadThreeScaleConfig()
 
 	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
 	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
@@ -557,6 +575,18 @@ func loadSchedulerConfig() SchedulerConfig {
 	}
 }
 
+// loadThreeScaleConfig loads 3scale configuration from environment
+func loadThreeScaleConfig() ThreeScaleConfig {
+	apiToken := getEnv("THREESCALE_API_TOKEN", "")
+	enabled := apiToken != "" && getEnvAsBool("THREESCALE_ENABLED", true)
+
+	return ThreeScaleConfig{
+		BaseURL:  getEnv("THREESCALE_URL", "http://3scale-service:8000"),
+		APIToken: apiToken,
+		Enabled:  enabled,
+	}
+}
+
 func getOpenshiftNamespace() (string, error) {
 	filePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
@@ -633,6 +663,16 @@ func (c *Config) Validate() error {
 		}
 		if c.Bop.InsightsEnv == "" {
 			return fmt.Errorf("BOP insights environment is required when BOP is enabled")
+		}
+	}
+
+	// Validate 3scale configuration (only if enabled)
+	if c.ThreeScale.Enabled {
+		if c.ThreeScale.BaseURL == "" {
+			return fmt.Errorf("3scale base URL is required when 3scale is enabled")
+		}
+		if c.ThreeScale.APIToken == "" {
+			return fmt.Errorf("3scale API token is required when 3scale is enabled")
 		}
 	}
 

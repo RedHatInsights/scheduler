@@ -693,6 +693,12 @@ func runWorker(cmd *cobra.Command, args []string) {
 func createUserValidator(cfg *config.Config) identity.UserValidator {
 	var userValidator identity.UserValidator
 	switch cfg.UserValidatorImpl {
+	case "3scale":
+		log.Println("Initializing 3scale User Validator")
+		userValidator = identity.NewThreeScaleUserValidator(
+			cfg.ThreeScale.BaseURL,
+			cfg.ThreeScale.APIToken,
+		)
 	case "bop":
 		log.Println("Initializing BOP User Validator")
 		userValidator = identity.NewBopUserValidator(
