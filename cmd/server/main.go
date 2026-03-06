@@ -242,6 +242,12 @@ func runServer(cmd *cobra.Command, args []string) {
 			cfg.Bop.ClientID,
 			cfg.Bop.InsightsEnv,
 		)
+	case "3scale":
+		log.Println("Initializing 3scale User Validator")
+		userValidator = identity.NewThreeScaleUserValidator(
+			cfg.ThreeScale.BaseURL,
+			cfg.ThreeScale.APIToken,
+		)
 	case "fake":
 		log.Println("Initializing FAKE User Validator")
 		userValidator = identity.NewFakeUserValidator()
