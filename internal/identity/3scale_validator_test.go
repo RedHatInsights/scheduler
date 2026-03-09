@@ -13,13 +13,11 @@ import (
 func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 	// Create a test server
 	requestIDReceived := ""
-	authHeaderReceived := ""
 	userIDHeaderReceived := ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Capture headers
 		requestIDReceived = r.Header.Get("x-rh-insights-request-id")
-		authHeaderReceived = r.Header.Get("Authorization")
 		userIDHeaderReceived = r.Header.Get("X-Rh-User-Id")
 
 		// Verify it's a GET request
@@ -66,7 +64,7 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 	defer server.Close()
 
 	// Create validator with test server URL
-	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+	validator := NewThreeScaleUserValidator(server.URL)
 
 	// Test GenerateIdentityHeader
 	header, err := validator.GenerateIdentityHeader(
@@ -86,15 +84,9 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 
 	// Verify request-id was sent (should be a UUID)
 	if requestIDReceived == "" {
-		t.Error("Expected X-Request-Id header to be sent")
+		t.Error("Expected x-rh-insights-request-id header to be sent")
 	}
 	t.Logf("Request ID sent: %s", requestIDReceived)
-
-	// Verify authorization header
-	expectedAuth := "Bearer test-token"
-	if authHeaderReceived != expectedAuth {
-		t.Errorf("Expected Authorization header '%s', got '%s'", expectedAuth, authHeaderReceived)
-	}
 
 	// Verify user-id header
 	expectedUserID := "user-456"
@@ -119,7 +111,7 @@ func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+	validator := NewThreeScaleUserValidator(server.URL)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -172,7 +164,7 @@ func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+	validator := NewThreeScaleUserValidator(server.URL)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -221,7 +213,7 @@ func TestThreeScaleUserValidator_UserIDMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+	validator := NewThreeScaleUserValidator(server.URL)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -244,7 +236,7 @@ func TestThreeScaleUserValidator_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+	validator := NewThreeScaleUserValidator(server.URL)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -276,7 +268,7 @@ func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+	validator := NewThreeScaleUserValidator(server.URL)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -297,7 +289,7 @@ func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
 }
 
 func TestThreeScaleUserValidator_EmptyParams(t *testing.T) {
-	validator := NewThreeScaleUserValidator("http://localhost:8080", "test-token")
+	validator := NewThreeScaleUserValidator("http://localhost:8080")
 
 	tests := []struct {
 		name     string

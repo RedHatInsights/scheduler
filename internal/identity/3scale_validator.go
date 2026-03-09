@@ -18,14 +18,12 @@ import (
 type ThreeScaleUserValidator struct {
 	baseURL    string
 	httpClient *http.Client
-	apiToken   string
 }
 
-// NewThreeScaleUserValidator creates a new ThreeScaleUserValidator with the given base URL and credentials
-func NewThreeScaleUserValidator(baseURL, apiToken string) *ThreeScaleUserValidator {
+// NewThreeScaleUserValidator creates a new ThreeScaleUserValidator with the given base URL
+func NewThreeScaleUserValidator(baseURL string) *ThreeScaleUserValidator {
 	return &ThreeScaleUserValidator{
-		baseURL:  baseURL,
-		apiToken: apiToken,
+		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -33,10 +31,9 @@ func NewThreeScaleUserValidator(baseURL, apiToken string) *ThreeScaleUserValidat
 }
 
 // NewThreeScaleUserValidatorWithClient creates a new ThreeScaleUserValidator with a custom HTTP client
-func NewThreeScaleUserValidatorWithClient(baseURL, apiToken string, client *http.Client) *ThreeScaleUserValidator {
+func NewThreeScaleUserValidatorWithClient(baseURL string, client *http.Client) *ThreeScaleUserValidator {
 	return &ThreeScaleUserValidator{
 		baseURL:    baseURL,
-		apiToken:   apiToken,
 		httpClient: client,
 	}
 }
@@ -87,10 +84,6 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-rh-insights-request-id", requestID)
 	req.Header.Set("X-Rh-User-Id", userID)
-
-	if v.apiToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.apiToken))
-	}
 
 	// Record start time for metrics
 	startTime := time.Now()
