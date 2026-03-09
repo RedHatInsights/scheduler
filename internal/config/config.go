@@ -263,6 +263,9 @@ type ThreeScaleConfig struct {
 	// BaseURL for the 3scale API
 	BaseURL string `json:"base_url"`
 
+	// Timeout for 3scale validation requests
+	Timeout time.Duration `json:"timeout"`
+
 	// Enabled indicates if 3scale integration is active
 	Enabled bool `json:"enabled"`
 }
@@ -575,10 +578,12 @@ func loadSchedulerConfig() SchedulerConfig {
 // loadThreeScaleConfig loads 3scale configuration from environment
 func loadThreeScaleConfig() ThreeScaleConfig {
 	baseURL := getEnv("THREESCALE_URL", "http://3scale-service:8000")
+	timeout := getEnvAsDuration("THREESCALE_TIMEOUT", 5*time.Second)
 	enabled := getEnvAsBool("THREESCALE_ENABLED", true)
 
 	return ThreeScaleConfig{
 		BaseURL: baseURL,
+		Timeout: timeout,
 		Enabled: enabled,
 	}
 }

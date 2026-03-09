@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
@@ -65,7 +66,7 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 	defer server.Close()
 
 	// Create validator with test server URL
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	// Test GenerateIdentityHeader
 	header, err := validator.GenerateIdentityHeader(
@@ -130,7 +131,7 @@ func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -184,7 +185,7 @@ func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -229,7 +230,7 @@ func TestThreeScaleUserValidator_NilUser(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -283,7 +284,7 @@ func TestThreeScaleUserValidator_UserIDMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -306,7 +307,7 @@ func TestThreeScaleUserValidator_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -338,7 +339,7 @@ func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	validator := NewThreeScaleUserValidator(server.URL)
+	validator := NewThreeScaleUserValidator(server.URL, 5*time.Second)
 
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
@@ -359,7 +360,7 @@ func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
 }
 
 func TestThreeScaleUserValidator_EmptyParams(t *testing.T) {
-	validator := NewThreeScaleUserValidator("http://localhost:8080")
+	validator := NewThreeScaleUserValidator("http://localhost:8080", 5*time.Second)
 
 	tests := []struct {
 		name     string

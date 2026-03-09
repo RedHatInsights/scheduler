@@ -20,12 +20,12 @@ type ThreeScaleUserValidator struct {
 	httpClient *http.Client
 }
 
-// NewThreeScaleUserValidator creates a new ThreeScaleUserValidator with the given base URL
-func NewThreeScaleUserValidator(baseURL string) *ThreeScaleUserValidator {
+// NewThreeScaleUserValidator creates a new ThreeScaleUserValidator with the given base URL and timeout
+func NewThreeScaleUserValidator(baseURL string, timeout time.Duration) *ThreeScaleUserValidator {
 	return &ThreeScaleUserValidator{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: timeout,
 		},
 	}
 }
