@@ -108,8 +108,8 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	}
 
 	// Record metrics
-	UserValidationHTTPDuration.WithLabelValues("GET", statusCode).Observe(duration.Seconds())
-	UserValidationHTTPRequestsTotal.WithLabelValues("GET", statusCode).Inc()
+	ThreeScaleUserValidationDuration.WithLabelValues("GET", statusCode).Observe(duration.Seconds())
+	ThreeScaleUserValidationRequestsTotal.WithLabelValues("GET", statusCode).Inc()
 
 	// Log the call result
 	log.Printf("[ThreeScaleUserValidator] HTTP call completed - request_id=%s status=%s duration=%v",

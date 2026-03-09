@@ -7,20 +7,20 @@ import (
 
 var (
 	// UserValidationHTTPDuration tracks the duration of HTTP calls to user validation service
-	UserValidationHTTPDuration = promauto.NewHistogramVec(
+	ThreeScaleUserValidationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "scheduler_user_validation_http_duration_seconds",
-			Help:    "Duration of HTTP calls to user validation service in seconds",
+			Name:    "scheduler_3scale_user_validation_duration_seconds",
+			Help:    "Duration of calls to 3scale for user validation service in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"method", "status"},
 	)
 
 	// UserValidationHTTPRequestsTotal tracks the total number of HTTP requests to user validation service
-	UserValidationHTTPRequestsTotal = promauto.NewCounterVec(
+	ThreeScaleUserValidationRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "scheduler_user_validation_http_requests_total",
-			Help: "Total number of HTTP requests to user validation service by method and status",
+			Name: "scheduler_3scale_user_validation_requests_total",
+			Help: "Total number of 3scale user validation service by method and status",
 		},
 		[]string{"method", "status"},
 	)
