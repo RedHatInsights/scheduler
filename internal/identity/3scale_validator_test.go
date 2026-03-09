@@ -42,9 +42,10 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 					"org_id": "org-123",
 				},
 				"user": map[string]interface{}{
-					"username": "testuser",
-					"user_id":  "user-456",
-					"email":    "testuser@example.com",
+					"username":  "testuser",
+					"user_id":   "user-456",
+					"email":     "testuser@example.com",
+					"is_active": true,
 				},
 			},
 		}
@@ -97,17 +98,35 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 
 func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Return structured error response
-		errorResponse := `{
-			"errors": [{
-				"meta": {"response_by": "gateway"},
-				"status": 403,
-				"detail": "user is inactive"
-			}]
-		}`
+		// Build identity header with inactive user
+		identity := map[string]interface{}{
+			"identity": map[string]interface{}{
+				"account_number": "account-789",
+				"org_id":         "org-123",
+				"type":           "User",
+				"auth_type":      "jwt-auth",
+				"internal": map[string]interface{}{
+					"org_id": "org-123",
+				},
+				"user": map[string]interface{}{
+					"username":  "testuser",
+					"user_id":   "user-456",
+					"email":     "testuser@example.com",
+					"is_active": false, // Inactive user
+				},
+			},
+		}
+
+		identityJSON, _ := json.Marshal(identity)
+		identityHeader := base64.StdEncoding.EncodeToString(identityJSON)
+
+		response := ThreeScaleResponse{
+			XRHIdentity: identityHeader,
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(errorResponse))
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -124,8 +143,8 @@ func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 		t.Error("Expected error for inactive user, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "user is inactive") {
-		t.Errorf("Expected error to contain 'user is inactive', got: %v", err)
+	if !strings.Contains(err.Error(), "not active") {
+		t.Errorf("Expected error to contain 'not active', got: %v", err)
 	}
 
 	t.Logf("Got expected error: %v", err)
@@ -144,9 +163,10 @@ func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 					"org_id": "org-999",
 				},
 				"user": map[string]interface{}{
-					"username": "testuser",
-					"user_id":  "user-456",
-					"email":    "testuser@example.com",
+					"username":  "testuser",
+					"user_id":   "user-456",
+					"email":     "testuser@example.com",
+					"is_active": true,
 				},
 			},
 		}
@@ -180,6 +200,55 @@ func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 	t.Logf("Got expected error: %v", err)
 }
 
+func TestThreeScaleUserValidator_NilUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Build identity header without user field
+		identity := map[string]interface{}{
+			"identity": map[string]interface{}{
+				"account_number": "account-789",
+				"org_id":         "org-123",
+				"type":           "User",
+				"auth_type":      "jwt-auth",
+				"internal": map[string]interface{}{
+					"org_id": "org-123",
+				},
+				// No user field
+			},
+		}
+
+		identityJSON, _ := json.Marshal(identity)
+		identityHeader := base64.StdEncoding.EncodeToString(identityJSON)
+
+		response := ThreeScaleResponse{
+			XRHIdentity: identityHeader,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	validator := NewThreeScaleUserValidator(server.URL)
+
+	_, err := validator.GenerateIdentityHeader(
+		context.Background(),
+		"org-123",
+		"testuser",
+		"user-456",
+	)
+
+	if err == nil {
+		t.Error("Expected error for nil user, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "user is nil") {
+		t.Errorf("Expected error to contain 'user is nil', got: %v", err)
+	}
+
+	t.Logf("Got expected error: %v", err)
+}
+
 func TestThreeScaleUserValidator_UserIDMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Build identity header with different user_id
@@ -193,9 +262,10 @@ func TestThreeScaleUserValidator_UserIDMismatch(t *testing.T) {
 					"org_id": "org-123",
 				},
 				"user": map[string]interface{}{
-					"username": "testuser",
-					"user_id":  "user-999", // Different user_id
-					"email":    "testuser@example.com",
+					"username":  "testuser",
+					"user_id":   "user-999", // Different user_id
+					"email":     "testuser@example.com",
+					"is_active": true,
 				},
 			},
 		}

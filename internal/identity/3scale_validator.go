@@ -172,12 +172,26 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 			requestID, orgID, identity.Identity.OrgID)
 	}
 
-	// Validate user_id matches (if user is present)
-	if identity.Identity.User != nil && identity.Identity.User.UserID != userID {
+	// Validate user is present
+	if identity.Identity.User == nil {
+		log.Printf("[ThreeScaleUserValidator] User is nil in identity - request_id=%s",
+			requestID)
+		return "", fmt.Errorf("user is nil in identity (request_id=%s)", requestID)
+	}
+
+	// Validate user_id matches
+	if identity.Identity.User.UserID != userID {
 		log.Printf("[ThreeScaleUserValidator] UserID mismatch - request_id=%s expected=%s got=%s",
 			requestID, userID, identity.Identity.User.UserID)
 		return "", fmt.Errorf("user_id mismatch (request_id=%s): expected %s, got %s",
 			requestID, userID, identity.Identity.User.UserID)
+	}
+
+	// Validate user is active
+	if !identity.Identity.User.Active {
+		log.Printf("[ThreeScaleUserValidator] User is not active - request_id=%s username=%s user_id=%s",
+			requestID, username, userID)
+		return "", fmt.Errorf("user is not active (request_id=%s)", requestID)
 	}
 
 	log.Printf("[ThreeScaleUserValidator] User validated successfully - request_id=%s org_id=%s username=%s",
