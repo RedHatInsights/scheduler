@@ -41,16 +41,20 @@ func NewThreeScaleUserValidatorWithClient(baseURL, apiToken string, client *http
 	}
 }
 
-// ThreeScaleUserInfo represents the user information returned from the 3scale service
-type ThreeScaleUserInfo struct {
-	UserID        string `json:"user_id"`
-	Username      string `json:"username"`
-	Email         string `json:"email"`
-	AccountNumber string `json:"account_number"`
-	OrgID         string `json:"org_id"`
-	IsActive      bool   `json:"is_active"`
-	FirstName     string `json:"first_name,omitempty"`
-	LastName      string `json:"last_name,omitempty"`
+// ThreeScaleResponse represents the response from the 3scale service
+type ThreeScaleResponse struct {
+	XRHIdentity string `json:"x-rh-identity"`
+}
+
+// ThreeScaleError represents an error response from the 3scale service
+type ThreeScaleError struct {
+	Errors []struct {
+		Meta struct {
+			ResponseBy string `json:"response_by"`
+		} `json:"meta"`
+		Status int    `json:"status"`
+		Detail string `json:"detail"`
+	} `json:"errors"`
 }
 
 // GenerateIdentityHeader calls an HTTP GET service to validate user and generate identity header
@@ -71,7 +75,7 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 		requestID, orgID, username, userID)
 
 	// Construct the request URL with query parameters
-	url := fmt.Sprintf("%s/v1/users/%s?org_id=%s", v.baseURL, username, orgID)
+	url := fmt.Sprintf("%s/internal/userIdentity", v.baseURL)
 
 	// Create HTTP request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -79,9 +83,11 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers including request-id
+	// Set headers including request-id and user-id
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Request-Id", requestID)
+	req.Header.Set("x-rh-insights-request-id", requestID)
+	req.Header.Set("X-Rh-User-Id", userID)
+
 	if v.apiToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.apiToken))
 	}
@@ -117,6 +123,17 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
+
+		// Try to parse as structured error response
+		var errorResp ThreeScaleError
+		if err := json.Unmarshal(bodyBytes, &errorResp); err == nil && len(errorResp.Errors) > 0 {
+			firstError := errorResp.Errors[0]
+			log.Printf("[ThreeScaleUserValidator] Validation failed - request_id=%s status=%d error_status=%d detail=%s response_by=%s",
+				requestID, resp.StatusCode, firstError.Status, firstError.Detail, firstError.Meta.ResponseBy)
+			return "", fmt.Errorf("validation service error (request_id=%s): %s", requestID, firstError.Detail)
+		}
+
+		// Fallback to raw body if not structured error
 		log.Printf("[ThreeScaleUserValidator] Validation failed - request_id=%s status=%d body=%s",
 			requestID, resp.StatusCode, string(bodyBytes))
 		return "", fmt.Errorf("validation service returned status %d (request_id=%s): %s",
@@ -124,59 +141,55 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	}
 
 	// Parse response
-	var userInfo ThreeScaleUserInfo
-	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+	var response ThreeScaleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		log.Printf("[ThreeScaleUserValidator] Failed to decode response - request_id=%s error=%v",
 			requestID, err)
 		return "", fmt.Errorf("failed to decode response (request_id=%s): %w", requestID, err)
 	}
 
-	// Validate user information
-	if !userInfo.IsActive {
-		log.Printf("[ThreeScaleUserValidator] User is inactive - request_id=%s username=%s",
-			requestID, username)
-		return "", fmt.Errorf("user is inactive (request_id=%s)", requestID)
+	// Validate that we got an identity header
+	if response.XRHIdentity == "" {
+		log.Printf("[ThreeScaleUserValidator] Empty identity header - request_id=%s",
+			requestID)
+		return "", fmt.Errorf("empty identity header in response (request_id=%s)", requestID)
 	}
 
-	if userInfo.OrgID != orgID {
+	// Decode and validate the identity header
+	identityJSON, err := base64.StdEncoding.DecodeString(response.XRHIdentity)
+	if err != nil {
+		log.Printf("[ThreeScaleUserValidator] Failed to decode identity header - request_id=%s error=%v",
+			requestID, err)
+		return "", fmt.Errorf("failed to decode identity header (request_id=%s): %w", requestID, err)
+	}
+
+	// Parse the identity to validate it
+	var identity platformIdentity.XRHID
+	if err := json.Unmarshal(identityJSON, &identity); err != nil {
+		log.Printf("[ThreeScaleUserValidator] Failed to parse identity JSON - request_id=%s error=%v",
+			requestID, err)
+		return "", fmt.Errorf("failed to parse identity JSON (request_id=%s): %w", requestID, err)
+	}
+
+	// Validate org_id matches
+	if identity.Identity.OrgID != orgID {
 		log.Printf("[ThreeScaleUserValidator] OrgID mismatch - request_id=%s expected=%s got=%s",
-			requestID, orgID, userInfo.OrgID)
+			requestID, orgID, identity.Identity.OrgID)
 		return "", fmt.Errorf("org_id mismatch (request_id=%s): expected %s, got %s",
-			requestID, orgID, userInfo.OrgID)
+			requestID, orgID, identity.Identity.OrgID)
 	}
 
-	if userInfo.UserID != userID {
+	// Validate user_id matches (if user is present)
+	if identity.Identity.User != nil && identity.Identity.User.UserID != userID {
 		log.Printf("[ThreeScaleUserValidator] UserID mismatch - request_id=%s expected=%s got=%s",
-			requestID, userID, userInfo.UserID)
+			requestID, userID, identity.Identity.User.UserID)
 		return "", fmt.Errorf("user_id mismatch (request_id=%s): expected %s, got %s",
-			requestID, userID, userInfo.UserID)
+			requestID, userID, identity.Identity.User.UserID)
 	}
 
 	log.Printf("[ThreeScaleUserValidator] User validated successfully - request_id=%s org_id=%s username=%s",
-		requestID, userInfo.OrgID, userInfo.Username)
+		requestID, identity.Identity.OrgID, username)
 
-	// Build the identity header using the HTTP response
-	identity := platformIdentity.XRHID{
-		Identity: platformIdentity.Identity{
-			AccountNumber: userInfo.AccountNumber,
-			OrgID:         userInfo.OrgID,
-			Type:          "User",
-			AuthType:      "jwt-auth",
-			Internal: platformIdentity.Internal{
-				OrgID: userInfo.OrgID,
-			},
-			User: &platformIdentity.User{
-				Username: userInfo.Username,
-				UserID:   userInfo.UserID,
-				Email:    userInfo.Email,
-			},
-		},
-	}
-
-	identityJSON, err := json.Marshal(identity)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal identity (request_id=%s): %w", requestID, err)
-	}
-
-	return base64.StdEncoding.EncodeToString(identityJSON), nil
+	// Return the base64-encoded identity header as-is
+	return response.XRHIdentity, nil
 }

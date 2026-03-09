@@ -2,9 +2,11 @@ package identity
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -12,11 +14,13 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 	// Create a test server
 	requestIDReceived := ""
 	authHeaderReceived := ""
+	userIDHeaderReceived := ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Capture request-id header
-		requestIDReceived = r.Header.Get("X-Request-Id")
+		// Capture headers
+		requestIDReceived = r.Header.Get("x-rh-insights-request-id")
 		authHeaderReceived = r.Header.Get("Authorization")
+		userIDHeaderReceived = r.Header.Get("X-Rh-User-Id")
 
 		// Verify it's a GET request
 		if r.Method != "GET" {
@@ -24,32 +28,40 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 		}
 
 		// Verify URL path
-		expectedPath := "/v1/users/testuser"
+		expectedPath := "/internal/userIdentity"
 		if r.URL.Path != expectedPath {
 			t.Errorf("Expected path %s, got %s", expectedPath, r.URL.Path)
 		}
 
-		// Verify query parameters
-		orgID := r.URL.Query().Get("org_id")
-		if orgID != "org-123" {
-			t.Errorf("Expected org_id=org-123, got %s", orgID)
+		// Build identity header
+		identity := map[string]interface{}{
+			"identity": map[string]interface{}{
+				"account_number": "account-789",
+				"org_id":         "org-123",
+				"type":           "User",
+				"auth_type":      "jwt-auth",
+				"internal": map[string]interface{}{
+					"org_id": "org-123",
+				},
+				"user": map[string]interface{}{
+					"username": "testuser",
+					"user_id":  "user-456",
+					"email":    "testuser@example.com",
+				},
+			},
 		}
 
-		// Return mock user info
-		userInfo := ThreeScaleUserInfo{
-			UserID:        "user-456",
-			Username:      "testuser",
-			Email:         "testuser@example.com",
-			AccountNumber: "account-789",
-			OrgID:         "org-123",
-			IsActive:      true,
-			FirstName:     "Test",
-			LastName:      "User",
+		identityJSON, _ := json.Marshal(identity)
+		identityHeader := base64.StdEncoding.EncodeToString(identityJSON)
+
+		// Return response with x-rh-identity header
+		response := ThreeScaleResponse{
+			XRHIdentity: identityHeader,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(userInfo)
+		json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -83,22 +95,27 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 	if authHeaderReceived != expectedAuth {
 		t.Errorf("Expected Authorization header '%s', got '%s'", expectedAuth, authHeaderReceived)
 	}
+
+	// Verify user-id header
+	expectedUserID := "user-456"
+	if userIDHeaderReceived != expectedUserID {
+		t.Errorf("Expected X-Rh-User-Id header '%s', got '%s'", expectedUserID, userIDHeaderReceived)
+	}
 }
 
 func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userInfo := ThreeScaleUserInfo{
-			UserID:        "user-456",
-			Username:      "testuser",
-			Email:         "testuser@example.com",
-			AccountNumber: "account-789",
-			OrgID:         "org-123",
-			IsActive:      false, // Inactive user
-		}
-
+		// Return structured error response
+		errorResponse := `{
+			"errors": [{
+				"meta": {"response_by": "gateway"},
+				"status": 403,
+				"detail": "user is inactive"
+			}]
+		}`
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(userInfo)
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(errorResponse))
 	}))
 	defer server.Close()
 
@@ -115,26 +132,43 @@ func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 		t.Error("Expected error for inactive user, got nil")
 	}
 
-	if err != nil && err.Error() != "user is inactive (request_id="+err.Error()+")" {
-		// Just check that error mentions inactive user
-		t.Logf("Got expected error: %v", err)
+	if !strings.Contains(err.Error(), "user is inactive") {
+		t.Errorf("Expected error to contain 'user is inactive', got: %v", err)
 	}
+
+	t.Logf("Got expected error: %v", err)
 }
 
 func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userInfo := ThreeScaleUserInfo{
-			UserID:        "user-456",
-			Username:      "testuser",
-			Email:         "testuser@example.com",
-			AccountNumber: "account-789",
-			OrgID:         "org-999", // Different org
-			IsActive:      true,
+		// Build identity header with different org_id
+		identity := map[string]interface{}{
+			"identity": map[string]interface{}{
+				"account_number": "account-789",
+				"org_id":         "org-999", // Different org
+				"type":           "User",
+				"auth_type":      "jwt-auth",
+				"internal": map[string]interface{}{
+					"org_id": "org-999",
+				},
+				"user": map[string]interface{}{
+					"username": "testuser",
+					"user_id":  "user-456",
+					"email":    "testuser@example.com",
+				},
+			},
+		}
+
+		identityJSON, _ := json.Marshal(identity)
+		identityHeader := base64.StdEncoding.EncodeToString(identityJSON)
+
+		response := ThreeScaleResponse{
+			XRHIdentity: identityHeader,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(userInfo)
+		json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -149,6 +183,55 @@ func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected error for org_id mismatch, got nil")
+	}
+
+	t.Logf("Got expected error: %v", err)
+}
+
+func TestThreeScaleUserValidator_UserIDMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Build identity header with different user_id
+		identity := map[string]interface{}{
+			"identity": map[string]interface{}{
+				"account_number": "account-789",
+				"org_id":         "org-123",
+				"type":           "User",
+				"auth_type":      "jwt-auth",
+				"internal": map[string]interface{}{
+					"org_id": "org-123",
+				},
+				"user": map[string]interface{}{
+					"username": "testuser",
+					"user_id":  "user-999", // Different user_id
+					"email":    "testuser@example.com",
+				},
+			},
+		}
+
+		identityJSON, _ := json.Marshal(identity)
+		identityHeader := base64.StdEncoding.EncodeToString(identityJSON)
+
+		response := ThreeScaleResponse{
+			XRHIdentity: identityHeader,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+
+	_, err := validator.GenerateIdentityHeader(
+		context.Background(),
+		"org-123",
+		"testuser",
+		"user-456",
+	)
+
+	if err == nil {
+		t.Error("Expected error for user_id mismatch, got nil")
 	}
 
 	t.Logf("Got expected error: %v", err)
@@ -172,6 +255,42 @@ func TestThreeScaleUserValidator_HTTPError(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected error for HTTP 404, got nil")
+	}
+
+	t.Logf("Got expected error: %v", err)
+}
+
+func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return structured error response matching the spec
+		errorResponse := `{
+			"errors": [{
+				"meta": {"response_by": "gateway"},
+				"status": 400,
+				"detail": "unable to retrieve user data"
+			}]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errorResponse))
+	}))
+	defer server.Close()
+
+	validator := NewThreeScaleUserValidator(server.URL, "test-token")
+
+	_, err := validator.GenerateIdentityHeader(
+		context.Background(),
+		"org-123",
+		"testuser",
+		"user-456",
+	)
+
+	if err == nil {
+		t.Error("Expected error for structured error response, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "unable to retrieve user data") {
+		t.Errorf("Expected error to contain 'unable to retrieve user data', got: %v", err)
 	}
 
 	t.Logf("Got expected error: %v", err)
