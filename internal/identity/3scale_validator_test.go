@@ -242,8 +242,8 @@ func TestThreeScaleUserValidator_NilUser(t *testing.T) {
 		t.Error("Expected error for nil user, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "user is nil") {
-		t.Errorf("Expected error to contain 'user is nil', got: %v", err)
+	if !strings.Contains(err.Error(), "unable to process response from user validation service") {
+		t.Errorf("Expected error to contain 'unable to process response from user validation service', got: %v", err)
 	}
 
 	t.Logf("Got expected error: %v", err)
@@ -351,8 +351,8 @@ func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
 		t.Error("Expected error for structured error response, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "unable to retrieve user data") {
-		t.Errorf("Expected error to contain 'unable to retrieve user data', got: %v", err)
+	if !strings.Contains(err.Error(), "user validation service error") {
+		t.Errorf("Expected error to contain 'user validation service error', got: %v", err)
 	}
 
 	t.Logf("Got expected error: %v", err)

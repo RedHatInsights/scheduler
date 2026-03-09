@@ -77,7 +77,9 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	// Create HTTP request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		log.Printf("[ThreeScaleUserValidator] failed to create request - request_id=%s org_id=%s user_id=%s - err: %s",
+			requestID, orgID, userID, err)
+		return "", fmt.Errorf("failed to create user validation request")
 	}
 
 	// Set headers including request-id and user-id
@@ -109,7 +111,9 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 		requestID, statusCode, duration)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to call validation service (request_id=%s): %w", requestID, err)
+		log.Printf("[ThreeScaleUserValidator] HTTP call failed - request_id=%s status=%s duration=%v - err: %s",
+			requestID, statusCode, duration, err)
+		return "", fmt.Errorf("failed to call user validation service")
 	}
 	defer resp.Body.Close()
 
@@ -123,14 +127,13 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 			firstError := errorResp.Errors[0]
 			log.Printf("[ThreeScaleUserValidator] Validation failed - request_id=%s status=%d error_status=%d detail=%s response_by=%s",
 				requestID, resp.StatusCode, firstError.Status, firstError.Detail, firstError.Meta.ResponseBy)
-			return "", fmt.Errorf("validation service error (request_id=%s): %s", requestID, firstError.Detail)
+			return "", fmt.Errorf("user validation service error")
 		}
 
 		// Fallback to raw body if not structured error
 		log.Printf("[ThreeScaleUserValidator] Validation failed - request_id=%s status=%d body=%s",
 			requestID, resp.StatusCode, string(bodyBytes))
-		return "", fmt.Errorf("validation service returned status %d (request_id=%s): %s",
-			resp.StatusCode, requestID, string(bodyBytes))
+		return "", fmt.Errorf("user validation service returned an error")
 	}
 
 	// Parse response
@@ -138,14 +141,14 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		log.Printf("[ThreeScaleUserValidator] Failed to decode response - request_id=%s error=%v",
 			requestID, err)
-		return "", fmt.Errorf("failed to decode response (request_id=%s): %w", requestID, err)
+		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
 	// Validate that we got an identity header
 	if response.XRHIdentity == "" {
 		log.Printf("[ThreeScaleUserValidator] Empty identity header - request_id=%s",
 			requestID)
-		return "", fmt.Errorf("empty identity header in response (request_id=%s)", requestID)
+		return "", fmt.Errorf("empty response from user validation service")
 	}
 
 	// Decode and validate the identity header
@@ -153,7 +156,7 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	if err != nil {
 		log.Printf("[ThreeScaleUserValidator] Failed to decode identity header - request_id=%s error=%v",
 			requestID, err)
-		return "", fmt.Errorf("failed to decode identity header (request_id=%s): %w", requestID, err)
+		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
 	// Parse the identity to validate it
@@ -161,37 +164,35 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 	if err := json.Unmarshal(identityJSON, &identity); err != nil {
 		log.Printf("[ThreeScaleUserValidator] Failed to parse identity JSON - request_id=%s error=%v",
 			requestID, err)
-		return "", fmt.Errorf("failed to parse identity JSON (request_id=%s): %w", requestID, err)
+		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
 	// Validate org_id matches
 	if identity.Identity.OrgID != orgID {
 		log.Printf("[ThreeScaleUserValidator] OrgID mismatch - request_id=%s expected=%s got=%s",
 			requestID, orgID, identity.Identity.OrgID)
-		return "", fmt.Errorf("org_id mismatch (request_id=%s): expected %s, got %s",
-			requestID, orgID, identity.Identity.OrgID)
+		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
 	// Validate user is present
 	if identity.Identity.User == nil {
 		log.Printf("[ThreeScaleUserValidator] User is nil in identity - request_id=%s",
 			requestID)
-		return "", fmt.Errorf("user is nil in identity (request_id=%s)", requestID)
+		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
 	// Validate user_id matches
 	if identity.Identity.User.UserID != userID {
 		log.Printf("[ThreeScaleUserValidator] UserID mismatch - request_id=%s expected=%s got=%s",
 			requestID, userID, identity.Identity.User.UserID)
-		return "", fmt.Errorf("user_id mismatch (request_id=%s): expected %s, got %s",
-			requestID, userID, identity.Identity.User.UserID)
+		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
 	// Validate user is active
 	if !identity.Identity.User.Active {
 		log.Printf("[ThreeScaleUserValidator] User is not active - request_id=%s username=%s user_id=%s",
 			requestID, username, userID)
-		return "", fmt.Errorf("user is not active (request_id=%s)", requestID)
+		return "", fmt.Errorf("user is not active")
 	}
 
 	log.Printf("[ThreeScaleUserValidator] User validated successfully - request_id=%s org_id=%s username=%s",
