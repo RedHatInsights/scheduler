@@ -371,8 +371,24 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	log.Println("Shutting down server...")
 
-	// Stop scheduler
+	// Stop scheduler (prevents new jobs from starting)
 	cronScheduler.Stop()
+
+	// Wait for in-flight jobs to complete (with timeout)
+	log.Println("Waiting for in-flight jobs to complete (max 30s)...")
+
+	done := make(chan struct{})
+	go func() {
+		jobExecutor.Wait() // Block until all jobs complete
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("All in-flight jobs completed successfully")
+	case <-time.After(30 * time.Second):
+		log.Println("WARNING: Timeout waiting for jobs, some may be interrupted")
+	}
 
 	// Shutdown HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
@@ -652,9 +668,21 @@ func runWorker(cmd *cobra.Command, args []string) {
 	log.Println("[WORKER] Shutting down worker...")
 	redisScheduler.Stop()
 
-	// Give in-flight jobs a chance to complete (up to 30 seconds)
+	// Wait for in-flight jobs to complete (with timeout)
 	log.Println("[WORKER] Waiting for in-flight jobs to complete (max 30s)...")
-	time.Sleep(30 * time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		jobExecutor.Wait() // Block until all jobs complete
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("[WORKER] All in-flight jobs completed successfully")
+	case <-time.After(30 * time.Second):
+		log.Println("[WORKER] WARNING: Timeout waiting for jobs, some may be interrupted")
+	}
 
 	stopMetricsServer(metricsServer, context.TODO())
 

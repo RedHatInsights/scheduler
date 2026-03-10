@@ -3,6 +3,7 @@ package executor
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/usecases"
@@ -11,6 +12,7 @@ import (
 type DefaultJobExecutor struct {
 	executors map[domain.PayloadType]JobExecutor
 	runRepo   usecases.JobRunRepository
+	wg        sync.WaitGroup // Tracks in-flight jobs for graceful shutdown
 }
 
 func NewJobExecutor(executors map[domain.PayloadType]JobExecutor, runRepo usecases.JobRunRepository) *DefaultJobExecutor {
@@ -21,6 +23,10 @@ func NewJobExecutor(executors map[domain.PayloadType]JobExecutor, runRepo usecas
 }
 
 func (e *DefaultJobExecutor) Execute(job domain.Job) error {
+	// Track this job for graceful shutdown
+	e.wg.Add(1)
+	defer e.wg.Done()
+
 	log.Printf("Executing job: %s (%s)", job.Name, job.ID)
 
 	// Increment the currently running jobs metric
@@ -65,4 +71,10 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 	}
 
 	return execErr
+}
+
+// Wait blocks until all in-flight jobs complete
+// This is used for graceful shutdown
+func (e *DefaultJobExecutor) Wait() {
+	e.wg.Wait()
 }
