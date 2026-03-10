@@ -446,7 +446,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 		redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 		log.Printf("[API] Connecting to Redis at %s", redisAddr)
 
-		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor, jobRepo, cfg.Scheduler.PollInterval)
+		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
 		if err != nil {
 			log.Fatalf("[API] Failed to connect to Redis: %v", err)
 		}
@@ -580,7 +580,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	log.Printf("[WORKER] Connecting to Redis at %s", redisAddr)
 
-	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor, jobRepo, cfg.Scheduler.PollInterval)
+	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
 	}
@@ -637,7 +637,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	// Optional: Periodic re-sync from Postgres to catch any missed updates
 	// This is a safety mechanism in case API pods fail to update Redis
 	if os.Getenv("ENABLE_PERIODIC_SYNC") == "true" {
-		syncInterval := cfg.Scheduler.SyncInterval
+		syncInterval := cfg.Scheduler.DBToRedisSyncInterval
 		log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
 		go func() {
 			ticker := time.NewTicker(syncInterval)

@@ -248,11 +248,11 @@ type SchedulerConfig struct {
 	// GracefulShutdownTimeout is the maximum time to wait for in-flight jobs during shutdown
 	GracefulShutdownTimeout time.Duration `json:"graceful_shutdown_timeout"`
 
-	// PollInterval is how often workers check Redis for due jobs
-	PollInterval time.Duration `json:"poll_interval"`
+	// RedisPollInterval is how often workers check Redis for due jobs
+	RedisPollInterval time.Duration `json:"redis_poll_interval"`
 
-	// SyncInterval is how often workers sync jobs from PostgreSQL to Redis
-	SyncInterval time.Duration `json:"sync_interval"`
+	// DBToRedisSyncInterval is how often workers sync jobs from PostgreSQL to Redis
+	DBToRedisSyncInterval time.Duration `json:"db_to_redis_sync_interval"`
 }
 
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
@@ -552,8 +552,8 @@ func loadBopConfig() BopConfig {
 func loadSchedulerConfig() SchedulerConfig {
 	return SchedulerConfig{
 		GracefulShutdownTimeout: getEnvAsDuration("SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT", 30*time.Second),
-		PollInterval:            getEnvAsDuration("SCHEDULER_POLL_INTERVAL", 10*time.Second),
-		SyncInterval:            getEnvAsDuration("SCHEDULER_SYNC_INTERVAL", 1*time.Hour),
+		RedisPollInterval:       getEnvAsDuration("SCHEDULER_REDIS_POLL_INTERVAL", 10*time.Second),
+		DBToRedisSyncInterval:   getEnvAsDuration("SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL", 1*time.Hour),
 	}
 }
 

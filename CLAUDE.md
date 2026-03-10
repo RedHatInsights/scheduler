@@ -110,17 +110,17 @@ Jobs support four payload types:
 - Description: Maximum time to wait for in-flight jobs during shutdown
 - Example: `SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT=60s`
 
-**Poll Interval**:
-- Variable: `SCHEDULER_POLL_INTERVAL`
+**Redis Poll Interval**:
+- Variable: `SCHEDULER_REDIS_POLL_INTERVAL`
 - Default: `10s`
 - Description: How often workers check Redis for due jobs
-- Example: `SCHEDULER_POLL_INTERVAL=5s`
+- Example: `SCHEDULER_REDIS_POLL_INTERVAL=5s`
 
-**Sync Interval**:
-- Variable: `SCHEDULER_SYNC_INTERVAL`
+**Database to Redis Sync Interval**:
+- Variable: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL`
 - Default: `1h`
 - Description: How often workers sync jobs from PostgreSQL to Redis (requires `ENABLE_PERIODIC_SYNC=true`)
-- Example: `SCHEDULER_SYNC_INTERVAL=30m`
+- Example: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=30m`
 
 ### Database Configuration
 
