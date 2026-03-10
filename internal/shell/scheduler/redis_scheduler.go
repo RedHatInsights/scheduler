@@ -15,12 +15,13 @@ import (
 
 // RedisScheduler manages job scheduling using Redis for persistence
 type RedisScheduler struct {
-	client   *redis.Client
-	executor JobExecutor
-	jobRepo  JobRepository
-	parser   cron.Parser
-	ctx      context.Context
-	cancel   context.CancelFunc
+	client       *redis.Client
+	executor     JobExecutor
+	jobRepo      JobRepository
+	parser       cron.Parser
+	ctx          context.Context
+	cancel       context.CancelFunc
+	pollInterval time.Duration
 }
 
 // JobExecutor executes jobs
@@ -63,7 +64,7 @@ const (
 )
 
 // NewRedisScheduler creates a new Redis-based scheduler
-func NewRedisScheduler(redisAddr string, executor JobExecutor, jobRepo JobRepository) (*RedisScheduler, error) {
+func NewRedisScheduler(redisAddr string, executor JobExecutor, jobRepo JobRepository, pollInterval time.Duration) (*RedisScheduler, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: "", // no password set
@@ -78,21 +79,27 @@ func NewRedisScheduler(redisAddr string, executor JobExecutor, jobRepo JobReposi
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Default to 10 seconds if not specified
+	if pollInterval == 0 {
+		pollInterval = 10 * time.Second
+	}
+
 	return &RedisScheduler{
-		client:   client,
-		executor: executor,
-		jobRepo:  jobRepo,
-		parser:   cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
-		ctx:      ctx,
-		cancel:   cancel,
+		client:       client,
+		executor:     executor,
+		jobRepo:      jobRepo,
+		parser:       cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
+		ctx:          ctx,
+		cancel:       cancel,
+		pollInterval: pollInterval,
 	}, nil
 }
 
 // Start begins the scheduler loop
 func (s *RedisScheduler) Start() {
-	log.Println("[RedisScheduler] Starting scheduler")
+	log.Printf("[RedisScheduler] Starting scheduler (poll interval: %s)", s.pollInterval)
 
-	ticker := time.NewTicker(10 * time.Second) // Check every 10 seconds
+	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 
 	for {

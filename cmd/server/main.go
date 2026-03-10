@@ -375,7 +375,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	cronScheduler.Stop()
 
 	// Wait for in-flight jobs to complete (with timeout)
-	log.Println("Waiting for in-flight jobs to complete (max 30s)...")
+	log.Printf("Waiting for in-flight jobs to complete (max %s)...", cfg.Scheduler.GracefulShutdownTimeout)
 
 	done := make(chan struct{})
 	go func() {
@@ -386,7 +386,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	select {
 	case <-done:
 		log.Println("All in-flight jobs completed successfully")
-	case <-time.After(30 * time.Second):
+	case <-time.After(cfg.Scheduler.GracefulShutdownTimeout):
 		log.Println("WARNING: Timeout waiting for jobs, some may be interrupted")
 	}
 
@@ -446,7 +446,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 		redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 		log.Printf("[API] Connecting to Redis at %s", redisAddr)
 
-		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor, jobRepo)
+		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor, jobRepo, cfg.Scheduler.PollInterval)
 		if err != nil {
 			log.Fatalf("[API] Failed to connect to Redis: %v", err)
 		}
@@ -580,7 +580,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
 	log.Printf("[WORKER] Connecting to Redis at %s", redisAddr)
 
-	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor, jobRepo)
+	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor, jobRepo, cfg.Scheduler.PollInterval)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
 	}
@@ -637,7 +637,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 	// Optional: Periodic re-sync from Postgres to catch any missed updates
 	// This is a safety mechanism in case API pods fail to update Redis
 	if os.Getenv("ENABLE_PERIODIC_SYNC") == "true" {
-		syncInterval := 1 * time.Hour // Sync every hour
+		syncInterval := cfg.Scheduler.SyncInterval
+		log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
 		go func() {
 			ticker := time.NewTicker(syncInterval)
 			defer ticker.Stop()
@@ -669,7 +670,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	redisScheduler.Stop()
 
 	// Wait for in-flight jobs to complete (with timeout)
-	log.Println("[WORKER] Waiting for in-flight jobs to complete (max 30s)...")
+	log.Printf("[WORKER] Waiting for in-flight jobs to complete (max %s)...", cfg.Scheduler.GracefulShutdownTimeout)
 
 	done := make(chan struct{})
 	go func() {
@@ -680,7 +681,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	select {
 	case <-done:
 		log.Println("[WORKER] All in-flight jobs completed successfully")
-	case <-time.After(30 * time.Second):
+	case <-time.After(cfg.Scheduler.GracefulShutdownTimeout):
 		log.Println("[WORKER] WARNING: Timeout waiting for jobs, some may be interrupted")
 	}
 

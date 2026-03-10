@@ -33,6 +33,9 @@ type Config struct {
 	// BOP service configuration
 	Bop BopConfig `json:"bop"`
 
+	// Scheduler configuration
+	Scheduler SchedulerConfig `json:"scheduler"`
+
 	UserValidatorImpl         string
 	JobCompletionNotifierImpl string
 }
@@ -240,6 +243,18 @@ type BopConfig struct {
 	EphemeralMode bool `json:"ephemeral_mode"`
 }
 
+// SchedulerConfig contains scheduler timing and polling settings
+type SchedulerConfig struct {
+	// GracefulShutdownTimeout is the maximum time to wait for in-flight jobs during shutdown
+	GracefulShutdownTimeout time.Duration `json:"graceful_shutdown_timeout"`
+
+	// PollInterval is how often workers check Redis for due jobs
+	PollInterval time.Duration `json:"poll_interval"`
+
+	// SyncInterval is how often workers sync jobs from PostgreSQL to Redis
+	SyncInterval time.Duration `json:"sync_interval"`
+}
+
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
 func LoadConfig() (*Config, error) {
 	var clowderConfig *clowder.AppConfig
@@ -277,6 +292,9 @@ func LoadConfig() (*Config, error) {
 
 	// Load BOP configuration
 	config.Bop = loadBopConfig()
+
+	// Load scheduler configuration
+	config.Scheduler = loadSchedulerConfig()
 
 	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
 	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
@@ -530,6 +548,15 @@ func loadBopConfig() BopConfig {
 		ClientID:    getEnv("BOP_CLIENT_ID", "insights-scheduler"),
 		InsightsEnv: getEnv("BOP_INSIGHTS_ENV", "preprod"),
 		Enabled:     enabled,
+	}
+}
+
+// loadSchedulerConfig loads scheduler timing configuration from environment
+func loadSchedulerConfig() SchedulerConfig {
+	return SchedulerConfig{
+		GracefulShutdownTimeout: getEnvAsDuration("SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT", 30*time.Second),
+		PollInterval:            getEnvAsDuration("SCHEDULER_POLL_INTERVAL", 10*time.Second),
+		SyncInterval:            getEnvAsDuration("SCHEDULER_SYNC_INTERVAL", 1*time.Hour),
 	}
 }
 
