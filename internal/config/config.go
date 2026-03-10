@@ -384,11 +384,9 @@ func loadRedisConfig(clowderConfig *clowder.AppConfig) RedisConfig {
 
 	// Override with Clowder InMemoryDb values if available
 	if clowderConfig != nil && clowderConfig.InMemoryDb != nil {
-		fmt.Println("Loading Redis configuration from Clowder InMemoryDb")
 		enabled = true // Clowder provides Redis, so enable it
 		host = clowderConfig.InMemoryDb.Hostname
 		port = clowderConfig.InMemoryDb.Port
-		fmt.Printf("Redis (from Clowder): %s:%d\n", host, port)
 
 		// Use password if provided by Clowder
 		if clowderConfig.InMemoryDb.Password != nil && *clowderConfig.InMemoryDb.Password != "" {
@@ -404,7 +402,6 @@ func loadRedisConfig(clowderConfig *clowder.AppConfig) RedisConfig {
 			// For now, we only use password-based auth which is compatible with both old and new Redis
 		}
 	} else {
-		fmt.Println("Loading Redis configuration from environment variables")
 		if enabled {
 			fmt.Printf("Redis: %s:%d\n", host, port)
 		} else {
