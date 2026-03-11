@@ -17,7 +17,7 @@ func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.
 	router.Use(LoggingMiddleware)
 
 	// OpenAPI spec (no identity required)
-	router.HandleFunc("/api/scheduler/v1/openapi.yaml", OpenAPIHandler).Methods("GET")
+	router.HandleFunc("/api/scheduler/v1/openapi.json", OpenAPIHandler).Methods("GET")
 
 	// Apply identity middleware to all API routes
 	api := router.PathPrefix("/api/scheduler/v1").Subrouter()

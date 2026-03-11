@@ -1,0 +1,1054 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Scheduler API",
+    "description": "A job scheduling service that allows users to create, manage, and execute scheduled jobs.\n\n## Authentication\nAll endpoints require Red Hat identity authentication via the `X-Rh-Identity` header.\n\n## Schedule Format\nJobs can be scheduled using standard 5-field cron expressions:\n- Format: `minute hour day month weekday`\n- All schedules are interpreted in UTC timezone\n",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Red Hat"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://console.redhat.com/api/scheduler/v1",
+      "description": "Production server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Jobs",
+      "description": "Job management operations"
+    },
+    {
+      "name": "Job Control",
+      "description": "Job execution control operations"
+    },
+    {
+      "name": "Job Runs",
+      "description": "Job run history and execution details"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/jobs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "List all jobs",
+        "description": "Retrieve all jobs for the authenticated organization. Supports filtering by status and name, with pagination.",
+        "operationId": "listJobs",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter jobs by status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/JobStatus"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Filter jobs by name (partial match)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip (for pagination)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return (max 100)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedJobsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Create a new job",
+        "description": "Create a new scheduled job for the authenticated organization.",
+        "operationId": "createJob",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              },
+              "examples": {
+                "exportJob": {
+                  "summary": "Export job",
+                  "value": {
+                    "name": "Monthly Inventory Export",
+                    "schedule": "0 0 1 * *",
+                    "type": "export",
+                    "payload": {
+                      "application": "inventory",
+                      "resource": "recommendations",
+                      "format": "json"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Job created successfully",
+            "headers": {
+              "Location": {
+                "description": "URL of the created job",
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/jobs/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "description": "Job ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get a job by ID",
+        "description": "Retrieve a specific job by its ID. Only returns jobs belonging to the authenticated organization.",
+        "operationId": "getJob",
+        "responses": {
+          "200": {
+            "description": "Job details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Update a job",
+        "description": "Completely update a job with new values. All fields must be provided.",
+        "operationId": "updateJob",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Partially update a job",
+        "description": "Update specific fields of a job. Only provided fields will be updated.",
+        "operationId": "patchJob",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchJobRequest"
+              },
+              "examples": {
+                "updateName": {
+                  "summary": "Update job name only",
+                  "value": {
+                    "name": "New Job Name"
+                  }
+                },
+                "updateSchedule": {
+                  "summary": "Update schedule only",
+                  "value": {
+                    "schedule": "0 0 1 * *"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Job updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Delete a job",
+        "description": "Delete a job permanently. This operation cannot be undone.",
+        "operationId": "deleteJob",
+        "responses": {
+          "204": {
+            "description": "Job deleted successfully"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/jobs/{id}/run": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "description": "Job ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Job Control"
+        ],
+        "summary": "Manually run a job",
+        "description": "Trigger an immediate execution of a job, regardless of its schedule.",
+        "operationId": "runJob",
+        "responses": {
+          "202": {
+            "description": "Job execution triggered successfully"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/jobs/{id}/pause": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "description": "Job ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Job Control"
+        ],
+        "summary": "Pause a job",
+        "description": "Pause a scheduled job. The job will not run until resumed.",
+        "operationId": "pauseJob",
+        "responses": {
+          "200": {
+            "description": "Job paused successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (e.g., job already paused)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errors": [
+                    {
+                      "status": "400",
+                      "title": "Job Already Paused",
+                      "detail": "The job is already in a paused state"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/jobs/{id}/resume": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "description": "Job ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Job Control"
+        ],
+        "summary": "Resume a paused job",
+        "description": "Resume a previously paused job. The job will return to scheduled execution.",
+        "operationId": "resumeJob",
+        "responses": {
+          "200": {
+            "description": "Job resumed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (e.g., job not paused)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "errors": [
+                    {
+                      "status": "400",
+                      "title": "Job Not Paused",
+                      "detail": "The job is not in a paused state and cannot be resumed"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/jobs/{id}/runs": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "description": "Job ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Job Runs"
+        ],
+        "summary": "List all runs for a job",
+        "description": "Retrieve all execution runs for a specific job. Returns runs in reverse chronological order (most recent first), with pagination support.",
+        "operationId": "getJobRuns",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip (for pagination)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return (max 100)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of job runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedJobRunsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/jobs/{id}/runs/{run_id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "description": "Job ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "run_id",
+          "in": "path",
+          "description": "Job run ID",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Job Runs"
+        ],
+        "summary": "Get a specific job run",
+        "description": "Retrieve details of a specific job execution run.",
+        "operationId": "getJobRun",
+        "responses": {
+          "200": {
+            "description": "Job run details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Rh-Identity",
+        "description": "Base64-encoded JSON containing Red Hat identity information."
+      }
+    },
+    "schemas": {
+      "CronSchedule": {
+        "type": "string",
+        "description": "Cron expression defining when the job runs",
+        "example": "0 0 1 * *"
+      },
+      "Job": {
+        "type": "object",
+        "description": "A scheduled job (org_id, username, and user_id are extracted from X-Rh-Identity header)",
+        "required": [
+          "id",
+          "name",
+          "schedule",
+          "type",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the job",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the job",
+            "example": "Monthly Report Generation"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone for interpreting the schedule (e.g., \"America/New_York\", \"Europe/London\", \"UTC\").\nThe schedule is interpreted in this timezone, but next_run_at is always returned in UTC.\n",
+            "example": "America/New_York",
+            "default": "UTC"
+          },
+          "type": {
+            "$ref": "#/components/schemas/PayloadType"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/JobPayload"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "last_run_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp of the last job execution in the job's timezone. Stored internally in UTC but returned in the job's timezone with the appropriate offset (e.g., \"2025-11-03T05:00:00-05:00\" for America/New_York).",
+            "example": "2025-11-03T05:00:00-05:00"
+          },
+          "next_run_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp of the next scheduled job execution in the job's timezone. Calculated from the cron schedule in the job's timezone and returned with the appropriate offset (e.g., \"2025-12-01T09:00:00-05:00\" for a 9 AM job in America/New_York).",
+            "example": "2025-12-01T09:00:00-05:00"
+          }
+        }
+      },
+      "JobPayload": {},
+      "JobStatus": {
+        "type": "string",
+        "description": "Current status of the job",
+        "enum": [
+          "scheduled",
+          "running",
+          "paused",
+          "failed"
+        ],
+        "example": "scheduled"
+      },
+      "PayloadType": {
+        "type": "string",
+        "description": "Type of job payload",
+        "enum": [
+          "export"
+        ],
+        "example": "export"
+      },
+      "CreateJobRequest": {
+        "type": "object",
+        "description": "Request body for creating a new job",
+        "required": [
+          "name",
+          "schedule",
+          "type",
+          "payload"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the job",
+            "example": "Monthly Report Generation"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone for interpreting the schedule (e.g., \"America/New_York\", \"Europe/London\", \"UTC\").\nDefaults to \"UTC\" if not specified. The schedule will be interpreted in this timezone,\nbut next_run_at is always returned in UTC.\n",
+            "example": "America/New_York",
+            "default": "UTC"
+          },
+          "type": {
+            "$ref": "#/components/schemas/PayloadType"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/JobPayload"
+          }
+        }
+      },
+      "UpdateJobRequest": {
+        "type": "object",
+        "description": "Request body for updating a job (PUT)",
+        "required": [
+          "name",
+          "schedule",
+          "type",
+          "payload",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the job",
+            "example": "Updated Job Name"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          "type": {
+            "$ref": "#/components/schemas/PayloadType"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/JobPayload"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        }
+      },
+      "PatchJobRequest": {
+        "type": "object",
+        "description": "Request body for partially updating a job (PATCH)",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the job",
+            "example": "Updated Job Name"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          "type": {
+            "$ref": "#/components/schemas/PayloadType"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/JobPayload"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        }
+      },
+      "JobRun": {
+        "type": "object",
+        "description": "A record of a single job execution",
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "start_time"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the job run",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the parent job",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobRunStatus"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the job run started",
+            "example": "2025-11-07T10:00:00Z"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the job run completed or failed",
+            "example": "2025-11-07T10:05:30Z"
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "Error message if the run failed",
+            "example": "Connection timeout"
+          },
+          "result": {
+            "type": "string",
+            "nullable": true,
+            "description": "Result or output from the job run",
+            "example": "Job completed successfully"
+          }
+        }
+      },
+      "JobRunStatus": {
+        "type": "string",
+        "description": "Status of a job run",
+        "enum": [
+          "running",
+          "completed",
+          "failed"
+        ],
+        "example": "completed"
+      },
+      "ErrorObject": {
+        "type": "object",
+        "description": "JSON:API error object",
+        "required": [
+          "status",
+          "title",
+          "detail"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "HTTP status code as a string",
+            "example": "404"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short, human-readable summary of the problem",
+            "example": "Job Not Found"
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation specific to this occurrence",
+            "example": "The job with ID '550e8400-e29b-41d4-a716-446655440000' could not be found or you do not have permission to access it"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "JSON:API error response",
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "description": "Array of error objects",
+            "items": {
+              "$ref": "#/components/schemas/ErrorObject"
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "description": "Pagination metadata",
+        "required": [
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Total number of items across all pages",
+            "example": 100
+          }
+        }
+      },
+      "PaginationLinks": {
+        "type": "object",
+        "description": "Navigation links for pagination",
+        "properties": {
+          "first": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link to the first page",
+            "example": "/api/scheduler/v1/jobs?limit=20&offset=0"
+          },
+          "last": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link to the last page",
+            "example": "/api/scheduler/v1/jobs?limit=20&offset=80"
+          },
+          "next": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link to the next page (if available)",
+            "example": "/api/scheduler/v1/jobs?limit=20&offset=20"
+          },
+          "prev": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link to the previous page (if available)",
+            "example": "/api/scheduler/v1/jobs?limit=20&offset=0"
+          }
+        }
+      },
+      "PaginatedJobsResponse": {
+        "type": "object",
+        "description": "Paginated response for jobs list",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "links": {
+            "$ref": "#/components/schemas/PaginationLinks"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            }
+          }
+        }
+      },
+      "PaginatedJobRunsResponse": {
+        "type": "object",
+        "description": "Paginated response for job runs list",
+        "required": [
+          "meta",
+          "links",
+          "data"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "links": {
+            "$ref": "#/components/schemas/PaginationLinks"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobRun"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request - Invalid input or missing required fields",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "invalidJSON": {
+                "summary": "Invalid JSON",
+                "value": {
+                  "errors": [
+                    {
+                      "status": "400",
+                      "title": "Invalid JSON",
+                      "detail": "The request body contains invalid JSON"
+                    }
+                  ]
+                }
+              },
+              "missingFields": {
+                "summary": "Missing required fields",
+                "value": {
+                  "errors": [
+                    {
+                      "status": "400",
+                      "title": "Missing Required Fields",
+                      "detail": "Missing Required Fields"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "errors": [
+                {
+                  "status": "404",
+                  "title": "Job Not Found",
+                  "detail": "The job with ID '550e8400-e29b-41d4-a716-446655440000' could not be found or you do not have permission to access it"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "errors": [
+                {
+                  "status": "500",
+                  "title": "Internal Server Error",
+                  "detail": "An unexpected error occurred while processing your request"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
