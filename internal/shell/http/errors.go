@@ -3,6 +3,8 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 // ErrorObject represents a simplified JSON:API error object
@@ -99,4 +101,18 @@ func errorInternalServer() ErrorObject {
 		Title:  "Internal Server Error",
 		Detail: "An unexpected error occurred while processing your request",
 	}
+}
+
+func errorInvalidUUID(paramName string, value string) ErrorObject {
+	return ErrorObject{
+		Status: "400",
+		Title:  "Invalid UUID Format",
+		Detail: "The " + paramName + " parameter '" + value + "' is not a valid UUID",
+	}
+}
+
+// validateUUID validates that a string is a valid UUID format
+func validateUUID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
 }

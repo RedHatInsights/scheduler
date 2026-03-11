@@ -35,6 +35,12 @@ func setupTestRouter(jobService ports.AuthorizedJobService) *mux.Router {
 	api.HandleFunc("/jobs/{id}/pause", handler.PauseJob).Methods("POST")
 	api.HandleFunc("/jobs/{id}/resume", handler.ResumeJob).Methods("POST")
 
+	// Job run routes (for UUID validation testing)
+	// Note: We create a minimal mock job run handler for testing
+	runHandler := &JobRunHandler{}
+	api.HandleFunc("/jobs/{id}/runs", runHandler.GetJobRuns).Methods("GET")
+	api.HandleFunc("/jobs/{id}/runs/{run_id}", runHandler.GetJobRun).Methods("GET")
+
 	return router
 }
 
@@ -45,7 +51,7 @@ func TestHTTPAPI_CreateJob_Contract(t *testing.T) {
 	mockService := &mockAuthorizedJobService{
 		createJobFunc: func(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
 			return domain.Job{
-				ID:        "job-123",
+				ID:        "550e8400-e29b-41d4-a716-446655440000",
 				Name:      name,
 				OrgID:     ident.Identity.OrgID,
 				UserID:    ident.Identity.User.UserID,
@@ -108,7 +114,7 @@ func TestHTTPAPI_CreateJob_Contract(t *testing.T) {
 
 	// Verify Location header
 	location := rr.Header().Get("Location")
-	expectedLocation := "/api/scheduler/v1/jobs/job-123"
+	expectedLocation := "/api/scheduler/v1/jobs/550e8400-e29b-41d4-a716-446655440000"
 	if location != expectedLocation {
 		t.Errorf("Expected Location '%s', got '%s'", expectedLocation, location)
 	}
@@ -120,8 +126,8 @@ func TestHTTPAPI_CreateJob_Contract(t *testing.T) {
 	}
 
 	// Verify response fields match API contract
-	if response.ID != "job-123" {
-		t.Errorf("Expected ID 'job-123', got '%s'", response.ID)
+	if response.ID != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Errorf("Expected ID '550e8400-e29b-41d4-a716-446655440000', got '%s'", response.ID)
 	}
 	if response.Name != "Test Job" {
 		t.Errorf("Expected name 'Test Job', got '%s'", response.Name)
@@ -174,7 +180,7 @@ func TestHTTPAPI_GetJob_Contract(t *testing.T) {
 	router := setupTestRouter(mockService)
 
 	// Create HTTP request
-	req := httptest.NewRequest("GET", "/api/scheduler/v1/jobs/job-123", nil)
+	req := httptest.NewRequest("GET", "/api/scheduler/v1/jobs/550e8400-e29b-41d4-a716-446655440001", nil)
 
 	// Add identity to context
 	testIdent := identity.XRHID{
@@ -236,7 +242,7 @@ func TestHTTPAPI_ListJobs_Contract(t *testing.T) {
 		listJobsFunc: func(ctx context.Context, ident identity.XRHID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
 			jobs := []domain.Job{
 				{
-					ID:       "job-1",
+					ID:       "550e8400-e29b-41d4-a716-446655440002",
 					Name:     "Job 1",
 					OrgID:    ident.Identity.OrgID,
 					UserID:   ident.Identity.User.UserID,
@@ -247,7 +253,7 @@ func TestHTTPAPI_ListJobs_Contract(t *testing.T) {
 					Status:   domain.StatusScheduled,
 				},
 				{
-					ID:       "job-2",
+					ID:       "550e8400-e29b-41d4-a716-446655440003",
 					Name:     "Job 2",
 					OrgID:    ident.Identity.OrgID,
 					UserID:   ident.Identity.User.UserID,
@@ -328,7 +334,7 @@ func TestHTTPAPI_DeleteJob_Contract(t *testing.T) {
 	router := setupTestRouter(mockService)
 
 	// Create HTTP request
-	req := httptest.NewRequest("DELETE", "/api/scheduler/v1/jobs/job-123", nil)
+	req := httptest.NewRequest("DELETE", "/api/scheduler/v1/jobs/550e8400-e29b-41d4-a716-446655440004", nil)
 
 	// Add identity to context
 	testIdent := identity.XRHID{
@@ -410,7 +416,7 @@ func TestHTTPAPI_ErrorResponses_Contract(t *testing.T) {
 			mockService := tt.setupMock()
 			router := setupTestRouter(mockService)
 
-			req := httptest.NewRequest("GET", "/api/scheduler/v1/jobs/job-123", nil)
+			req := httptest.NewRequest("GET", "/api/scheduler/v1/jobs/550e8400-e29b-41d4-a716-446655440005", nil)
 
 			// For invalid identity test, don't add identity to context
 			if tt.name != "400 Bad Request - Invalid Identity" {
@@ -439,4 +445,86 @@ func TestHTTPAPI_ErrorResponses_Contract(t *testing.T) {
 	}
 
 	t.Logf("✓ HTTP API error response contract verified")
+}
+
+// TestHTTPAPI_InvalidUUID_Contract verifies UUID validation returns 400
+func TestHTTPAPI_InvalidUUID_Contract(t *testing.T) {
+	tests := []struct {
+		name          string
+		url           string
+		expectedError string
+	}{
+		{
+			name:          "Invalid job ID - not a UUID",
+			url:           "/api/scheduler/v1/jobs/not-a-uuid",
+			expectedError: "Invalid UUID Format",
+		},
+		{
+			name:          "Invalid job ID - numeric",
+			url:           "/api/scheduler/v1/jobs/12345",
+			expectedError: "Invalid UUID Format",
+		},
+		{
+			name:          "Invalid job ID - wrong format",
+			url:           "/api/scheduler/v1/jobs/550e8400-e29b-41d4",
+			expectedError: "Invalid UUID Format",
+		},
+		{
+			name:          "Invalid run ID - not a UUID",
+			url:           "/api/scheduler/v1/jobs/550e8400-e29b-41d4-a716-446655440000/runs/invalid",
+			expectedError: "Invalid UUID Format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a simple mock (won't be called due to UUID validation)
+			mockService := &mockAuthorizedJobService{}
+			router := setupTestRouter(mockService)
+
+			req := httptest.NewRequest("GET", tt.url, nil)
+
+			// Add identity to context
+			testIdent := identity.XRHID{
+				Identity: identity.Identity{
+					OrgID: "org-123",
+					User: &identity.User{
+						Username: "testuser",
+						UserID:   "user-123",
+					},
+				},
+			}
+			ctx := identity.WithIdentity(req.Context(), testIdent)
+			req = req.WithContext(ctx)
+
+			rr := httptest.NewRecorder()
+			router.ServeHTTP(rr, req)
+
+			// Verify HTTP status code is 400
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("Expected status %d, got %d", http.StatusBadRequest, rr.Code)
+			}
+
+			// Parse error response
+			var errResp ErrorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &errResp); err != nil {
+				t.Fatalf("Failed to parse error response: %v", err)
+			}
+
+			// Verify error contains UUID validation message
+			if len(errResp.Errors) == 0 {
+				t.Fatal("Expected at least one error")
+			}
+
+			if errResp.Errors[0].Title != tt.expectedError {
+				t.Errorf("Expected error title '%s', got '%s'", tt.expectedError, errResp.Errors[0].Title)
+			}
+
+			if errResp.Errors[0].Status != "400" {
+				t.Errorf("Expected error status '400', got '%s'", errResp.Errors[0].Status)
+			}
+		})
+	}
+
+	t.Logf("✓ UUID validation contract verified - invalid UUIDs return 400")
 }
