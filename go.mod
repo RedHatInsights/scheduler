@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/IBM/sarama v1.46.0
-	github.com/go-redis/redis/v8 v8.11.5
+	github.com/go-redis/redis/v9 v9.18.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/lib/pq v1.10.9
