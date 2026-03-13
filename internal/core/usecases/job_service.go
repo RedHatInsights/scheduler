@@ -101,8 +101,8 @@ func calculateNextRunAt(schedule string, timezone string) (*time.Time, error) {
 	return &nextRunAtUTC, nil
 }
 
-func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
-	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, username, userID, schedule, timezone, payloadType)
+func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, userID, schedule, timezone, payloadType)
 
 	// Validate org_id
 	if orgID == "" {
@@ -135,7 +135,7 @@ func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID st
 	}
 	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
 
-	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), timezone, payloadType, payload)
+	job := domain.NewJob(name, orgID, userID, domain.Schedule(schedule), timezone, payloadType, payload)
 	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s, timezone: %s", job.ID, job.Status, job.Timezone)
 
 	// Calculate next run time using the job's timezone
@@ -282,7 +282,7 @@ func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, 
 	return filtered, total, nil
 }
 
-func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -313,7 +313,7 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 	scheduleVal := domain.Schedule(schedule)
 	statusVal := domain.JobStatus(status)
 
-	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
+	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
 
 	// Recalculate next run time if schedule changed
 	if schedule != string(job.Schedule) {
@@ -357,7 +357,6 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 
 	var name *string
 	var orgID *string
-	var username *string
 	var userID *string
 	var schedule *domain.Schedule
 	var payloadType *domain.PayloadType
@@ -378,12 +377,6 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 			// For security, don't allow changing org_id via API
 			// Always use the authenticated user's org_id
 			orgID = &userOrgID
-		}
-	}
-
-	if v, ok := updates["username"]; ok {
-		if usernameStr, ok := v.(string); ok {
-			username = &usernameStr
 		}
 	}
 
@@ -428,7 +421,7 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 		}
 	}
 
-	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
+	updatedJob := job.UpdateFields(name, orgID, userID, schedule, payloadType, payload, status)
 
 	// Recalculate next run time if schedule was updated
 	if schedule != nil {
@@ -472,7 +465,6 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 
 	var name *string
 	var orgID *string
-	var username *string
 	var userID *string
 	var schedule *domain.Schedule
 	var payloadType *domain.PayloadType
@@ -494,12 +486,6 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 			// Keep the job's current org_id
 			currentOrgID := job.OrgID
 			orgID = &currentOrgID
-		}
-	}
-
-	if v, ok := updates["username"]; ok {
-		if usernameStr, ok := v.(string); ok {
-			username = &usernameStr
 		}
 	}
 
@@ -546,7 +532,7 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 		}
 	}
 
-	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
+	updatedJob := job.UpdateFields(name, orgID, userID, schedule, payloadType, payload, status)
 
 	// Recalculate next run time if schedule was updated
 	if schedule != nil {

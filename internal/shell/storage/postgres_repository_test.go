@@ -388,7 +388,7 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 	defer runRepo.Close()
 
 	// Create a job first
-	job := domain.NewJob("Test Job for Runs", "test-org", "testuser", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	job := domain.NewJob("Test Job for Runs", "test-org", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	job.ID = "test-job-runs-1"
 
 	err := jobRepo.Save(job)
@@ -540,7 +540,7 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	defer runRepo.Close()
 
 	// Create a job
-	job := domain.NewJob("Multi-Run Job", "test-org", "testuser", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	job := domain.NewJob("Multi-Run Job", "test-org", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
 	job.ID = "test-job-multi-runs"
 
 	err := jobRepo.Save(job)

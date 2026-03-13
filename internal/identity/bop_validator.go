@@ -67,12 +67,9 @@ type UserValidationResponse struct {
 }
 
 // GenerateIdentityHeader calls an HTTP service to generate the identity header
-func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, username, userID string) (string, error) {
+func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, userID string) (string, error) {
 	if orgID == "" {
 		return "", fmt.Errorf("orgID cannot be empty")
-	}
-	if username == "" {
-		return "", fmt.Errorf("username cannot be empty")
 	}
 	if userID == "" {
 		return "", fmt.Errorf("userID cannot be empty")
@@ -82,10 +79,11 @@ func (v *BopUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, us
 	url := fmt.Sprintf("%s/v1/users", v.baseURL)
 
 	// Use proper JSON marshaling to prevent injection
+	// Query by userID instead of username
 	requestBody := struct {
 		Users []string `json:"users"`
 	}{
-		Users: []string{username},
+		Users: []string{userID},
 	}
 	postBodyBytes, err := json.Marshal(requestBody)
 	if err != nil {

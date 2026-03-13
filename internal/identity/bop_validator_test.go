@@ -13,18 +13,18 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 	tests := []struct {
 		name           string
 		orgID          string
-		username       string
+		userID         string
 		mockResponse   []UserInfo
 		mockStatusCode int
 		wantErr        bool
 	}{
 		{
-			name:     "successful validation",
-			orgID:    "123456",
-			username: "testuser",
+			name:   "successful validation",
+			orgID:  "123456",
+			userID: "user-1",
 			mockResponse: []UserInfo{
 				{
-					ID:            "1",
+					ID:            "user-1",
 					Username:      "testuser",
 					AccountNumber: "000001",
 					OrgID:         "123456",
@@ -35,12 +35,12 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:     "inactive user",
-			orgID:    "123456",
-			username: "inactiveuser",
+			name:   "inactive user",
+			orgID:  "123456",
+			userID: "user-2",
 			mockResponse: []UserInfo{
 				{
-					ID:            "2",
+					ID:            "user-2",
 					Username:      "inactiveuser",
 					AccountNumber: "000002",
 					OrgID:         "123456",
@@ -53,25 +53,25 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 		{
 			name:           "no users returned",
 			orgID:          "123456",
-			username:       "nouser",
+			userID:         "user-3",
 			mockResponse:   []UserInfo{},
 			mockStatusCode: http.StatusOK,
 			wantErr:        true,
 		},
 		{
-			name:     "multiple users returned",
-			orgID:    "123456",
-			username: "duplicateuser",
+			name:   "multiple users returned",
+			orgID:  "123456",
+			userID: "user-4",
 			mockResponse: []UserInfo{
 				{
-					ID:            "1",
+					ID:            "user-4",
 					Username:      "duplicateuser",
 					AccountNumber: "000001",
 					OrgID:         "123456",
 					IsActive:      true,
 				},
 				{
-					ID:            "2",
+					ID:            "user-4",
 					Username:      "duplicateuser",
 					AccountNumber: "000002",
 					OrgID:         "123456",
@@ -84,30 +84,30 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 		{
 			name:           "service returns error status",
 			orgID:          "123456",
-			username:       "testuser",
+			userID:         "user-5",
 			mockStatusCode: http.StatusInternalServerError,
 			wantErr:        true,
 		},
 		{
-			name:     "empty orgID",
-			orgID:    "",
-			username: "testuser",
-			wantErr:  true,
+			name:    "empty orgID",
+			orgID:   "",
+			userID:  "user-6",
+			wantErr: true,
 		},
 		{
-			name:     "empty username",
-			orgID:    "123456",
-			username: "",
-			wantErr:  true,
+			name:    "empty userID",
+			orgID:   "123456",
+			userID:  "",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Skip server setup for validation errors
-			if tt.orgID == "" || tt.username == "" {
+			if tt.orgID == "" || tt.userID == "" {
 				validator := NewBopUserValidator("http://test.example.com", "test-token", "test-client", "test-env")
-				_, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.username, "test-user-id")
+				_, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.userID)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("GenerateIdentityHeader() error = %v, wantErr %v", err, tt.wantErr)
 				}
@@ -137,7 +137,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 					t.Errorf("Expected x-rh-insights-env header 'test-env', got '%s'", insightsEnv)
 				}
 
-				// Verify request body contains username
+				// Verify request body contains userID
 				bodyBytes, err := io.ReadAll(r.Body)
 				if err != nil {
 					t.Errorf("Failed to read request body: %v", err)
@@ -153,8 +153,8 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 				users, ok := reqBody["users"].([]interface{})
 				if !ok || len(users) != 1 {
 					t.Errorf("Expected users array with 1 element, got %v", reqBody["users"])
-				} else if users[0] != tt.username {
-					t.Errorf("Expected username %s in request, got %v", tt.username, users[0])
+				} else if users[0] != tt.userID {
+					t.Errorf("Expected userID %s in request, got %v", tt.userID, users[0])
 				}
 
 				// Send response
@@ -169,7 +169,7 @@ func TestBopUserValidator_GenerateIdentityHeader(t *testing.T) {
 			validator := NewBopUserValidator(server.URL, "test-token", "test-client", "test-env")
 
 			// Call the method
-			_, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.username, "test-user-id")
+			_, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.userID)
 
 			// Check error
 			if (err != nil) != tt.wantErr {

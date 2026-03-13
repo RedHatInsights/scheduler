@@ -40,7 +40,7 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 	defer cancel()
 
 	// Generate identity header for the export request
-	identityHeader, err := e.userValidator.GenerateIdentityHeader(ctx, job.OrgID, job.Username, job.UserID)
+	identityHeader, err := e.userValidator.GenerateIdentityHeader(ctx, job.OrgID, job.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to verify user: %w", err)
 	}

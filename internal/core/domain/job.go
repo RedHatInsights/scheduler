@@ -39,7 +39,6 @@ type Job struct {
 	ID        string      `json:"id"`
 	Name      string      `json:"name"`
 	OrgID     string      `json:"org_id"`
-	Username  string      `json:"username"`
 	UserID    string      `json:"user_id"`
 	Schedule  Schedule    `json:"schedule"`
 	Timezone  string      `json:"timezone"`
@@ -50,7 +49,7 @@ type Job struct {
 	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
 }
 
-func NewJob(name string, orgID string, username string, userID string, schedule Schedule, timezone string, payloadType PayloadType, payload interface{}) Job {
+func NewJob(name string, orgID string, userID string, schedule Schedule, timezone string, payloadType PayloadType, payload interface{}) Job {
 	// Default to UTC if not specified
 	if timezone == "" {
 		timezone = "UTC"
@@ -60,7 +59,6 @@ func NewJob(name string, orgID string, username string, userID string, schedule 
 		ID:        uuid.New().String(),
 		Name:      name,
 		OrgID:     orgID,
-		Username:  username,
 		UserID:    userID,
 		Schedule:  schedule,
 		Timezone:  timezone,
@@ -77,7 +75,6 @@ func (j Job) WithStatus(status JobStatus) Job {
 		ID:        j.ID,
 		Name:      j.Name,
 		OrgID:     j.OrgID,
-		Username:  j.Username,
 		UserID:    j.UserID,
 		Schedule:  j.Schedule,
 		Timezone:  j.Timezone,
@@ -94,7 +91,6 @@ func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 		ID:        j.ID,
 		Name:      j.Name,
 		OrgID:     j.OrgID,
-		Username:  j.Username,
 		UserID:    j.UserID,
 		Schedule:  j.Schedule,
 		Timezone:  j.Timezone,
@@ -111,7 +107,6 @@ func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 		ID:        j.ID,
 		Name:      j.Name,
 		OrgID:     j.OrgID,
-		Username:  j.Username,
 		UserID:    j.UserID,
 		Schedule:  j.Schedule,
 		Timezone:  j.Timezone,
@@ -123,7 +118,7 @@ func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 	}
 }
 
-func (j Job) UpdateFields(name *string, orgID *string, username *string, userID *string, schedule *Schedule, payloadType *PayloadType, payload *interface{}, status *JobStatus) Job {
+func (j Job) UpdateFields(name *string, orgID *string, userID *string, schedule *Schedule, payloadType *PayloadType, payload *interface{}, status *JobStatus) Job {
 	updated := j
 
 	if name != nil {
@@ -131,9 +126,6 @@ func (j Job) UpdateFields(name *string, orgID *string, username *string, userID 
 	}
 	if orgID != nil {
 		updated.OrgID = *orgID
-	}
-	if username != nil {
-		updated.Username = *username
 	}
 	if userID != nil {
 		updated.UserID = *userID
