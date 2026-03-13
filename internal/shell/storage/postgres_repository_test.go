@@ -26,8 +26,8 @@ func setupPostgresJobRepo(t *testing.T) *PostgresJobRepository {
 	}
 
 	// Clean up any existing test data
-	repo.db.Exec("DELETE FROM job_runs WHERE job_id LIKE 'test-%'")
-	repo.db.Exec("DELETE FROM jobs WHERE id LIKE 'test-%'")
+	repo.db.Exec("DELETE FROM job_runs WHERE job_id::text LIKE '00000000-0000-0000-%'")
+	repo.db.Exec("DELETE FROM jobs WHERE id::text LIKE '00000000-0000-0000-%'")
 
 	return repo
 }
@@ -59,14 +59,13 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 	job := domain.NewJob(
 		"Postgres Test Job",
 		"test-org-123",
-		"testuser",
 		"test-user-123",
 		"*/15 * * * *",
 		"UTC",
 		domain.PayloadMessage,
 		payload,
 	)
-	job.ID = "test-job-crud-1"
+	job.ID = "00000000-0000-0000-0000-000000000001"
 
 	// Test Save
 	err := repo.Save(job)
@@ -89,9 +88,6 @@ func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
 	}
 	if retrievedJob.OrgID != job.OrgID {
 		t.Errorf("Expected org_id %s, got %s", job.OrgID, retrievedJob.OrgID)
-	}
-	if retrievedJob.Username != job.Username {
-		t.Errorf("Expected username %s, got %s", job.Username, retrievedJob.Username)
 	}
 	if retrievedJob.UserID != job.UserID {
 		t.Errorf("Expected user_id %s, got %s", job.UserID, retrievedJob.UserID)
@@ -161,17 +157,17 @@ func TestPostgresJobRepository_OrgIsolation(t *testing.T) {
 	defer repo.Close()
 
 	// Create jobs for different orgs
-	orgAJob1 := domain.NewJob("Org A Job 1", "org-a", "user1", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	orgAJob1.ID = "test-job-org-a-1"
+	orgAJob1 := domain.NewJob("Org A Job 1", "org-a", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob1.ID = "00000000-0000-0000-000a-000000000001"
 
-	orgAJob2 := domain.NewJob("Org A Job 2", "org-a", "user2", "user-a-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	orgAJob2.ID = "test-job-org-a-2"
+	orgAJob2 := domain.NewJob("Org A Job 2", "org-a", "user-a-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob2.ID = "00000000-0000-0000-000a-000000000002"
 
-	orgBJob1 := domain.NewJob("Org B Job 1", "org-b", "user3", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	orgBJob1.ID = "test-job-org-b-1"
+	orgBJob1 := domain.NewJob("Org B Job 1", "org-b", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob1.ID = "00000000-0000-0000-000b-000000000001"
 
-	orgBJob2 := domain.NewJob("Org B Job 2", "org-b", "user4", "user-b-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	orgBJob2.ID = "test-job-org-b-2"
+	orgBJob2 := domain.NewJob("Org B Job 2", "org-b", "user-b-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob2.ID = "00000000-0000-0000-000b-000000000002"
 
 	// Save all jobs
 	jobs := []domain.Job{orgAJob1, orgAJob2, orgBJob1, orgBJob2}
@@ -234,17 +230,17 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	defer repo.Close()
 
 	// Create jobs for different users (same org)
-	user1Job1 := domain.NewJob("User 1 Job 1", "shared-org", "alice", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	user1Job1.ID = "test-job-user-1-1"
+	user1Job1 := domain.NewJob("User 1 Job 1", "shared-org", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user1Job1.ID = "00000000-0000-0000-0001-000000000001"
 
-	user1Job2 := domain.NewJob("User 1 Job 2", "shared-org", "alice", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	user1Job2.ID = "test-job-user-1-2"
+	user1Job2 := domain.NewJob("User 1 Job 2", "shared-org", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user1Job2.ID = "00000000-0000-0000-0001-000000000002"
 
-	user2Job1 := domain.NewJob("User 2 Job 1", "shared-org", "bob", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	user2Job1.ID = "test-job-user-2-1"
+	user2Job1 := domain.NewJob("User 2 Job 1", "shared-org", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user2Job1.ID = "00000000-0000-0000-0002-000000000001"
 
-	user2Job2 := domain.NewJob("User 2 Job 2", "shared-org", "bob", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	user2Job2.ID = "test-job-user-2-2"
+	user2Job2 := domain.NewJob("User 2 Job 2", "shared-org", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user2Job2.ID = "00000000-0000-0000-0002-000000000002"
 
 	// Save all jobs
 	jobs := []domain.Job{user1Job1, user1Job2, user2Job1, user2Job2}
@@ -322,14 +318,13 @@ func TestPostgresJobRepository_CrossOrgAccess(t *testing.T) {
 	sensitiveJob := domain.NewJob(
 		"Sensitive Job",
 		"org-sensitive",
-		"admin",
 		"admin-123",
 		"0 0 * * *",
 		"UTC",
 		domain.PayloadExport,
 		map[string]interface{}{"data": "confidential"},
 	)
-	sensitiveJob.ID = "test-job-sensitive-1"
+	sensitiveJob.ID = "00000000-0000-0000-5e05-000000000001"
 
 	err := repo.Save(sensitiveJob)
 	if err != nil {
@@ -389,7 +384,7 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 
 	// Create a job first
 	job := domain.NewJob("Test Job for Runs", "test-org", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	job.ID = "test-job-runs-1"
+	job.ID = "00000000-0000-0000-0000-000000000002"
 
 	err := jobRepo.Save(job)
 	if err != nil {
@@ -399,7 +394,7 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 	// Create job run
 	startTime := time.Now().UTC()
 	run := domain.JobRun{
-		ID:        "test-run-1",
+		ID:        "10000000-0000-0000-0000-000000000001",
 		JobID:     job.ID,
 		Status:    domain.RunStatusRunning,
 		StartTime: startTime,
@@ -466,25 +461,25 @@ func TestPostgresJobRunRepository_OrgIsolation(t *testing.T) {
 	defer runRepo.Close()
 
 	// Create jobs for different orgs
-	orgAJob := domain.NewJob("Org A Job", "org-a", "user1", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	orgAJob.ID = "test-job-run-org-a"
+	orgAJob := domain.NewJob("Org A Job", "org-a", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob.ID = "00000000-0000-0000-000a-000000000003"
 
-	orgBJob := domain.NewJob("Org B Job", "org-b", "user2", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	orgBJob.ID = "test-job-run-org-b"
+	orgBJob := domain.NewJob("Org B Job", "org-b", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob.ID = "00000000-0000-0000-000b-000000000003"
 
 	jobRepo.Save(orgAJob)
 	jobRepo.Save(orgBJob)
 
 	// Create runs for each job
 	orgARun := domain.JobRun{
-		ID:        "test-run-org-a-1",
+		ID:        "10000000-0000-0000-000a-000000000001",
 		JobID:     orgAJob.ID,
 		Status:    domain.RunStatusCompleted,
 		StartTime: time.Now().UTC(),
 	}
 
 	orgBRun := domain.JobRun{
-		ID:        "test-run-org-b-1",
+		ID:        "10000000-0000-0000-000b-000000000001",
 		JobID:     orgBJob.ID,
 		Status:    domain.RunStatusCompleted,
 		StartTime: time.Now().UTC(),
@@ -541,7 +536,7 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 
 	// Create a job
 	job := domain.NewJob("Multi-Run Job", "test-org", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
-	job.ID = "test-job-multi-runs"
+	job.ID = "00000000-0000-0000-0000-000000000003"
 
 	err := jobRepo.Save(job)
 	if err != nil {
@@ -551,19 +546,19 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	// Create multiple runs
 	runs := []domain.JobRun{
 		{
-			ID:        "test-run-multi-1",
+			ID:        "10000000-0000-0000-0000-000000000002",
 			JobID:     job.ID,
 			Status:    domain.RunStatusCompleted,
 			StartTime: time.Now().UTC().Add(-2 * time.Hour),
 		},
 		{
-			ID:        "test-run-multi-2",
+			ID:        "10000000-0000-0000-0000-000000000003",
 			JobID:     job.ID,
 			Status:    domain.RunStatusCompleted,
 			StartTime: time.Now().UTC().Add(-1 * time.Hour),
 		},
 		{
-			ID:        "test-run-multi-3",
+			ID:        "10000000-0000-0000-0000-000000000004",
 			JobID:     job.ID,
 			Status:    domain.RunStatusCompleted,
 			StartTime: time.Now().UTC(),
@@ -592,10 +587,10 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 
 	// Verify runs are sorted by start_time DESC (newest first)
 	if len(jobRuns) == 3 {
-		if jobRuns[0].ID != "test-run-multi-3" {
+		if jobRuns[0].ID != "10000000-0000-0000-0000-000000000004" {
 			t.Errorf("Expected newest run first, got %s", jobRuns[0].ID)
 		}
-		if jobRuns[2].ID != "test-run-multi-1" {
+		if jobRuns[2].ID != "10000000-0000-0000-0000-000000000002" {
 			t.Errorf("Expected oldest run last, got %s", jobRuns[2].ID)
 		}
 	}
@@ -615,14 +610,13 @@ func TestPostgresJobRepository_UpdatedAtColumn(t *testing.T) {
 	job := domain.NewJob(
 		"Updated At Test Job",
 		"test-org-updated-at",
-		"testuser",
 		"test-user-updated-at",
 		"*/30 * * * *",
 		"UTC",
 		domain.PayloadMessage,
 		payload,
 	)
-	job.ID = "test-job-updated-at"
+	job.ID = "00000000-0000-0000-0000-000000000004"
 
 	// Save the job initially
 	err := repo.Save(job)
@@ -699,14 +693,13 @@ func TestPostgresJobRepository_UpdatedAtMultipleUpdates(t *testing.T) {
 	job := domain.NewJob(
 		"Multi Update Test",
 		"test-org",
-		"testuser",
 		"test-user",
 		"0 * * * *",
 		"UTC",
 		domain.PayloadMessage,
 		map[string]interface{}{"test": "data"},
 	)
-	job.ID = "test-job-multi-update"
+	job.ID = "00000000-0000-0000-0000-000000000005"
 
 	// Save initial job
 	if err := repo.Save(job); err != nil {
@@ -767,14 +760,13 @@ func TestPostgresJobRepository_TimezoneAndTimestamps(t *testing.T) {
 	job := domain.NewJob(
 		"Timezone Test Job",
 		"test-org-tz",
-		"testuser",
 		"test-user-tz",
 		"0 9 * * *",
 		"America/New_York",
 		domain.PayloadMessage,
 		payload,
 	)
-	job.ID = "test-job-timezone-1"
+	job.ID = "00000000-0000-0000-0000-000000000006"
 
 	// Set last_run_at and next_run_at
 	lastRunAt := time.Date(2026, 2, 20, 14, 0, 0, 0, time.UTC) // 9 AM EST
@@ -868,14 +860,13 @@ func TestPostgresJobRepository_NullTimestamps(t *testing.T) {
 	job := domain.NewJob(
 		"Null Timestamps Test",
 		"test-org",
-		"testuser",
 		"test-user",
 		"0 * * * *",
 		"UTC",
 		domain.PayloadMessage,
 		map[string]interface{}{"test": "data"},
 	)
-	job.ID = "test-job-null-timestamps"
+	job.ID = "00000000-0000-0000-0000-000000000007"
 
 	// Save the job
 	err := repo.Save(job)

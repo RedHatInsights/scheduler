@@ -2,7 +2,6 @@ CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     org_id TEXT NOT NULL,
-    username TEXT NOT NULL,
     user_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'UTC',
