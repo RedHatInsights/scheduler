@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: Template
 metadata:
-  name: insights-scheduler
+  name: scheduler
 objects:
 
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdApp
   metadata:
-    name: insights-scheduler
+    name: scheduler
   spec:
     envName: ${ENV_NAME}
     optionalDependencies:
@@ -90,11 +90,11 @@ objects:
           timeoutSeconds: 5
         resources:
           limits:
-            cpu: ${CPU_LIMIT}
-            memory: ${MEMORY_LIMIT}
+            cpu: ${API_CPU_LIMIT}
+            memory: ${API_MEMORY_LIMIT}
           requests:
-            cpu: ${CPU_REQUEST}
-            memory: ${MEMORY_REQUEST}
+            cpu: ${API_CPU_REQUEST}
+            memory: ${API_MEMORY_REQUEST}
         env:
         - name: LOG_LEVEL
           value: INFO
@@ -109,7 +109,7 @@ objects:
         - name: DB_CONNECTION_MAX_LIFETIME
           value: 5m
         - name: KAFKA_CLIENT_ID
-          value: insights-scheduler
+          value: scheduler-api
         - name: KAFKA_TIMEOUT
           value: 30s
         - name: KAFKA_RETRIES
@@ -246,7 +246,7 @@ objects:
         - name: SHUTDOWN_TIMEOUT
           value: 300s
         - name: KAFKA_CLIENT_ID
-          value: insights-scheduler-worker
+          value: scheduler-worker
         - name: KAFKA_TIMEOUT
           value: 30s
         - name: KAFKA_RETRIES
@@ -275,43 +275,43 @@ objects:
           value: "true"
 
 parameters:
-- description: Initial amount of memory the insights-scheduler container will request.
+- description: Initial amount of memory the scheduler api container will request.
   displayName: Memory Request
-  name: MEMORY_REQUEST
+  name: API_MEMORY_REQUEST
   required: true
   value: 256Mi
-- description: Maximum amount of memory the insights-scheduler.
+- description: Maximum amount of memory the scheduler api.
   displayName: Memory Limit
-  name: MEMORY_LIMIT
+  name: API_MEMORY_LIMIT
   required: true
   value: 512Mi
-- description: Initial amount of cpu the insights-scheduler container will request.
+- description: Initial amount of cpu the scheduler api container will request.
   displayName: CPU Request
-  name: CPU_REQUEST
+  name: API_CPU_REQUEST
   required: true
   value: 200m
-- description: Maximum amount of cpu the insights-scheduler container can use.
+- description: Maximum amount of cpu the scheduler api container can use.
   displayName: CPU Limit
-  name: CPU_LIMIT
+  name: API_CPU_LIMIT
   required: true
   value: 500m
 
-- description: Initial amount of memory the insights-scheduler worker container will request.
+- description: Initial amount of memory the scheduler worker container will request.
   displayName: Worker Memory Request
   name: WORKER_MEMORY_REQUEST
   required: true
   value: 256Mi
-- description: Maximum amount of memory the insights-scheduler worker.
+- description: Maximum amount of memory the scheduler worker.
   displayName: Worker Memory Limit
   name: WORKER_MEMORY_LIMIT
   required: true
   value: 1Gi
-- description: Initial amount of cpu the insights-scheduler worker container will request.
+- description: Initial amount of cpu the scheduler worker container will request.
   displayName: Worker CPU Request
   name: WORKER_CPU_REQUEST
   required: true
   value: 200m
-- description: Maximum amount of cpu the insights-scheduler worker container can use.
+- description: Maximum amount of cpu the scheduler worker container can use.
   displayName: Worker CPU Limit
   name: WORKER_CPU_LIMIT
   required: true
@@ -324,10 +324,10 @@ parameters:
   value: DEBUG
 - name: LOG_FORMAT
   value: logstash
-- description: The number of replicas to use for the insights-scheduler api
+- description: The number of replicas to use for the scheduler api
   name: API_REPLICAS
   value: '1'
-- description: The number of replicas to use for the insights-scheduler worker
+- description: The number of replicas to use for the scheduler worker
   name: WORKER_REPLICAS
   value: '3'
 - description: Image
