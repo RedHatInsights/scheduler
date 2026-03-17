@@ -10,8 +10,8 @@ import (
 // All methods accept a context as the first parameter for cancellation,
 // timeouts, and request-scoped values.
 type JobService interface {
-	// CreateJob creates a new scheduled job
-	CreateJob(ctx context.Context, name, orgID, username, userID, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error)
+	// CreateJob creates a new scheduled job. maxFailedRuns: 0 = disabled (no auto-pause); >0 = pause after that many consecutive failures.
+	CreateJob(ctx context.Context, name, orgID, username, userID, schedule, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error)
 
 	// GetJob retrieves a job by ID (no authorization check)
 	GetJob(ctx context.Context, id string) (domain.Job, error)
@@ -28,8 +28,8 @@ type JobService interface {
 	// GetJobsByOrgID retrieves all jobs for a specific organization with optional filtering
 	GetJobsByOrgID(ctx context.Context, orgID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
 
-	// UpdateJob updates an existing job (full update)
-	UpdateJob(ctx context.Context, id, name, orgID, username, userID, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
+	// UpdateJob updates an existing job (full update). maxFailedRuns nil = leave unchanged; non-nil = set value (0 = disabled).
+	UpdateJob(ctx context.Context, id, name, orgID, username, userID, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error)
 
 	// PatchJobWithUserCheck partially updates a job with user authorization check
 	PatchJobWithUserCheck(ctx context.Context, id, userID string, updates map[string]interface{}) (domain.Job, error)

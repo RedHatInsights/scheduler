@@ -22,14 +22,14 @@ func NewAuthorizedJobService(core *DefaultJobService) *AuthorizedJobServiceAdapt
 // Ensure it implements the interface
 var _ ports.AuthorizedJobService = (*AuthorizedJobServiceAdapter)(nil)
 
-func (a *AuthorizedJobServiceAdapter) CreateJob(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+func (a *AuthorizedJobServiceAdapter) CreateJob(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error) {
 	// Extract identity fields
 	orgID := ident.Identity.OrgID
 	username := ident.Identity.User.Username
 	userID := ident.Identity.User.UserID
 
 	// Delegate to core service
-	return a.core.CreateJob(ctx, name, orgID, username, userID, schedule, timezone, payloadType, payload)
+	return a.core.CreateJob(ctx, name, orgID, username, userID, schedule, timezone, payloadType, payload, maxFailedRuns)
 }
 
 func (a *AuthorizedJobServiceAdapter) GetJob(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error) {
@@ -42,14 +42,14 @@ func (a *AuthorizedJobServiceAdapter) ListJobs(ctx context.Context, ident identi
 	return a.core.GetJobsByUserID(ctx, ident.Identity.User.UserID, statusFilter, nameFilter, offset, limit)
 }
 
-func (a *AuthorizedJobServiceAdapter) UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+func (a *AuthorizedJobServiceAdapter) UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error) {
 	// Extract identity fields
 	orgID := ident.Identity.OrgID
 	username := ident.Identity.User.Username
 	userID := ident.Identity.User.UserID
 
 	// Delegate to core service
-	return a.core.UpdateJob(ctx, id, name, orgID, username, userID, schedule, payloadType, payload, status)
+	return a.core.UpdateJob(ctx, id, name, orgID, username, userID, schedule, payloadType, payload, status, maxFailedRuns)
 }
 
 func (a *AuthorizedJobServiceAdapter) PatchJob(ctx context.Context, ident identity.XRHID, id string, updates map[string]interface{}) (domain.Job, error) {

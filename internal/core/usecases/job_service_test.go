@@ -225,10 +225,10 @@ func TestCreateJobSetsNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, nil, scheduler, executor)
 
 	schedule := "0 * * * *" // Every hour
-	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "testuser", "user-123", schedule, "UTC", domain.PayloadExport, map[string]interface{}{})
+	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "testuser", "user-123", schedule, "UTC", domain.PayloadExport, map[string]interface{}{}, 0)
 
 	if err != nil {
 		t.Fatalf("CreateJob() unexpected error: %v", err)
@@ -264,7 +264,7 @@ func TestRunJobUpdatesLastRunAndNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, nil, scheduler, executor)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/10 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -311,7 +311,7 @@ func TestUpdateJobRecalculatesNextRunAtWhenScheduleChanges(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, nil, scheduler, executor)
 
 	// Create a job with hourly schedule
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -324,7 +324,7 @@ func TestUpdateJobRecalculatesNextRunAtWhenScheduleChanges(t *testing.T) {
 
 	// Update to daily schedule
 	newSchedule := "0 0 * * *" // Daily at midnight
-	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "testuser", "user-123", newSchedule, domain.PayloadExport, map[string]interface{}{}, "scheduled")
+	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "testuser", "user-123", newSchedule, domain.PayloadExport, map[string]interface{}{}, "scheduled", nil)
 
 	if err != nil {
 		t.Fatalf("UpdateJob() unexpected error: %v", err)
@@ -347,7 +347,7 @@ func TestResumeJobRecalculatesNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, nil, scheduler, executor)
 
 	// Create a paused job
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -385,10 +385,10 @@ func TestCreateJobWithInvalidScheduleDoesNotSetNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, nil, scheduler, executor)
 
 	// Try to create a job with invalid schedule
-	_, err := service.CreateJob(context.Background(), "Test Job", "org-123", "testuser", "user-123", "invalid", "UTC", domain.PayloadExport, map[string]interface{}{})
+	_, err := service.CreateJob(context.Background(), "Test Job", "org-123", "testuser", "user-123", "invalid", "UTC", domain.PayloadExport, map[string]interface{}{}, 0)
 
 	if err != domain.ErrInvalidSchedule {
 		t.Errorf("CreateJob() expected ErrInvalidSchedule, got %v", err)

@@ -12,10 +12,10 @@ import (
 
 // mockAuthorizedJobService is a mock implementation of ports.AuthorizedJobService for testing
 type mockAuthorizedJobService struct {
-	createJobFunc func(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error)
+	createJobFunc func(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error)
 	getJobFunc    func(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error)
 	listJobsFunc  func(ctx context.Context, ident identity.XRHID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
-	updateJobFunc func(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
+	updateJobFunc func(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error)
 	patchJobFunc  func(ctx context.Context, ident identity.XRHID, id string, updates map[string]interface{}) (domain.Job, error)
 	deleteJobFunc func(ctx context.Context, ident identity.XRHID, id string) error
 	runJobFunc    func(ctx context.Context, ident identity.XRHID, id string) error
@@ -26,9 +26,9 @@ type mockAuthorizedJobService struct {
 // Ensure mockAuthorizedJobService implements ports.AuthorizedJobService
 var _ ports.AuthorizedJobService = (*mockAuthorizedJobService)(nil)
 
-func (m *mockAuthorizedJobService) CreateJob(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+func (m *mockAuthorizedJobService) CreateJob(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error) {
 	if m.createJobFunc != nil {
-		return m.createJobFunc(ctx, ident, name, schedule, timezone, payloadType, payload)
+		return m.createJobFunc(ctx, ident, name, schedule, timezone, payloadType, payload, maxFailedRuns)
 	}
 	return domain.Job{}, nil
 }
@@ -47,9 +47,9 @@ func (m *mockAuthorizedJobService) ListJobs(ctx context.Context, ident identity.
 	return nil, 0, nil
 }
 
-func (m *mockAuthorizedJobService) UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+func (m *mockAuthorizedJobService) UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error) {
 	if m.updateJobFunc != nil {
-		return m.updateJobFunc(ctx, ident, id, name, schedule, payloadType, payload, status)
+		return m.updateJobFunc(ctx, ident, id, name, schedule, payloadType, payload, status, maxFailedRuns)
 	}
 	return domain.Job{}, nil
 }
@@ -105,7 +105,7 @@ func TestJobAPI_Contract_TimezoneFieldRequired(t *testing.T) {
 	// Create a mock service that returns a predictable job
 	nextRunAt := time.Date(2026, 2, 21, 14, 0, 0, 0, time.UTC) // 9 AM EST
 	mockService := &mockAuthorizedJobService{
-		createJobFunc: func(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+		createJobFunc: func(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error) {
 			// Verify identity is passed correctly
 			if ident.Identity.OrgID != "org-123" {
 				t.Errorf("Expected org_id 'org-123', got '%s'", ident.Identity.OrgID)
@@ -134,7 +134,7 @@ func TestJobAPI_Contract_TimezoneFieldRequired(t *testing.T) {
 	_ = ports.AuthorizedJobService(mockService)
 
 	// Call service with identity - authorization is enforced by interface
-	job, err := mockService.CreateJob(context.Background(), testIdent, "Daily Report", "0 9 * * *", "America/New_York", domain.PayloadExport, map[string]interface{}{"application": "test"})
+	job, err := mockService.CreateJob(context.Background(), testIdent, "Daily Report", "0 9 * * *", "America/New_York", domain.PayloadExport, map[string]interface{}{"application": "test"}, 0)
 	if err != nil {
 		t.Fatalf("Service call failed: %v", err)
 	}

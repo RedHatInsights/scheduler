@@ -45,6 +45,7 @@ type CronScheduler interface {
 // DefaultJobService is the default implementation of ports.JobService
 type DefaultJobService struct {
 	repo          JobRepository
+	runRepo       JobRunRepository
 	scheduler     SchedulingService
 	executor      JobExecutor
 	cronScheduler CronScheduler
@@ -53,9 +54,10 @@ type DefaultJobService struct {
 // Ensure DefaultJobService implements ports.JobService
 var _ ports.JobService = (*DefaultJobService)(nil)
 
-func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor) *DefaultJobService {
+func NewJobService(repo JobRepository, runRepo JobRunRepository, scheduler SchedulingService, executor JobExecutor) *DefaultJobService {
 	return &DefaultJobService{
 		repo:      repo,
+		runRepo:   runRepo,
 		scheduler: scheduler,
 		executor:  executor,
 	}
@@ -101,7 +103,21 @@ func calculateNextRunAt(schedule string, timezone string) (*time.Time, error) {
 	return &nextRunAtUTC, nil
 }
 
-func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+// parseIntFromUpdate extracts an int from a PATCH/JSON update value (JSON numbers are float64).
+func parseIntFromUpdate(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
+func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error) {
 	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, username, userID, schedule, timezone, payloadType)
 
 	// Validate org_id
@@ -136,6 +152,9 @@ func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID st
 	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
 
 	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), timezone, payloadType, payload)
+	if maxFailedRuns > 0 {
+		job = job.WithMaxFailedRuns(maxFailedRuns)
+	}
 	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s, timezone: %s", job.ID, job.Status, job.Timezone)
 
 	// Calculate next run time using the job's timezone
@@ -282,7 +301,7 @@ func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, 
 	return filtered, total, nil
 }
 
-func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -314,6 +333,9 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 	statusVal := domain.JobStatus(status)
 
 	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
+	if maxFailedRuns != nil {
+		updatedJob = updatedJob.WithMaxFailedRuns(*maxFailedRuns)
+	}
 
 	// Recalculate next run time if schedule changed
 	if schedule != string(job.Schedule) {
@@ -363,6 +385,7 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 	var payloadType *domain.PayloadType
 	var payload *interface{}
 	var status *domain.JobStatus
+	var maxFailedRuns *int
 
 	if v, ok := updates["name"]; ok {
 		if nameStr, ok := v.(string); ok {
@@ -428,7 +451,16 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 		}
 	}
 
+	if v, ok := updates["max_failed_runs"]; ok {
+		if n, ok := parseIntFromUpdate(v); ok && n >= 0 {
+			maxFailedRuns = &n
+		}
+	}
+
 	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
+	if maxFailedRuns != nil {
+		updatedJob = updatedJob.WithMaxFailedRuns(*maxFailedRuns)
+	}
 
 	// Recalculate next run time if schedule was updated
 	if schedule != nil {
@@ -478,6 +510,7 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 	var payloadType *domain.PayloadType
 	var payload *interface{}
 	var status *domain.JobStatus
+	var maxFailedRuns *int
 
 	if v, ok := updates["name"]; ok {
 		if nameStr, ok := v.(string); ok {
@@ -546,7 +579,16 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 		}
 	}
 
+	if v, ok := updates["max_failed_runs"]; ok {
+		if n, ok := parseIntFromUpdate(v); ok && n >= 0 {
+			maxFailedRuns = &n
+		}
+	}
+
 	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
+	if maxFailedRuns != nil {
+		updatedJob = updatedJob.WithMaxFailedRuns(*maxFailedRuns)
+	}
 
 	// Recalculate next run time if schedule was updated
 	if schedule != nil {
@@ -652,6 +694,30 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 	}
 
 	finalJob := runningJob.WithStatus(finalStatus)
+
+	// If job has MaxFailedRuns set and this run failed, count consecutive failures and pause if threshold reached
+	if err != nil && job.MaxFailedRuns > 0 && s.runRepo != nil {
+		runs, _, countErr := s.runRepo.FindByJobID(job.ID, 0, 100)
+		if countErr != nil {
+			log.Printf("[DEBUG] RunJob - failed to list runs for job %s: %v", id, countErr)
+		} else {
+			consecutiveFailed := 0
+			for _, r := range runs {
+				if r.Status != domain.RunStatusFailed {
+					break
+				}
+				consecutiveFailed++
+			}
+			if consecutiveFailed >= job.MaxFailedRuns {
+				log.Printf("Job %s reached %d consecutive failures (max_failed_runs=%d); pausing job", job.ID, consecutiveFailed, job.MaxFailedRuns)
+				if _, pauseErr := s.PauseJob(id); pauseErr != nil {
+					log.Printf("RunJob - failed to auto-pause job %s: %v", id, pauseErr)
+				} else {
+					return nil
+				}
+			}
+		}
+	}
 
 	// Calculate next run time after execution
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
