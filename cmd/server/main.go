@@ -697,7 +697,7 @@ func createUserValidator(cfg *config.Config) identity.UserValidator {
 		log.Println("Initializing 3scale User Validator")
 		userValidator = identity.NewThreeScaleUserValidator(
 			cfg.ThreeScale.BaseURL,
-			cfg.ThreeScale.APIToken,
+			cfg.ThreeScale.Timeout,
 		)
 	case "bop":
 		log.Println("Initializing BOP User Validator")
