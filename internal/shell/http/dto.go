@@ -16,9 +16,8 @@ type JobResponse struct {
 	Type          string      `json:"type"`
 	Payload       interface{} `json:"payload,omitempty"`
 	Status        string      `json:"status"`
-	LastRunAt     *time.Time  `json:"last_run_at,omitempty"`
-	NextRunAt     *time.Time  `json:"next_run_at,omitempty"`
-	MaxFailedRuns int         `json:"max_failed_runs,omitempty"`
+	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
+	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
 }
 
 // ToJobResponse converts a domain.Job to a JobResponse DTO
@@ -62,9 +61,8 @@ func ToJobResponse(job domain.Job) JobResponse {
 		Type:          string(job.Type),
 		Payload:       job.Payload,
 		Status:        string(job.Status),
-		LastRunAt:     lastRunAtInTz,
-		NextRunAt:     nextRunAtInTz,
-		MaxFailedRuns: job.MaxFailedRuns,
+		LastRunAt: lastRunAtInTz,
+		NextRunAt: nextRunAtInTz,
 	}
 }
 

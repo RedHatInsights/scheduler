@@ -26,12 +26,11 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[DEBUG] HTTP CreateJob called - method: %s, path: %s", r.Method, r.URL.Path)
 
 	var req struct {
-		Name           string             `json:"name"`
-		Schedule       string             `json:"schedule"`
-		Timezone       string             `json:"timezone"` // Optional, defaults to UTC
-		Type           domain.PayloadType `json:"type"`
-		Payload        interface{}        `json:"payload"`
-		MaxFailedRuns  int                `json:"max_failed_runs"` // 0 = disabled; job paused after this many consecutive failures
+		Name     string             `json:"name"`
+		Schedule string             `json:"schedule"`
+		Timezone string             `json:"timezone"` // Optional, defaults to UTC
+		Type     domain.PayloadType `json:"type"`
+		Payload  interface{}        `json:"payload"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -60,7 +59,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
 	// Call service with identity - authorization is handled by the service
-	job, err := h.jobService.CreateJob(r.Context(), ident, req.Name, req.Schedule, req.Timezone, req.Type, req.Payload, req.MaxFailedRuns)
+	job, err := h.jobService.CreateJob(r.Context(), ident, req.Name, req.Schedule, req.Timezone, req.Type, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID || err == domain.ErrInvalidTimezone {
 			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
@@ -155,12 +154,11 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name           string             `json:"name"`
-		Schedule       string             `json:"schedule"`
-		Type           domain.PayloadType `json:"type"`
-		Payload        interface{}        `json:"payload"`
-		Status         string             `json:"status"`
-		MaxFailedRuns  *int               `json:"max_failed_runs"` // optional; 0 = disabled
+		Name     string             `json:"name"`
+		Schedule string             `json:"schedule"`
+		Type     domain.PayloadType `json:"type"`
+		Payload  interface{}        `json:"payload"`
+		Status   string             `json:"status"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -174,7 +172,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Service handles authorization check
-	job, err := h.jobService.UpdateJob(r.Context(), ident, id, req.Name, req.Schedule, req.Type, req.Payload, req.Status, req.MaxFailedRuns)
+	job, err := h.jobService.UpdateJob(r.Context(), ident, id, req.Name, req.Schedule, req.Type, req.Payload, req.Status)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})

@@ -42,24 +42,33 @@ type CronScheduler interface {
 	UnscheduleJob(jobID string)
 }
 
+// JobPausedDueToFailuresNotifier is called when a job is auto-paused after too many consecutive failures (e.g. to send a platform notification).
+type JobPausedDueToFailuresNotifier interface {
+	NotifyJobPausedDueToFailures(ctx context.Context, job domain.Job, consecutiveFailures int) error
+}
+
 // DefaultJobService is the default implementation of ports.JobService
 type DefaultJobService struct {
-	repo          JobRepository
-	runRepo       JobRunRepository
-	scheduler     SchedulingService
-	executor      JobExecutor
-	cronScheduler CronScheduler
+	repo                       JobRepository
+	runRepo                    JobRunRepository
+	scheduler                  SchedulingService
+	executor                   JobExecutor
+	cronScheduler              CronScheduler
+	maxFailedRunsBeforePause   int
+	failurePauseNotifier       JobPausedDueToFailuresNotifier
 }
 
 // Ensure DefaultJobService implements ports.JobService
 var _ ports.JobService = (*DefaultJobService)(nil)
 
-func NewJobService(repo JobRepository, runRepo JobRunRepository, scheduler SchedulingService, executor JobExecutor) *DefaultJobService {
+func NewJobService(repo JobRepository, runRepo JobRunRepository, scheduler SchedulingService, executor JobExecutor, maxFailedRunsBeforePause int, failurePauseNotifier JobPausedDueToFailuresNotifier) *DefaultJobService {
 	return &DefaultJobService{
-		repo:      repo,
-		runRepo:   runRepo,
-		scheduler: scheduler,
-		executor:  executor,
+		repo:                     repo,
+		runRepo:                  runRepo,
+		scheduler:                scheduler,
+		executor:                 executor,
+		maxFailedRunsBeforePause: maxFailedRunsBeforePause,
+		failurePauseNotifier:     failurePauseNotifier,
 	}
 }
 
@@ -103,21 +112,7 @@ func calculateNextRunAt(schedule string, timezone string) (*time.Time, error) {
 	return &nextRunAtUTC, nil
 }
 
-// parseIntFromUpdate extracts an int from a PATCH/JSON update value (JSON numbers are float64).
-func parseIntFromUpdate(v interface{}) (int, bool) {
-	switch n := v.(type) {
-	case float64:
-		return int(n), true
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	default:
-		return 0, false
-	}
-}
-
-func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error) {
+func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, username string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
 	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, username: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, username, userID, schedule, timezone, payloadType)
 
 	// Validate org_id
@@ -152,9 +147,6 @@ func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID st
 	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
 
 	job := domain.NewJob(name, orgID, username, userID, domain.Schedule(schedule), timezone, payloadType, payload)
-	if maxFailedRuns > 0 {
-		job = job.WithMaxFailedRuns(maxFailedRuns)
-	}
 	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s, timezone: %s", job.ID, job.Status, job.Timezone)
 
 	// Calculate next run time using the job's timezone
@@ -301,7 +293,7 @@ func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, 
 	return filtered, total, nil
 }
 
-func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error) {
+func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, username string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
 		return domain.Job{}, err
@@ -333,9 +325,6 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 	statusVal := domain.JobStatus(status)
 
 	updatedJob := job.UpdateFields(&name, &orgID, &username, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
-	if maxFailedRuns != nil {
-		updatedJob = updatedJob.WithMaxFailedRuns(*maxFailedRuns)
-	}
 
 	// Recalculate next run time if schedule changed
 	if schedule != string(job.Schedule) {
@@ -385,7 +374,6 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 	var payloadType *domain.PayloadType
 	var payload *interface{}
 	var status *domain.JobStatus
-	var maxFailedRuns *int
 
 	if v, ok := updates["name"]; ok {
 		if nameStr, ok := v.(string); ok {
@@ -451,16 +439,7 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 		}
 	}
 
-	if v, ok := updates["max_failed_runs"]; ok {
-		if n, ok := parseIntFromUpdate(v); ok && n >= 0 {
-			maxFailedRuns = &n
-		}
-	}
-
 	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
-	if maxFailedRuns != nil {
-		updatedJob = updatedJob.WithMaxFailedRuns(*maxFailedRuns)
-	}
 
 	// Recalculate next run time if schedule was updated
 	if schedule != nil {
@@ -510,7 +489,6 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 	var payloadType *domain.PayloadType
 	var payload *interface{}
 	var status *domain.JobStatus
-	var maxFailedRuns *int
 
 	if v, ok := updates["name"]; ok {
 		if nameStr, ok := v.(string); ok {
@@ -579,16 +557,7 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 		}
 	}
 
-	if v, ok := updates["max_failed_runs"]; ok {
-		if n, ok := parseIntFromUpdate(v); ok && n >= 0 {
-			maxFailedRuns = &n
-		}
-	}
-
 	updatedJob := job.UpdateFields(name, orgID, username, userID, schedule, payloadType, payload, status)
-	if maxFailedRuns != nil {
-		updatedJob = updatedJob.WithMaxFailedRuns(*maxFailedRuns)
-	}
 
 	// Recalculate next run time if schedule was updated
 	if schedule != nil {
@@ -695,8 +664,8 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 
 	finalJob := runningJob.WithStatus(finalStatus)
 
-	// If job has MaxFailedRuns set and this run failed, count consecutive failures and pause if threshold reached
-	if err != nil && job.MaxFailedRuns > 0 && s.runRepo != nil {
+	// If global threshold set and this run failed, count consecutive failures and auto-pause with StatusFailurePaused
+	if err != nil && s.maxFailedRunsBeforePause > 0 && s.runRepo != nil {
 		runs, _, countErr := s.runRepo.FindByJobID(job.ID, 0, 100)
 		if countErr != nil {
 			log.Printf("[DEBUG] RunJob - failed to list runs for job %s: %v", id, countErr)
@@ -708,11 +677,20 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 				}
 				consecutiveFailed++
 			}
-			if consecutiveFailed >= job.MaxFailedRuns {
-				log.Printf("Job %s reached %d consecutive failures (max_failed_runs=%d); pausing job", job.ID, consecutiveFailed, job.MaxFailedRuns)
-				if _, pauseErr := s.PauseJob(id); pauseErr != nil {
-					log.Printf("RunJob - failed to auto-pause job %s: %v", id, pauseErr)
+			if consecutiveFailed >= s.maxFailedRunsBeforePause {
+				log.Printf("Job %s reached %d consecutive failures (threshold=%d); pausing job with status failure_paused", job.ID, consecutiveFailed, s.maxFailedRunsBeforePause)
+				failurePausedJob := runningJob.WithStatus(domain.StatusFailurePaused)
+				if saveErr := s.repo.Save(failurePausedJob); saveErr != nil {
+					log.Printf("RunJob - failed to save failure_paused status for job %s: %v", id, saveErr)
 				} else {
+					if s.cronScheduler != nil {
+						s.cronScheduler.UnscheduleJob(id)
+					}
+					if s.failurePauseNotifier != nil {
+						if notifyErr := s.failurePauseNotifier.NotifyJobPausedDueToFailures(ctx, failurePausedJob, consecutiveFailed); notifyErr != nil {
+							log.Printf("RunJob - failed to send failure-paused notification for job %s: %v", id, notifyErr)
+						}
+					}
 					return nil
 				}
 			}
@@ -737,7 +715,7 @@ func (s *DefaultJobService) PauseJob(id string) (domain.Job, error) {
 		return domain.Job{}, err
 	}
 
-	if job.Status == domain.StatusPaused {
+	if job.Status == domain.StatusPaused || job.Status == domain.StatusFailurePaused {
 		return domain.Job{}, domain.ErrJobAlreadyPaused
 	}
 
@@ -766,7 +744,7 @@ func (s *DefaultJobService) PauseJobWithOrgCheck(ctx context.Context, id string,
 		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
 	}
 
-	if job.Status == domain.StatusPaused {
+	if job.Status == domain.StatusPaused || job.Status == domain.StatusFailurePaused {
 		return domain.Job{}, domain.ErrJobAlreadyPaused
 	}
 
@@ -795,7 +773,7 @@ func (s *DefaultJobService) PauseJobWithUserCheck(ctx context.Context, id string
 		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
 	}
 
-	if job.Status == domain.StatusPaused {
+	if job.Status == domain.StatusPaused || job.Status == domain.StatusFailurePaused {
 		return domain.Job{}, domain.ErrJobAlreadyPaused
 	}
 
@@ -819,7 +797,7 @@ func (s *DefaultJobService) ResumeJob(ctx context.Context, id string) (domain.Jo
 		return domain.Job{}, err
 	}
 
-	if job.Status != domain.StatusPaused {
+	if job.Status != domain.StatusPaused && job.Status != domain.StatusFailurePaused {
 		return domain.Job{}, domain.ErrJobNotPaused
 	}
 
@@ -860,7 +838,7 @@ func (s *DefaultJobService) ResumeJobWithOrgCheck(ctx context.Context, id string
 		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
 	}
 
-	if job.Status != domain.StatusPaused {
+	if job.Status != domain.StatusPaused && job.Status != domain.StatusFailurePaused {
 		return domain.Job{}, domain.ErrJobNotPaused
 	}
 
@@ -901,7 +879,7 @@ func (s *DefaultJobService) ResumeJobWithUserCheck(ctx context.Context, id strin
 		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
 	}
 
-	if job.Status != domain.StatusPaused {
+	if job.Status != domain.StatusPaused && job.Status != domain.StatusFailurePaused {
 		return domain.Job{}, domain.ErrJobNotPaused
 	}
 

@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/shell/messaging"
 )
 
@@ -104,4 +106,46 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		Events:      []interface{}{},
 		Recipients:  []interface{}{},
 	}
+}
+
+// Ensure NotificationsBasedJobCompletionNotifier implements JobPausedDueToFailuresNotifier when it has the method
+var _ usecases.JobPausedDueToFailuresNotifier = (*NotificationsBasedJobCompletionNotifier)(nil)
+
+// NotifyJobPausedDueToFailures sends a platform notification when a job is auto-paused due to consecutive failures
+func (n *NotificationsBasedJobCompletionNotifier) NotifyJobPausedDueToFailures(ctx context.Context, job domain.Job, consecutiveFailures int) error {
+	log.Printf("Sending platform notification: job %s paused after %d consecutive failures", job.ID, consecutiveFailures)
+	msg := &NotificationMessage{
+		Version:     "v1.2.0",
+		Bundle:      "rhel",
+		Application: "insights-scheduler",
+		EventType:   "job-paused-after-failures",
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		AccountID:   "",
+		OrgID:       job.OrgID,
+		Context: map[string]interface{}{
+			"job_id":               job.ID,
+			"job_name":             job.Name,
+			"consecutive_failures": consecutiveFailures,
+		},
+		Events:     []interface{}{},
+		Recipients: []interface{}{},
+	}
+	messageBytes, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification: %w", err)
+	}
+	headers := map[string]string{
+		"message-type": "platform-notification",
+		"bundle":        msg.Bundle,
+		"application":  msg.Application,
+		"event-type":   msg.EventType,
+		"org-id":       msg.OrgID,
+		"version":      msg.Version,
+	}
+	if err := n.producer.SendMessage(msg.OrgID, messageBytes, headers); err != nil {
+		log.Printf("Failed to send job-paused-after-failures notification for job %s: %v", job.ID, err)
+		return err
+	}
+	log.Printf("Job-paused-after-failures notification sent for job %s", job.ID)
+	return nil
 }

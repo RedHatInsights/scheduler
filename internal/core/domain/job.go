@@ -11,10 +11,11 @@ import (
 type JobStatus string
 
 const (
-	StatusScheduled JobStatus = "scheduled"
-	StatusRunning   JobStatus = "running"
-	StatusPaused    JobStatus = "paused"
-	StatusFailed    JobStatus = "failed"
+	StatusScheduled     JobStatus = "scheduled"
+	StatusRunning       JobStatus = "running"
+	StatusPaused        JobStatus = "paused"
+	StatusFailed        JobStatus = "failed"
+	StatusFailurePaused JobStatus = "failure_paused" // auto-paused after too many consecutive failures (UI can show distinct message)
 )
 
 type PayloadType string
@@ -45,10 +46,9 @@ type Job struct {
 	Timezone       string      `json:"timezone"`
 	Type           PayloadType `json:"type"`
 	Payload        interface{} `json:"payload,omitempty"`
-	Status         JobStatus   `json:"status"`
-	LastRunAt      *time.Time  `json:"last_run_at,omitempty"`
-	NextRunAt      *time.Time  `json:"next_run_at,omitempty"`
-	MaxFailedRuns  int         `json:"max_failed_runs,omitempty"` // 0 = disabled; job is paused after this many consecutive failures
+	Status    JobStatus   `json:"status"`
+	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
+	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
 }
 
 func NewJob(name string, orgID string, username string, userID string, schedule Schedule, timezone string, payloadType PayloadType, payload interface{}) Job {
@@ -67,10 +67,9 @@ func NewJob(name string, orgID string, username string, userID string, schedule 
 		Timezone:      timezone,
 		Type:          payloadType,
 		Payload:       payload,
-		Status:        StatusScheduled,
-		LastRunAt:     nil,
-		NextRunAt:     nil,
-		MaxFailedRuns: 0,
+		Status:    StatusScheduled,
+		LastRunAt: nil,
+		NextRunAt: nil,
 	}
 }
 
@@ -85,10 +84,9 @@ func (j Job) WithStatus(status JobStatus) Job {
 		Timezone:      j.Timezone,
 		Type:          j.Type,
 		Payload:       j.Payload,
-		Status:        status,
-		LastRunAt:     j.LastRunAt,
-		NextRunAt:     j.NextRunAt,
-		MaxFailedRuns: j.MaxFailedRuns,
+		Status:    status,
+		LastRunAt: j.LastRunAt,
+		NextRunAt: j.NextRunAt,
 	}
 }
 
@@ -104,9 +102,8 @@ func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 		Type:          j.Type,
 		Payload:       j.Payload,
 		Status:        j.Status,
-		LastRunAt:     &lastRunAt,
-		NextRunAt:     j.NextRunAt,
-		MaxFailedRuns: j.MaxFailedRuns,
+		LastRunAt: &lastRunAt,
+		NextRunAt: j.NextRunAt,
 	}
 }
 
@@ -122,27 +119,8 @@ func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 		Type:          j.Type,
 		Payload:       j.Payload,
 		Status:        j.Status,
-		LastRunAt:     j.LastRunAt,
-		NextRunAt:     &nextRunAt,
-		MaxFailedRuns: j.MaxFailedRuns,
-	}
-}
-
-func (j Job) WithMaxFailedRuns(n int) Job {
-	return Job{
-		ID:            j.ID,
-		Name:          j.Name,
-		OrgID:         j.OrgID,
-		Username:      j.Username,
-		UserID:        j.UserID,
-		Schedule:      j.Schedule,
-		Timezone:      j.Timezone,
-		Type:          j.Type,
-		Payload:       j.Payload,
-		Status:        j.Status,
-		LastRunAt:     j.LastRunAt,
-		NextRunAt:     j.NextRunAt,
-		MaxFailedRuns: n,
+		LastRunAt: j.LastRunAt,
+		NextRunAt: &nextRunAt,
 	}
 }
 
@@ -211,7 +189,7 @@ func IsValidPayloadType(pt string) bool {
 
 func IsValidStatus(s string) bool {
 	switch JobStatus(s) {
-	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed:
+	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed, StatusFailurePaused:
 		return true
 	default:
 		return false

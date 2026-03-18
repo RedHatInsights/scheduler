@@ -11,8 +11,8 @@ import (
 // Used by HTTP handlers where identity is always available from middleware.
 // All operations are automatically scoped to the provided identity.
 type AuthorizedJobService interface {
-	// CreateJob creates a new scheduled job scoped to the provided identity. maxFailedRuns: 0 = disabled; >0 = pause after that many consecutive failures.
-	CreateJob(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}, maxFailedRuns int) (domain.Job, error)
+	// CreateJob creates a new scheduled job scoped to the provided identity
+	CreateJob(ctx context.Context, ident identity.XRHID, name, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error)
 
 	// GetJob retrieves a job by ID with authorization check
 	GetJob(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error)
@@ -20,8 +20,8 @@ type AuthorizedJobService interface {
 	// ListJobs retrieves all jobs for the identity with optional filtering
 	ListJobs(ctx context.Context, ident identity.XRHID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
 
-	// UpdateJob updates an existing job with authorization check. maxFailedRuns nil = leave unchanged.
-	UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string, maxFailedRuns *int) (domain.Job, error)
+	// UpdateJob updates an existing job with authorization check
+	UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
 
 	// PatchJob partially updates a job with authorization check
 	PatchJob(ctx context.Context, ident identity.XRHID, id string, updates map[string]interface{}) (domain.Job, error)

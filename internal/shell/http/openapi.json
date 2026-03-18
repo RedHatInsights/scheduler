@@ -670,24 +670,19 @@
             "nullable": true,
             "description": "Timestamp of the next scheduled job execution in the job's timezone. Calculated from the cron schedule in the job's timezone and returned with the appropriate offset (e.g., \"2025-12-01T09:00:00-05:00\" for a 9 AM job in America/New_York).",
             "example": "2025-12-01T09:00:00-05:00"
-          },
-          "max_failed_runs": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "When set to a value greater than 0, the job is automatically paused after this many consecutive failed runs. 0 means the feature is disabled.",
-            "example": 3
           }
         }
       },
       "JobPayload": {},
       "JobStatus": {
         "type": "string",
-        "description": "Current status of the job",
+        "description": "Current status of the job. `failure_paused` means the job was auto-paused after too many consecutive failures (see SCHEDULER_MAX_FAILED_RUNS_BEFORE_PAUSE).",
         "enum": [
           "scheduled",
           "running",
           "paused",
-          "failed"
+          "failed",
+          "failure_paused"
         ],
         "example": "scheduled"
       },
@@ -728,12 +723,6 @@
           },
           "payload": {
             "$ref": "#/components/schemas/JobPayload"
-          },
-          "max_failed_runs": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "When set to a value greater than 0, the job is automatically paused after this many consecutive failed runs. Omit or 0 to disable.",
-            "example": 3
           }
         }
       },
@@ -764,11 +753,6 @@
           },
           "status": {
             "$ref": "#/components/schemas/JobStatus"
-          },
-          "max_failed_runs": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "When set to a value greater than 0, the job is automatically paused after this many consecutive failed runs. 0 to disable."
           }
         }
       },
@@ -792,11 +776,6 @@
           },
           "status": {
             "$ref": "#/components/schemas/JobStatus"
-          },
-          "max_failed_runs": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "When set to a value greater than 0, the job is automatically paused after this many consecutive failed runs. 0 to disable."
           }
         }
       },
