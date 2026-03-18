@@ -225,7 +225,7 @@ func TestCreateJobSetsNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, nil, scheduler, executor, 0, nil)
+	service := NewJobService(repo, nil, scheduler, executor, 0)
 
 	schedule := "0 * * * *" // Every hour
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "testuser", "user-123", schedule, "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -264,7 +264,7 @@ func TestRunJobUpdatesLastRunAndNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, nil, scheduler, executor, 0, nil)
+	service := NewJobService(repo, nil, scheduler, executor, 0)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/10 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -311,7 +311,7 @@ func TestUpdateJobRecalculatesNextRunAtWhenScheduleChanges(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, nil, scheduler, executor, 0, nil)
+	service := NewJobService(repo, nil, scheduler, executor, 0)
 
 	// Create a job with hourly schedule
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -347,7 +347,7 @@ func TestResumeJobRecalculatesNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, nil, scheduler, executor, 0, nil)
+	service := NewJobService(repo, nil, scheduler, executor, 0)
 
 	// Create a paused job
 	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -385,7 +385,7 @@ func TestCreateJobWithInvalidScheduleDoesNotSetNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, nil, scheduler, executor, 0, nil)
+	service := NewJobService(repo, nil, scheduler, executor, 0)
 
 	// Try to create a job with invalid schedule
 	_, err := service.CreateJob(context.Background(), "Test Job", "org-123", "testuser", "user-123", "invalid", "UTC", domain.PayloadExport, map[string]interface{}{})

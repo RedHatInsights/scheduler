@@ -11,11 +11,10 @@ import (
 type JobStatus string
 
 const (
-	StatusScheduled     JobStatus = "scheduled"
-	StatusRunning       JobStatus = "running"
-	StatusPaused        JobStatus = "paused"
-	StatusFailed        JobStatus = "failed"
-	StatusFailurePaused JobStatus = "failure_paused" // auto-paused after too many consecutive failures (UI can show distinct message)
+	StatusScheduled JobStatus = "scheduled"
+	StatusRunning   JobStatus = "running"
+	StatusPaused    JobStatus = "paused"
+	StatusFailed    JobStatus = "failed"
 )
 
 type PayloadType string
@@ -189,7 +188,7 @@ func IsValidPayloadType(pt string) bool {
 
 func IsValidStatus(s string) bool {
 	switch JobStatus(s) {
-	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed, StatusFailurePaused:
+	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed:
 		return true
 	default:
 		return false

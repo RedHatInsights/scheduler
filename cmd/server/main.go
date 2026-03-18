@@ -294,12 +294,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize job executor with map of executors
 	jobExecutor := executor.NewJobExecutor(executors, runRepo)
 
-	// Same notifier instance is used for job completion (export) and for failure-paused notifications
-	var failurePauseNotifier usecases.JobPausedDueToFailuresNotifier
-	if n, ok := notifier.(usecases.JobPausedDueToFailuresNotifier); ok {
-		failurePauseNotifier = n
-	}
-	coreJobService := usecases.NewJobService(repo, runRepo, schedulingService, jobExecutor, cfg.MaxFailedRunsBeforePause, failurePauseNotifier)
+	coreJobService := usecases.NewJobService(repo, runRepo, schedulingService, jobExecutor, cfg.MaxFailedRunsBeforePause)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
 	// Create adapters for different consumers

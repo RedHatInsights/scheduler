@@ -676,13 +676,12 @@
       "JobPayload": {},
       "JobStatus": {
         "type": "string",
-        "description": "Current status of the job. `failure_paused` means the job was auto-paused after too many consecutive failures (see SCHEDULER_MAX_FAILED_RUNS_BEFORE_PAUSE).",
+        "description": "Current status of the job",
         "enum": [
           "scheduled",
           "running",
           "paused",
-          "failed",
-          "failure_paused"
+          "failed"
         ],
         "example": "scheduled"
       },
