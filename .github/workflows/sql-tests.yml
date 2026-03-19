@@ -13,6 +13,7 @@ jobs:
         env:
           POSTGRESQL_USER: insights
           POSTGRESQL_PASSWORD: insights
+          POSTGRES_PASSWORD: insights
           POSTGRESQL_DATABASE: scheduler
         options: >-
           --health-cmd pg_isready
