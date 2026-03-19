@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: quay.io/cloudservices/postgresql-rds:16
+        image: postgres:17-alpine
         env:
           POSTGRESQL_USER: insights
           POSTGRESQL_PASSWORD: insights
