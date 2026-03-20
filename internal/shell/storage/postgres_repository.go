@@ -187,17 +187,23 @@ func (r *PostgresJobRepository) Close() error {
 }
 
 func buildConnectionString(cfg *config.Config) (string, error) {
-	psqlConnectionInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s TimeZone=UTC",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.Username, cfg.Database.Password, cfg.Database.Name)
-
 	sslSettings, err := buildPostgresSslConfigString(cfg)
 	if err != nil {
 		return "", err
 	}
 
-	psqlConnectionInfo += " " + sslSettings
+	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?%s&options=-ctimezone=UTC",
+		cfg.Database.Username,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Name,
+		sslSettings,
+	)
 
-	return psqlConnectionInfo, nil
+	fmt.Printf("blah: %s\n", databaseURL)
+
+	return databaseURL, nil
 }
 
 func buildPostgresSslConfigString(cfg *config.Config) (string, error) {
