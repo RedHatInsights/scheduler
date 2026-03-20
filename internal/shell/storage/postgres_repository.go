@@ -201,8 +201,6 @@ func buildConnectionString(cfg *config.Config) (string, error) {
 		sslSettings,
 	)
 
-	fmt.Printf("blah: %s\n", databaseURL)
-
 	return databaseURL, nil
 }
 
