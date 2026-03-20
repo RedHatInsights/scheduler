@@ -32,5 +32,4 @@ jobs:
     - name: Run Tests (including sql tests)
       env:
         DB_TYPE: postgres
-        DB_PASSWORD: insights
       run: make migrate test test-sql
