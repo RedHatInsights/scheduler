@@ -44,20 +44,24 @@ type CronScheduler interface {
 
 // DefaultJobService is the default implementation of ports.JobService
 type DefaultJobService struct {
-	repo          JobRepository
-	scheduler     SchedulingService
-	executor      JobExecutor
-	cronScheduler CronScheduler
+	repo                     JobRepository
+	runRepo                  JobRunRepository
+	scheduler                SchedulingService
+	executor                 JobExecutor
+	cronScheduler            CronScheduler
+	maxFailedRunsBeforePause int
 }
 
 // Ensure DefaultJobService implements ports.JobService
 var _ ports.JobService = (*DefaultJobService)(nil)
 
-func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor) *DefaultJobService {
+func NewJobService(repo JobRepository, runRepo JobRunRepository, scheduler SchedulingService, executor JobExecutor, maxFailedRunsBeforePause int) *DefaultJobService {
 	return &DefaultJobService{
-		repo:      repo,
-		scheduler: scheduler,
-		executor:  executor,
+		repo:                     repo,
+		runRepo:                  runRepo,
+		scheduler:                scheduler,
+		executor:                 executor,
+		maxFailedRunsBeforePause: maxFailedRunsBeforePause,
 	}
 }
 
@@ -652,6 +656,34 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 	}
 
 	finalJob := runningJob.WithStatus(finalStatus)
+
+	// If global threshold set and this run failed, count consecutive failures and auto-pause
+	if err != nil && s.maxFailedRunsBeforePause > 0 && s.runRepo != nil {
+		runs, _, countErr := s.runRepo.FindByJobID(job.ID, 0, 100)
+		if countErr != nil {
+			log.Printf("[DEBUG] RunJob - failed to list runs for job %s: %v", id, countErr)
+		} else {
+			consecutiveFailed := 0
+			for _, r := range runs {
+				if r.Status != domain.RunStatusFailed {
+					break
+				}
+				consecutiveFailed++
+			}
+			if consecutiveFailed >= s.maxFailedRunsBeforePause {
+				log.Printf("Job %s reached %d consecutive failures (threshold=%d); pausing job", job.ID, consecutiveFailed, s.maxFailedRunsBeforePause)
+				pausedJob := runningJob.WithStatus(domain.StatusPaused)
+				if saveErr := s.repo.Save(pausedJob); saveErr != nil {
+					log.Printf("RunJob - failed to save paused status for job %s: %v", id, saveErr)
+				} else {
+					if s.cronScheduler != nil {
+						s.cronScheduler.UnscheduleJob(id)
+					}
+					return nil
+				}
+			}
+		}
+	}
 
 	// Calculate next run time after execution
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)

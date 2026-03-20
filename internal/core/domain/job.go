@@ -36,15 +36,15 @@ const (
 )
 
 type Job struct {
-	ID        string      `json:"id"`
-	Name      string      `json:"name"`
-	OrgID     string      `json:"org_id"`
-	Username  string      `json:"username"`
-	UserID    string      `json:"user_id"`
-	Schedule  Schedule    `json:"schedule"`
-	Timezone  string      `json:"timezone"`
-	Type      PayloadType `json:"type"`
-	Payload   interface{} `json:"payload,omitempty"`
+	ID             string      `json:"id"`
+	Name           string      `json:"name"`
+	OrgID          string      `json:"org_id"`
+	Username       string      `json:"username"`
+	UserID         string      `json:"user_id"`
+	Schedule       Schedule    `json:"schedule"`
+	Timezone       string      `json:"timezone"`
+	Type           PayloadType `json:"type"`
+	Payload        interface{} `json:"payload,omitempty"`
 	Status    JobStatus   `json:"status"`
 	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
 	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
@@ -57,15 +57,15 @@ func NewJob(name string, orgID string, username string, userID string, schedule 
 	}
 
 	return Job{
-		ID:        uuid.New().String(),
-		Name:      name,
-		OrgID:     orgID,
-		Username:  username,
-		UserID:    userID,
-		Schedule:  schedule,
-		Timezone:  timezone,
-		Type:      payloadType,
-		Payload:   payload,
+		ID:            uuid.New().String(),
+		Name:          name,
+		OrgID:         orgID,
+		Username:      username,
+		UserID:        userID,
+		Schedule:      schedule,
+		Timezone:      timezone,
+		Type:          payloadType,
+		Payload:       payload,
 		Status:    StatusScheduled,
 		LastRunAt: nil,
 		NextRunAt: nil,
@@ -74,15 +74,15 @@ func NewJob(name string, orgID string, username string, userID string, schedule 
 
 func (j Job) WithStatus(status JobStatus) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		Username:  j.Username,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
+		ID:            j.ID,
+		Name:          j.Name,
+		OrgID:         j.OrgID,
+		Username:      j.Username,
+		UserID:        j.UserID,
+		Schedule:      j.Schedule,
+		Timezone:      j.Timezone,
+		Type:          j.Type,
+		Payload:       j.Payload,
 		Status:    status,
 		LastRunAt: j.LastRunAt,
 		NextRunAt: j.NextRunAt,
@@ -91,16 +91,16 @@ func (j Job) WithStatus(status JobStatus) Job {
 
 func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		Username:  j.Username,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    j.Status,
+		ID:            j.ID,
+		Name:          j.Name,
+		OrgID:         j.OrgID,
+		Username:      j.Username,
+		UserID:        j.UserID,
+		Schedule:      j.Schedule,
+		Timezone:      j.Timezone,
+		Type:          j.Type,
+		Payload:       j.Payload,
+		Status:        j.Status,
 		LastRunAt: &lastRunAt,
 		NextRunAt: j.NextRunAt,
 	}
@@ -108,16 +108,16 @@ func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 
 func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		Username:  j.Username,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    j.Status,
+		ID:            j.ID,
+		Name:          j.Name,
+		OrgID:         j.OrgID,
+		Username:      j.Username,
+		UserID:        j.UserID,
+		Schedule:      j.Schedule,
+		Timezone:      j.Timezone,
+		Type:          j.Type,
+		Payload:       j.Payload,
+		Status:        j.Status,
 		LastRunAt: j.LastRunAt,
 		NextRunAt: &nextRunAt,
 	}

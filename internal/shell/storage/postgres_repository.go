@@ -99,12 +99,12 @@ func (r *PostgresJobRepository) FindByID(id string) (domain.Job, error) {
 }
 
 func (r *PostgresJobRepository) FindAll() ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(max_failed_runs, 0)
 		FROM jobs ORDER BY created_at DESC`)
 }
 
 func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(max_failed_runs, 0)
 	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
 }
 
@@ -118,7 +118,7 @@ func (r *PostgresJobRepository) FindByUserID(userID string, offset, limit int) (
 	}
 
 	// Then get the paginated results
-	query := `SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	query := `SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(max_failed_runs, 0)
 	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
 	jobs, err := r.queryJobs(query, userID, limit, offset)
 	if err != nil {

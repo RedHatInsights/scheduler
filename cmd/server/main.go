@@ -321,8 +321,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize job executor with map of executors
 	jobExecutor := executor.NewJobExecutor(executors, runRepo)
 
-	// Create functional core service
-	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
+	coreJobService := usecases.NewJobService(repo, runRepo, schedulingService, jobExecutor, cfg.MaxFailedRunsBeforePause)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
 	// Create adapters for different consumers
