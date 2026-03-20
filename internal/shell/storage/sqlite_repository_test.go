@@ -26,7 +26,7 @@ func TestSQLiteJobRepository(t *testing.T) {
 		"count":   42,
 	}
 
-	job := domain.NewJob("Unit Test Job", "test-org-123", "testuser", "test-user-id", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
+	job := domain.NewJob("Unit Test Job", "test-org-123", "test-user-id", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 
 	// Test Save
 	if err := repo.Save(job); err != nil {
@@ -49,10 +49,6 @@ func TestSQLiteJobRepository(t *testing.T) {
 
 	if retrievedJob.OrgID != job.OrgID {
 		t.Errorf("Expected org_id %s, got %s", job.OrgID, retrievedJob.OrgID)
-	}
-
-	if retrievedJob.Username != job.Username {
-		t.Errorf("Expected username %s, got %s", job.Username, retrievedJob.Username)
 	}
 
 	if retrievedJob.UserID != job.UserID {
@@ -168,9 +164,9 @@ func TestSQLiteJobRepository_FindByOrgID(t *testing.T) {
 		"command": "org2 job",
 	}
 
-	job1 := domain.NewJob("Org1 Job", "org-1", "user1", "user1-id", "*/30 * * * *", "UTC", domain.PayloadMessage, payload1)
-	job2 := domain.NewJob("Org2 Job", "org-2", "user2", "user2-id", "0 * * * *", "UTC", domain.PayloadCommand, payload2)
-	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3", "user3-id", "0 12 * * *", "UTC", domain.PayloadMessage, payload1)
+	job1 := domain.NewJob("Org1 Job", "org-1", "user1-id", "*/30 * * * *", "UTC", domain.PayloadMessage, payload1)
+	job2 := domain.NewJob("Org2 Job", "org-2", "user2-id", "0 * * * *", "UTC", domain.PayloadCommand, payload2)
+	job3 := domain.NewJob("Another Org1 Job", "org-1", "user3-id", "0 12 * * *", "UTC", domain.PayloadMessage, payload1)
 
 	// Save all jobs
 	if err := repo.Save(job1); err != nil {

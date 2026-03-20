@@ -14,7 +14,7 @@ func TestToJobResponse(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
+	job := domain.NewJob("Test Job", "org-123", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 
 	// Convert to response DTO
 	response := ToJobResponse(job)
@@ -93,8 +93,8 @@ func TestToJobResponseList(t *testing.T) {
 		"message": "test message 2",
 	}
 
-	job1 := domain.NewJob("Test Job 1", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload1)
-	job2 := domain.NewJob("Test Job 2", "org-456", "testuser2", "user-456", "0 * * * *", "UTC", domain.PayloadCommand, payload2)
+	job1 := domain.NewJob("Test Job 1", "org-123", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload1)
+	job2 := domain.NewJob("Test Job 2", "org-456", "user-456", "0 * * * *", "UTC", domain.PayloadCommand, payload2)
 
 	jobs := []domain.Job{job1, job2}
 
@@ -143,7 +143,7 @@ func TestJobResponseWithLastRunAt(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
+	job := domain.NewJob("Test Job", "org-123", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 	now := time.Now()
 	job = job.WithLastRunAt(now)
 
@@ -164,7 +164,7 @@ func TestJobResponseTimezoneConversion(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "America/New_York", domain.PayloadMessage, payload)
+	job := domain.NewJob("Test Job", "org-123", "user-123", "*/15 * * * *", "America/New_York", domain.PayloadMessage, payload)
 
 	// Set next_run_at to a known UTC time: 2026-02-21 14:00:00 UTC
 	// This should be 2026-02-21 09:00:00 EST (America/New_York is UTC-5 in winter)
@@ -224,7 +224,7 @@ func TestJobResponseUTCTimezone(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := domain.NewJob("Test Job", "org-123", "testuser", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
+	job := domain.NewJob("Test Job", "org-123", "user-123", "*/15 * * * *", "UTC", domain.PayloadMessage, payload)
 
 	// Set next_run_at to a known UTC time
 	utcTime := time.Date(2026, 2, 21, 14, 0, 0, 0, time.UTC)

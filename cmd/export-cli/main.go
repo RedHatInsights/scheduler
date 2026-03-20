@@ -36,7 +36,7 @@ func main() {
 
 	// Generate identity header for the test using UserValidator
 	userValidator := identity.NewFakeUserValidator()
-	identityHeader, err := userValidator.GenerateIdentityHeader(ctx, *orgID, "testuser", "test-user-id")
+	identityHeader, err := userValidator.GenerateIdentityHeader(ctx, *orgID, "test-user-id")
 	if err != nil {
 		log.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
