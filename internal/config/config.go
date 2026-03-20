@@ -90,6 +90,8 @@ type DatabaseConfig struct {
 	// SSLMode for database connections (disable, require, verify-ca, verify-full)
 	SSLMode string `json:"ssl_mode"`
 
+	SSLRootCert string `json:"ssl_root_cert"`
+
 	// MaxOpenConnections for connection pooling
 	MaxOpenConnections int `json:"max_open_connections"`
 
@@ -363,6 +365,7 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 	username := getEnv("DB_USERNAME", "insights")
 	password := getEnv("DB_PASSWORD", "insights")
 	sslMode := getEnv("DB_SSL_MODE", "disable")
+	sslRootCert := ""
 
 	// Override with Clowder values if available
 	if clowderConfig != nil && clowderConfig.Database != nil {
@@ -373,6 +376,15 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 		username = clowderConfig.Database.Username
 		password = clowderConfig.Database.Password
 		sslMode = clowderConfig.Database.SslMode
+
+		if clowderConfig.Database.RdsCa != nil {
+			pathToDBCertFile, err := clowderConfig.RdsCa()
+			if err != nil {
+				panic(err)
+			}
+
+			sslRootCert = pathToDBCertFile
+		}
 	}
 
 	return DatabaseConfig{
@@ -384,6 +396,7 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 		Username:              username,
 		Password:              password,
 		SSLMode:               sslMode,
+		SSLRootCert:           sslRootCert,
 		MaxOpenConnections:    getEnvAsInt("DB_MAX_OPEN_CONNECTIONS", 25),
 		MaxIdleConnections:    getEnvAsInt("DB_MAX_IDLE_CONNECTIONS", 5),
 		ConnectionMaxLifetime: getEnvAsDuration("DB_CONNECTION_MAX_LIFETIME", 5*time.Minute),

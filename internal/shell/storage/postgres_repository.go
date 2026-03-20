@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -18,7 +19,10 @@ type PostgresJobRepository struct {
 
 func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error) {
 
-	connStr := buildConnectionString(cfg)
+	connStr, err := buildConnectionString(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -182,7 +186,26 @@ func (r *PostgresJobRepository) Close() error {
 	return r.db.Close()
 }
 
-func buildConnectionString(cfg *config.Config) string {
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.Username, cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
+func buildConnectionString(cfg *config.Config) (string, error) {
+	psqlConnectionInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s TimeZone=UTC",
+		cfg.Database.Host, cfg.Database.Port, cfg.Database.Username, cfg.Database.Password, cfg.Database.Name)
+
+	sslSettings, err := buildPostgresSslConfigString(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	psqlConnectionInfo += " " + sslSettings
+
+	return psqlConnectionInfo, nil
+}
+
+func buildPostgresSslConfigString(cfg *config.Config) (string, error) {
+	if cfg.Database.SSLMode == "disable" {
+		return "sslmode=disable", nil
+	} else if cfg.Database.SSLMode == "verify-full" {
+		return "sslmode=verify-full sslrootcert=" + cfg.Database.SSLRootCert, nil
+	} else {
+		return "", errors.New("Invalid SSL configuration for database connection: " + cfg.Database.SSLMode)
+	}
 }

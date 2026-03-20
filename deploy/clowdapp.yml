@@ -130,24 +130,6 @@ objects:
           value: 30s
         - name: SHUTDOWN_TIMEOUT
           value: 30s
-        - name: BOP_ENABLED
-          value: "true"
-        - name: BOP_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: backoffice
-              key: token
-        - name: BOP_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: backoffice
-              key: client-id
-        - name: BOP_INSIGHTS_ENV
-          value: ${ENV_NAME}
-        - name: BOP_URL
-          value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
-        - name: BOP_EPHEMERAL_MODE
-          value: "true"
         - name: USER_VALIDATOR_IMPL
           value: ${USER_VALIDATOR_IMPL}
         - name: JOB_COMPLETION_NOTIFIER_IMPL
@@ -255,24 +237,6 @@ objects:
           value: snappy
         - name: KAFKA_REQUIRED_ACKS
           value: "-1"
-        - name: BOP_ENABLED
-          value: "true"
-        - name: BOP_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: backoffice
-              key: token
-        - name: BOP_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: backoffice
-              key: client-id
-        - name: BOP_INSIGHTS_ENV
-          value: ${ENV_NAME}
-        - name: BOP_URL
-          value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
-        - name: BOP_EPHEMERAL_MODE
-          value: "true"
         - name: 3SCALE_URL
           value: ${3SCALE_URL}
 
@@ -344,7 +308,7 @@ parameters:
   required: true
 
 - name: USER_VALIDATOR_IMPL
-  value: "bop"
+  value: "3scale"
   required: true
 - name: 3SCALE_URL
   value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090

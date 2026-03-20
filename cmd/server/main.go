@@ -186,8 +186,8 @@ func createMigration(cfg *config.Config) (*migrate.Migrate, error) {
 			cfg.Database.SSLMode,
 		)
 		// Log connection info WITHOUT password
-		log.Printf("Running migrations for PostgreSQL database: %s@%s:%d/%s",
-			cfg.Database.Username, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name)
+		log.Printf("Running migrations for PostgreSQL database: %s@%s:%d/%s?sslmode=%s",
+			cfg.Database.Username, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name, cfg.Database.SSLMode)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
 	}
