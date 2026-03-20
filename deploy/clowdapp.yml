@@ -205,6 +205,8 @@ objects:
           value: "true"
         - name: ENABLE_PERIODIC_SYNC
           value: "true"
+        - name: SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL
+          value: "10m"
         - name: METRICS_ENABLED
           value: "true"
         - name: METRICS_PORT
@@ -237,8 +239,8 @@ objects:
           value: snappy
         - name: KAFKA_REQUIRED_ACKS
           value: "-1"
-        - name: 3SCALE_URL
-          value: ${3SCALE_URL}
+        - name: THREESCALE_URL
+          value: ${THREESCALE_URL}
 
 parameters:
 - description: Initial amount of memory the scheduler api container will request.
@@ -310,7 +312,7 @@ parameters:
 - name: USER_VALIDATOR_IMPL
   value: "3scale"
   required: true
-- name: 3SCALE_URL
+- name: THREESCALE_URL
   value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
 
 
