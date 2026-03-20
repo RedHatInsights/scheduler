@@ -721,6 +721,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 			scheduler.DBSyncDuration.Observe(syncDuration)
 			log.Printf("[WORKER] WARNING: Failed to load near-due jobs from Postgres: %v", err)
 			scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
+			scheduler.DBSyncFailures.WithLabelValues("postgres_load").Inc()
 		} else {
 			log.Printf("[WORKER] Loaded %d jobs due within %s, syncing to Redis...",
 				len(nearDueJobs), lookahead)
@@ -733,6 +734,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 			if syncErr != nil {
 				log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", syncErr)
 				scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
+				scheduler.DBSyncFailures.WithLabelValues("redis_sync").Inc()
 			} else {
 				scheduler.DBSyncTotal.WithLabelValues("startup", "success").Inc()
 
