@@ -11,10 +11,9 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRESQL_USER: insights
-          POSTGRESQL_PASSWORD: insights
+          POSTGRES_USER: insights
           POSTGRES_PASSWORD: insights
-          POSTGRESQL_DATABASE: scheduler
+          POSTGRES_DATABASE: scheduler
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
