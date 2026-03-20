@@ -72,7 +72,6 @@ func TestThreeScaleUserValidator_GenerateIdentityHeader(t *testing.T) {
 	header, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -136,7 +135,6 @@ func TestThreeScaleUserValidator_InactiveUser(t *testing.T) {
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -190,7 +188,6 @@ func TestThreeScaleUserValidator_OrgIDMismatch(t *testing.T) {
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -235,7 +232,6 @@ func TestThreeScaleUserValidator_NilUser(t *testing.T) {
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -289,7 +285,6 @@ func TestThreeScaleUserValidator_UserIDMismatch(t *testing.T) {
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -312,7 +307,6 @@ func TestThreeScaleUserValidator_HTTPError(t *testing.T) {
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -344,7 +338,6 @@ func TestThreeScaleUserValidator_StructuredErrorResponse(t *testing.T) {
 	_, err := validator.GenerateIdentityHeader(
 		context.Background(),
 		"org-123",
-		"testuser",
 		"user-456",
 	)
 
@@ -397,7 +390,6 @@ func TestThreeScaleUserValidator_EmptyParams(t *testing.T) {
 			_, err := validator.GenerateIdentityHeader(
 				context.Background(),
 				tt.orgID,
-				tt.username,
 				tt.userID,
 			)
 

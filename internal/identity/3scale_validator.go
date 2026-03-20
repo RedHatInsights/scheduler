@@ -55,12 +55,9 @@ type ThreeScaleError struct {
 }
 
 // GenerateIdentityHeader calls an HTTP GET service to validate user and generate identity header
-func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, username, userID string) (string, error) {
+func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, userID string) (string, error) {
 	if orgID == "" {
 		return "", fmt.Errorf("orgID cannot be empty")
-	}
-	if username == "" {
-		return "", fmt.Errorf("username cannot be empty")
 	}
 	if userID == "" {
 		return "", fmt.Errorf("userID cannot be empty")
@@ -68,8 +65,8 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 
 	// Generate UUID for request tracking
 	requestID := uuid.New().String()
-	log.Printf("[ThreeScaleUserValidator] Validating user - request_id=%s org_id=%s username=%s user_id=%s",
-		requestID, orgID, username, userID)
+	log.Printf("[ThreeScaleUserValidator] Validating user - request_id=%s org_id=%s user_id=%s",
+		requestID, orgID, userID)
 
 	// Construct the request URL with query parameters
 	url := fmt.Sprintf("%s/internal/userIdentity", v.baseURL)
@@ -190,13 +187,13 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 
 	// Validate user is active
 	if !identity.Identity.User.Active {
-		log.Printf("[ThreeScaleUserValidator] User is not active - request_id=%s username=%s user_id=%s",
-			requestID, username, userID)
+		log.Printf("[ThreeScaleUserValidator] User is not active - request_id=%s user_id=%s",
+			requestID, userID)
 		return "", fmt.Errorf("user is not active")
 	}
 
-	log.Printf("[ThreeScaleUserValidator] User validated successfully - request_id=%s org_id=%s username=%s",
-		requestID, identity.Identity.OrgID, username)
+	log.Printf("[ThreeScaleUserValidator] User validated successfully - request_id=%s org_id=%s",
+		requestID, identity.Identity.OrgID)
 
 	// Return the base64-encoded identity header as-is
 	return response.XRHIdentity, nil
