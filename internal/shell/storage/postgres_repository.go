@@ -208,7 +208,7 @@ func buildPostgresSslConfigString(cfg *config.Config) (string, error) {
 	if cfg.Database.SSLMode == "disable" {
 		return "sslmode=disable", nil
 	} else if cfg.Database.SSLMode == "verify-full" {
-		return "sslmode=verify-full sslrootcert=" + cfg.Database.SSLRootCert, nil
+		return "sslmode=verify-full&sslrootcert=" + cfg.Database.SSLRootCert, nil
 	} else {
 		return "", errors.New("Invalid SSL configuration for database connection: " + cfg.Database.SSLMode)
 	}
