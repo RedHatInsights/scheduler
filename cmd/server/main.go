@@ -119,7 +119,7 @@ func runDatabaseUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	m, err := createMigration(cfg)
+	m, err := storage.CreateMigration(cfg)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func runDatabaseDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	m, err := createMigration(cfg)
+	m, err := storage.CreateMigration(cfg)
 	if err != nil {
 		return err
 	}
@@ -159,48 +159,6 @@ func runDatabaseDown(cmd *cobra.Command, args []string) error {
 		log.Println("Successfully rolled back last migration")
 	}
 	return nil
-}
-
-type loggerWrapper struct {
-	*log.Logger
-}
-
-func (lw loggerWrapper) Verbose() bool {
-	return true
-}
-
-func createMigration(cfg *config.Config) (*migrate.Migrate, error) {
-	var databaseURL string
-
-	switch cfg.Database.Type {
-	case "sqlite":
-		databaseURL = fmt.Sprintf("sqlite3://%s", cfg.Database.Path)
-		log.Printf("Running migrations for SQLite database: %s", cfg.Database.Path)
-	case "postgres", "postgresql":
-		databaseURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-			cfg.Database.Username,
-			cfg.Database.Password,
-			cfg.Database.Host,
-			cfg.Database.Port,
-			cfg.Database.Name,
-			cfg.Database.SSLMode,
-		)
-		// Log connection info WITHOUT password
-		log.Printf("Running migrations for PostgreSQL database: %s@%s:%d/%s?sslmode=%s",
-			cfg.Database.Username, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name, cfg.Database.SSLMode)
-	default:
-		return nil, fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
-	}
-
-	migrationsPath := "file://db/migrations"
-	m, err := migrate.New(migrationsPath, databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize migration: %w", err)
-	}
-
-	m.Log = loggerWrapper{log.Default()}
-
-	return m, nil
 }
 
 func main() {
