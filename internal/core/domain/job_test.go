@@ -88,7 +88,7 @@ func TestNewJob(t *testing.T) {
 		"message": "test message",
 	}
 
-	job := NewJob("Test Job", "org-123", "testuser", "user-123", Schedule1Hour, "UTC", PayloadMessage, payload)
+	job := NewJob("Test Job", "org-123", "user-123", Schedule1Hour, "UTC", PayloadMessage, payload)
 
 	if job.ID == "" {
 		t.Error("Job ID should not be empty")
@@ -100,10 +100,6 @@ func TestNewJob(t *testing.T) {
 
 	if job.OrgID != "org-123" {
 		t.Errorf("Expected org_id 'org-123', got %s", job.OrgID)
-	}
-
-	if job.Username != "testuser" {
-		t.Errorf("Expected username 'testuser', got %s", job.Username)
 	}
 
 	if job.UserID != "user-123" {
@@ -128,20 +124,19 @@ func TestNewJob(t *testing.T) {
 }
 
 func TestJobUpdateFields(t *testing.T) {
-	job := NewJob("Original Job", "org-123", "originaluser", "user-123", Schedule1Hour, "UTC", PayloadMessage, map[string]interface{}{
+	job := NewJob("Original Job", "org-123", "user-123", Schedule1Hour, "UTC", PayloadMessage, map[string]interface{}{
 		"msg": "original",
 	})
 
 	newName := "Updated Job"
 	newOrgID := "org-456"
-	newUsername := "updateduser"
 	newUserID := "user-456"
 	newSchedule := Schedule1Day
 	newPayloadType := PayloadCommand
 	var newPayload interface{} = map[string]interface{}{"cmd": "ls"}
 	newStatus := StatusPaused
 
-	updatedJob := job.UpdateFields(&newName, &newOrgID, &newUsername, &newUserID, &newSchedule, &newPayloadType, &newPayload, &newStatus)
+	updatedJob := job.UpdateFields(&newName, &newOrgID, &newUserID, &newSchedule, &newPayloadType, &newPayload, &newStatus)
 
 	if updatedJob.ID != job.ID {
 		t.Error("Job ID should not change")
@@ -153,10 +148,6 @@ func TestJobUpdateFields(t *testing.T) {
 
 	if updatedJob.OrgID != newOrgID {
 		t.Errorf("Expected org_id %s, got %s", newOrgID, updatedJob.OrgID)
-	}
-
-	if updatedJob.Username != newUsername {
-		t.Errorf("Expected username %s, got %s", newUsername, updatedJob.Username)
 	}
 
 	if updatedJob.UserID != newUserID {

@@ -116,6 +116,12 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
@@ -143,6 +149,12 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
@@ -196,6 +208,12 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
@@ -236,6 +254,12 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
@@ -263,6 +287,12 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
@@ -289,6 +319,12 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
@@ -321,6 +357,12 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+
+	// Validate UUID format
+	if !validateUUID(id) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
+		return
+	}
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())

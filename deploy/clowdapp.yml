@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: Template
 metadata:
-  name: insights-scheduler
+  name: scheduler
 objects:
 
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdApp
   metadata:
-    name: insights-scheduler
+    name: scheduler
   spec:
     envName: ${ENV_NAME}
     optionalDependencies:
@@ -19,6 +19,7 @@ objects:
     database:
       name: scheduler
       version: 16
+    inMemoryDb: true
     kafkaTopics:
     - replicas: 3
       partitions: 16
@@ -33,6 +34,10 @@ objects:
         metrics:
           enabled: False
       minReplicas: ${{API_REPLICAS}}
+      deploymentStrategy:
+        rollingParams:
+          maxSurge: 25%
+          maxUnavailable: 25%
       podSpec:
         minReadySeconds: 15
         progressDeadlineSeconds: 600
@@ -62,31 +67,34 @@ objects:
               memory: 128Mi
         command:
           - ./scheduler
-        #livenessProbe:
-        #  failureThreshold: 3
-        #  httpGet:
-        #    path: /liveness
-        #    port: 10000
-        #    scheme: HTTP
-        #  periodSeconds: 10
-        #  successThreshold: 1
-        #  timeoutSeconds: 1
-        #readinessProbe:
-        #  failureThreshold: 3
-        #  httpGet:
-        #    path: /readiness
-        #    port: 10000
-        #    scheme: HTTP
-        #  periodSeconds: 10
-        #  successThreshold: 1
-        #  timeoutSeconds: 1
+          - api
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
         resources:
           limits:
-            cpu: ${CPU_LIMIT}
-            memory: ${MEMORY_LIMIT}
+            cpu: ${API_CPU_LIMIT}
+            memory: ${API_MEMORY_LIMIT}
           requests:
-            cpu: ${CPU_REQUEST}
-            memory: ${MEMORY_REQUEST}
+            cpu: ${API_CPU_REQUEST}
+            memory: ${API_MEMORY_REQUEST}
         env:
         - name: LOG_LEVEL
           value: INFO
@@ -101,7 +109,7 @@ objects:
         - name: DB_CONNECTION_MAX_LIFETIME
           value: 5m
         - name: KAFKA_CLIENT_ID
-          value: insights-scheduler
+          value: scheduler-api
         - name: KAFKA_TIMEOUT
           value: 30s
         - name: KAFKA_RETRIES
@@ -122,50 +130,161 @@ objects:
           value: 30s
         - name: SHUTDOWN_TIMEOUT
           value: 30s
-        - name: BOP_ENABLED
-          value: "true"
-        - name: BOP_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: backoffice
-              key: token
-        - name: BOP_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: backoffice
-              key: client-id
-        - name: BOP_INSIGHTS_ENV
-          value: ${ENV_NAME}
-        - name: BOP_URL
-          value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
-        - name: BOP_EPHEMERAL_MODE
-          value: "true"
         - name: USER_VALIDATOR_IMPL
           value: ${USER_VALIDATOR_IMPL}
         - name: JOB_COMPLETION_NOTIFIER_IMPL
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: REDIS_ENABLED
+          value: "true"
+
+    - name: worker
+      webServices:
+        private:
+          enabled: False
+        public:
+          enabled: False
+        metrics:
+          enabled: True
+      minReplicas: ${{WORKER_REPLICAS}}
+      deploymentStrategy:
+        rollingParams:
+          maxSurge: 1
+          maxUnavailable: 1
+      podSpec:
+        minReadySeconds: 15
+        progressDeadlineSeconds: 600
+        image: ${IMAGE}:${IMAGE_TAG}
+        command:
+          - ./scheduler
+          - worker
+        terminationGracePeriodSeconds: 300
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - sleep 15
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: ${WORKER_CPU_LIMIT}
+            memory: ${WORKER_MEMORY_LIMIT}
+          requests:
+            cpu: ${WORKER_CPU_REQUEST}
+            memory: ${WORKER_MEMORY_REQUEST}
+        env:
+        - name: LOG_LEVEL
+          value: INFO
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "25"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "5"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 5m
+        - name: REDIS_ENABLED
+          value: "true"
+        - name: ENABLE_PERIODIC_SYNC
+          value: "true"
+        - name: SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL
+          value: "10m"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: METRICS_NAMESPACE
+          value: insights
+        - name: METRICS_SUBSYSTEM
+          value: scheduler_worker
+        - name: USER_VALIDATOR_IMPL
+          value: ${USER_VALIDATOR_IMPL}
+        - name: JOB_COMPLETION_NOTIFIER_IMPL
+          value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: EXPORT_SERVICE_TIMEOUT
+          value: 5m
+        - name: EXPORT_SERVICE_MAX_RETRIES
+          value: "3"
+        - name: EXPORT_SERVICE_POLL_INTERVAL
+          value: 5s
+        - name: EXPORT_SERVICE_POLL_MAX_RETRIES
+          value: "60"
+        - name: SHUTDOWN_TIMEOUT
+          value: 300s
+        - name: KAFKA_CLIENT_ID
+          value: scheduler-worker
+        - name: KAFKA_TIMEOUT
+          value: 30s
+        - name: KAFKA_RETRIES
+          value: "5"
+        - name: KAFKA_COMPRESSION
+          value: snappy
+        - name: KAFKA_REQUIRED_ACKS
+          value: "-1"
+        - name: THREESCALE_URL
+          value: ${THREESCALE_URL}
 
 parameters:
-- description: Initial amount of memory the insights-scheduler container will request.
+- description: Initial amount of memory the scheduler api container will request.
   displayName: Memory Request
-  name: MEMORY_REQUEST
+  name: API_MEMORY_REQUEST
   required: true
   value: 256Mi
-- description: Maximum amount of memory the insights-scheduler.
+- description: Maximum amount of memory the scheduler api.
   displayName: Memory Limit
-  name: MEMORY_LIMIT
+  name: API_MEMORY_LIMIT
   required: true
   value: 512Mi
-- description: Initial amount of cpu the insights-scheduler container will request.
+- description: Initial amount of cpu the scheduler api container will request.
   displayName: CPU Request
-  name: CPU_REQUEST
+  name: API_CPU_REQUEST
   required: true
   value: 200m
-- description: Maximum amount of cpu the insights-scheduler container can use.
+- description: Maximum amount of cpu the scheduler api container can use.
   displayName: CPU Limit
-  name: CPU_LIMIT
+  name: API_CPU_LIMIT
   required: true
   value: 500m
+
+- description: Initial amount of memory the scheduler worker container will request.
+  displayName: Worker Memory Request
+  name: WORKER_MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the scheduler worker.
+  displayName: Worker Memory Limit
+  name: WORKER_MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: Initial amount of cpu the scheduler worker container will request.
+  displayName: Worker CPU Request
+  name: WORKER_CPU_REQUEST
+  required: true
+  value: 200m
+- description: Maximum amount of cpu the scheduler worker container can use.
+  displayName: Worker CPU Limit
+  name: WORKER_CPU_LIMIT
+  required: true
+  value: 1000m
+
 - description: The log level to use for logging
   displayName: The log level to use for logging
   name: LOG_LEVEL
@@ -173,13 +292,16 @@ parameters:
   value: DEBUG
 - name: LOG_FORMAT
   value: logstash
-- description: The number of replicas to use for the insights-scheduler api
+- description: The number of replicas to use for the scheduler api
   name: API_REPLICAS
   value: '1'
+- description: The number of replicas to use for the scheduler worker
+  name: WORKER_REPLICAS
+  value: '3'
 - description: Image
   name: IMAGE
   required: true
-  value: quay.io/dehort/insights-scheduler
+  value: quay.io/redhat-user-workloads/hcc-integrations-tenant/scheduler/scheduler
 - description: Image tag
   name: IMAGE_TAG
   required: true
@@ -188,8 +310,11 @@ parameters:
   required: true
 
 - name: USER_VALIDATOR_IMPL
-  value: "bop"
+  value: "3scale"
   required: true
+- name: THREESCALE_URL
+  value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
+
 
 - name: JOB_COMPLETION_NOTIFIER_IMPL
   value: "notifications"

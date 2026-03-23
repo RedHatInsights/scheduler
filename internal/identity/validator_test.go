@@ -13,45 +13,34 @@ func TestFakeUserValidator_GenerateIdentityHeader(t *testing.T) {
 	validator := NewFakeUserValidator()
 
 	tests := []struct {
-		name     string
-		orgID    string
-		username string
-		userID   string
-		wantErr  bool
+		name    string
+		orgID   string
+		userID  string
+		wantErr bool
 	}{
 		{
-			name:     "Valid org and user",
-			orgID:    "test-org",
-			username: "testuser",
-			userID:   "test-user-id",
-			wantErr:  false,
+			name:    "Valid org and user",
+			orgID:   "test-org",
+			userID:  "test-user-id",
+			wantErr: false,
 		},
 		{
-			name:     "Empty orgID",
-			orgID:    "",
-			username: "testuser",
-			userID:   "test-user-id",
-			wantErr:  true,
+			name:    "Empty orgID",
+			orgID:   "",
+			userID:  "test-user-id",
+			wantErr: true,
 		},
 		{
-			name:     "Empty username",
-			orgID:    "test-org",
-			username: "",
-			userID:   "test-user-id",
-			wantErr:  true,
-		},
-		{
-			name:     "Empty userID",
-			orgID:    "test-org",
-			username: "testuser",
-			userID:   "",
-			wantErr:  true,
+			name:    "Empty userID",
+			orgID:   "test-org",
+			userID:  "",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			identityHeader, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.username, tt.userID)
+			identityHeader, err := validator.GenerateIdentityHeader(context.Background(), tt.orgID, tt.userID)
 
 			if tt.wantErr {
 				if err == nil {
@@ -85,8 +74,10 @@ func TestFakeUserValidator_GenerateIdentityHeader(t *testing.T) {
 				t.Errorf("Expected OrgID '%s', got '%s'", tt.orgID, identity.Identity.OrgID)
 			}
 
-			if identity.Identity.User.Username != tt.username {
-				t.Errorf("Expected Username '%s', got '%s'", tt.username, identity.Identity.User.Username)
+			// Username is derived from userID
+			expectedUsername := "user-" + tt.userID
+			if identity.Identity.User.Username != expectedUsername {
+				t.Errorf("Expected Username '%s', got '%s'", expectedUsername, identity.Identity.User.Username)
 			}
 
 			if identity.Identity.Type != "User" {

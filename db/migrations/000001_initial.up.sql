@@ -1,16 +1,15 @@
 CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     org_id TEXT NOT NULL,
-    username TEXT NOT NULL,
     user_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'UTC',
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL,
     status TEXT NOT NULL,
-    last_run_at TEXT,
-    next_run_at TEXT,
+    last_run_at TIMESTAMP WITH TIME ZONE,
+    next_run_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -20,8 +19,9 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_timezone ON jobs(timezone);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_last_run_at ON jobs(last_run_at);
-CREATE INDEX IF NOT EXISTS idx_jobs_next_run_at ON jobs(next_run_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_last_run_at ON jobs(last_run_at) WHERE last_run_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_jobs_next_run_at ON jobs(next_run_at) WHERE next_run_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_next_run ON jobs(next_run_at) WHERE status = 'scheduled';
 
 --CREATE OR REPLACE FUNCTION update_updated_at_column()
 --RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = CURRENT_TIMESTAMP; RETURN NEW; END; $$ language 'plpgsql';
@@ -33,14 +33,14 @@ CREATE INDEX IF NOT EXISTS idx_jobs_next_run_at ON jobs(next_run_at);
 
 
 CREATE TABLE IF NOT EXISTS job_runs (
-	id TEXT PRIMARY KEY,
-	job_id TEXT NOT NULL,
+	id UUID PRIMARY KEY,
+	job_id UUID NOT NULL,
 	status TEXT NOT NULL,
-	start_time TEXT NOT NULL,
-	end_time TEXT,
+	start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+	end_time TIMESTAMP WITH TIME ZONE,
 	error_message TEXT,
 	result TEXT,
-	created_at TEXT NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
 

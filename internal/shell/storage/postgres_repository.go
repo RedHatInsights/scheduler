@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -18,7 +19,10 @@ type PostgresJobRepository struct {
 
 func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error) {
 
-	connStr := buildConnectionString(cfg)
+	connStr, err := buildConnectionString(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -51,28 +55,28 @@ func (r *PostgresJobRepository) Save(job domain.Job) error {
 	}
 
 	query := `
-		INSERT INTO jobs (id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+		INSERT INTO jobs (id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
 			COALESCE((SELECT created_at FROM jobs WHERE id = $1), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
-			name = EXCLUDED.name, org_id = EXCLUDED.org_id, username = EXCLUDED.username, user_id = EXCLUDED.user_id,
+			name = EXCLUDED.name, org_id = EXCLUDED.org_id, user_id = EXCLUDED.user_id,
 			schedule = EXCLUDED.schedule, timezone = EXCLUDED.timezone, payload_type = EXCLUDED.payload_type, payload_details = EXCLUDED.payload_details,
 			status = EXCLUDED.status, last_run_at = EXCLUDED.last_run_at, next_run_at = EXCLUDED.next_run_at, updated_at = CURRENT_TIMESTAMP`
 
-	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.Username, job.UserID,
+	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.UserID,
 		string(job.Schedule), job.Timezone, string(job.Type), string(payloadJSON), string(job.Status), lastRunAt, nextRunAt)
 	return err
 }
 
 func (r *PostgresJobRepository) FindByID(id string) (domain.Job, error) {
-	query := `SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 		FROM jobs WHERE id = $1`
 
 	var job domain.Job
 	var payloadJSON string
 	var lastRunAtStr, nextRunAtStr sql.NullString
 
-	err := r.db.QueryRow(query, id).Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID,
+	err := r.db.QueryRow(query, id).Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID,
 		&job.Schedule, &job.Timezone, &job.Type, &payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
 
 	if err == sql.ErrNoRows {
@@ -99,12 +103,12 @@ func (r *PostgresJobRepository) FindByID(id string) (domain.Job, error) {
 }
 
 func (r *PostgresJobRepository) FindAll() ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(max_failed_runs, 0)
+	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 		FROM jobs ORDER BY created_at DESC`)
 }
 
 func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(max_failed_runs, 0)
+	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
 }
 
@@ -118,7 +122,7 @@ func (r *PostgresJobRepository) FindByUserID(userID string, offset, limit int) (
 	}
 
 	// Then get the paginated results
-	query := `SELECT id, name, org_id, username, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(max_failed_runs, 0)
+	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
 	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
 	jobs, err := r.queryJobs(query, userID, limit, offset)
 	if err != nil {
@@ -141,7 +145,7 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 		var payloadJSON string
 		var lastRunAtStr, nextRunAtStr sql.NullString
 
-		if err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.Username, &job.UserID,
+		if err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID,
 			&job.Schedule, &job.Timezone, &job.Type, &payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr); err != nil {
 			return nil, err
 		}
@@ -182,7 +186,30 @@ func (r *PostgresJobRepository) Close() error {
 	return r.db.Close()
 }
 
-func buildConnectionString(cfg *config.Config) string {
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.Username, cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
+func buildConnectionString(cfg *config.Config) (string, error) {
+	sslSettings, err := buildPostgresSslConfigString(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?%s&options=-ctimezone=UTC",
+		cfg.Database.Username,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Name,
+		sslSettings,
+	)
+
+	return databaseURL, nil
+}
+
+func buildPostgresSslConfigString(cfg *config.Config) (string, error) {
+	if cfg.Database.SSLMode == "disable" {
+		return "sslmode=disable", nil
+	} else if cfg.Database.SSLMode == "verify-full" {
+		return "sslmode=verify-full&sslrootcert=" + cfg.Database.SSLRootCert, nil
+	} else {
+		return "", errors.New("Invalid SSL configuration for database connection: " + cfg.Database.SSLMode)
+	}
 }

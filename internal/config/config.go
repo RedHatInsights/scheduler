@@ -18,6 +18,9 @@ type Config struct {
 	// Database configuration (uses Clowder when available)
 	Database DatabaseConfig `json:"database"`
 
+	// Redis configuration
+	Redis RedisConfig `json:"redis"`
+
 	// Kafka configuration (uses Clowder when available)
 	Kafka KafkaConfig `json:"kafka"`
 
@@ -29,6 +32,12 @@ type Config struct {
 
 	// BOP service configuration
 	Bop BopConfig `json:"bop"`
+
+	// Scheduler configuration
+	Scheduler SchedulerConfig `json:"scheduler"`
+
+	// 3scale service configuration
+	ThreeScale ThreeScaleConfig `json:"threescale"`
 
 	UserValidatorImpl         string
 	JobCompletionNotifierImpl string
@@ -84,6 +93,8 @@ type DatabaseConfig struct {
 	// SSLMode for database connections (disable, require, verify-ca, verify-full)
 	SSLMode string `json:"ssl_mode"`
 
+	SSLRootCert string `json:"ssl_root_cert"`
+
 	// MaxOpenConnections for connection pooling
 	MaxOpenConnections int `json:"max_open_connections"`
 
@@ -92,6 +103,27 @@ type DatabaseConfig struct {
 
 	// ConnectionMaxLifetime for connection recycling
 	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
+}
+
+// RedisConfig contains Redis connection settings
+type RedisConfig struct {
+	// Enabled indicates if Redis integration is active
+	Enabled bool `json:"enabled"`
+
+	// Host for Redis server
+	Host string `json:"host"`
+
+	// Port for Redis server
+	Port int `json:"port"`
+
+	// Password for Redis authentication (optional)
+	Password string `json:"password"`
+
+	// DB number to use (0-15)
+	DB int `json:"db"`
+
+	// PoolSize for connection pooling
+	PoolSize int `json:"pool_size"`
 }
 
 // KafkaConfig contains Kafka connection settings
@@ -219,6 +251,30 @@ type BopConfig struct {
 	EphemeralMode bool `json:"ephemeral_mode"`
 }
 
+// SchedulerConfig contains scheduler timing and polling settings
+type SchedulerConfig struct {
+	// GracefulShutdownTimeout is the maximum time to wait for in-flight jobs during shutdown
+	GracefulShutdownTimeout time.Duration `json:"graceful_shutdown_timeout"`
+
+	// RedisPollInterval is how often workers check Redis for due jobs
+	RedisPollInterval time.Duration `json:"redis_poll_interval"`
+
+	// DBToRedisSyncInterval is how often workers sync jobs from PostgreSQL to Redis
+	DBToRedisSyncInterval time.Duration `json:"db_to_redis_sync_interval"`
+}
+
+// ThreeScaleConfig contains 3scale API Management service settings
+type ThreeScaleConfig struct {
+	// BaseURL for the 3scale API
+	BaseURL string `json:"base_url"`
+
+	// Timeout for 3scale validation requests
+	Timeout time.Duration `json:"timeout"`
+
+	// Enabled indicates if 3scale integration is active
+	Enabled bool `json:"enabled"`
+}
+
 // LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
 func LoadConfig() (*Config, error) {
 	var clowderConfig *clowder.AppConfig
@@ -242,6 +298,9 @@ func LoadConfig() (*Config, error) {
 	// Load database configuration with Clowder integration
 	config.Database = loadDatabaseConfig(clowderConfig)
 
+	// Load Redis configuration with Clowder integration
+	config.Redis = loadRedisConfig(clowderConfig)
+
 	// Load Kafka configuration with Clowder integration
 	config.Kafka = loadKafkaConfig(clowderConfig)
 
@@ -253,6 +312,12 @@ func LoadConfig() (*Config, error) {
 
 	// Load BOP configuration
 	config.Bop = loadBopConfig()
+
+	// Load scheduler configuration
+	config.Scheduler = loadSchedulerConfig()
+
+	// Load 3scale configuration
+	config.ThreeScale = loadThreeScaleConfig()
 
 	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
 	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
@@ -304,6 +369,7 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 	username := getEnv("DB_USERNAME", "insights")
 	password := getEnv("DB_PASSWORD", "insights")
 	sslMode := getEnv("DB_SSL_MODE", "disable")
+	sslRootCert := ""
 
 	// Override with Clowder values if available
 	if clowderConfig != nil && clowderConfig.Database != nil {
@@ -314,6 +380,15 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 		username = clowderConfig.Database.Username
 		password = clowderConfig.Database.Password
 		sslMode = clowderConfig.Database.SslMode
+
+		if clowderConfig.Database.RdsCa != nil {
+			pathToDBCertFile, err := clowderConfig.RdsCa()
+			if err != nil {
+				panic(err)
+			}
+
+			sslRootCert = pathToDBCertFile
+		}
 	}
 
 	return DatabaseConfig{
@@ -325,9 +400,57 @@ func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
 		Username:              username,
 		Password:              password,
 		SSLMode:               sslMode,
+		SSLRootCert:           sslRootCert,
 		MaxOpenConnections:    getEnvAsInt("DB_MAX_OPEN_CONNECTIONS", 25),
 		MaxIdleConnections:    getEnvAsInt("DB_MAX_IDLE_CONNECTIONS", 5),
 		ConnectionMaxLifetime: getEnvAsDuration("DB_CONNECTION_MAX_LIFETIME", 5*time.Minute),
+	}
+}
+
+// loadRedisConfig loads Redis configuration with Clowder integration
+func loadRedisConfig(clowderConfig *clowder.AppConfig) RedisConfig {
+	// Default values from environment
+	enabled := getEnvAsBool("REDIS_ENABLED", false)
+	host := getEnv("REDIS_HOST", "localhost")
+	port := getEnvAsInt("REDIS_PORT", 6379)
+	password := getEnv("REDIS_PASSWORD", "")
+	db := getEnvAsInt("REDIS_DB", 0)
+	poolSize := getEnvAsInt("REDIS_POOL_SIZE", 10)
+
+	// Override with Clowder InMemoryDb values if available
+	if clowderConfig != nil && clowderConfig.InMemoryDb != nil {
+		enabled = true // Clowder provides Redis, so enable it
+		host = clowderConfig.InMemoryDb.Hostname
+		port = clowderConfig.InMemoryDb.Port
+
+		// Use password if provided by Clowder
+		if clowderConfig.InMemoryDb.Password != nil && *clowderConfig.InMemoryDb.Password != "" {
+			password = *clowderConfig.InMemoryDb.Password
+			fmt.Println("Redis authentication: password configured")
+		}
+
+		// Use username if provided (some Redis configs use username for ACLs)
+		// Note: go-redis client doesn't use username in basic auth, but we log it for awareness
+		if clowderConfig.InMemoryDb.Username != nil && *clowderConfig.InMemoryDb.Username != "" {
+			fmt.Printf("Redis username provided: %s (note: currently only password auth is used)\n", *clowderConfig.InMemoryDb.Username)
+			// Could be used for Redis 6+ ACL authentication if needed in the future
+			// For now, we only use password-based auth which is compatible with both old and new Redis
+		}
+	} else {
+		if enabled {
+			fmt.Printf("Redis: %s:%d\n", host, port)
+		} else {
+			fmt.Println("Redis: disabled")
+		}
+	}
+
+	return RedisConfig{
+		Enabled:  enabled,
+		Host:     host,
+		Port:     port,
+		Password: password,
+		DB:       db,
+		PoolSize: poolSize,
 	}
 }
 
@@ -460,6 +583,28 @@ func loadBopConfig() BopConfig {
 	}
 }
 
+// loadSchedulerConfig loads scheduler timing configuration from environment
+func loadSchedulerConfig() SchedulerConfig {
+	return SchedulerConfig{
+		GracefulShutdownTimeout: getEnvAsDuration("SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT", 30*time.Second),
+		RedisPollInterval:       getEnvAsDuration("SCHEDULER_REDIS_POLL_INTERVAL", 10*time.Second),
+		DBToRedisSyncInterval:   getEnvAsDuration("SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL", 1*time.Hour),
+	}
+}
+
+// loadThreeScaleConfig loads 3scale configuration from environment
+func loadThreeScaleConfig() ThreeScaleConfig {
+	baseURL := getEnv("THREESCALE_URL", "http://3scale-service:8000")
+	timeout := getEnvAsDuration("THREESCALE_TIMEOUT", 5*time.Second)
+	enabled := getEnvAsBool("THREESCALE_ENABLED", true)
+
+	return ThreeScaleConfig{
+		BaseURL: baseURL,
+		Timeout: timeout,
+		Enabled: enabled,
+	}
+}
+
 func getOpenshiftNamespace() (string, error) {
 	filePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
@@ -508,6 +653,16 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate Redis configuration
+	if c.Redis.Enabled {
+		if c.Redis.Host == "" {
+			return fmt.Errorf("redis host is required when redis is enabled")
+		}
+		if c.Redis.Port < 1 || c.Redis.Port > 65535 {
+			return fmt.Errorf("invalid redis port: %d", c.Redis.Port)
+		}
+	}
+
 	// Validate export service configuration
 	if c.ExportService.BaseURL == "" {
 		return fmt.Errorf("export service base URL is required")
@@ -526,6 +681,13 @@ func (c *Config) Validate() error {
 		}
 		if c.Bop.InsightsEnv == "" {
 			return fmt.Errorf("BOP insights environment is required when BOP is enabled")
+		}
+	}
+
+	// Validate 3scale configuration (only if enabled)
+	if c.ThreeScale.Enabled {
+		if c.ThreeScale.BaseURL == "" {
+			return fmt.Errorf("3scale base URL is required when 3scale is enabled")
 		}
 	}
 

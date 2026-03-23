@@ -115,11 +115,10 @@ func TestJobAPI_Contract_TimezoneFieldRequired(t *testing.T) {
 			}
 
 			job := domain.Job{
-				ID:        "test-job-123",
+				ID:        "550e8400-e29b-41d4-a716-446655440010",
 				Name:      name,
 				OrgID:     ident.Identity.OrgID,
 				UserID:    ident.Identity.User.UserID,
-				Username:  ident.Identity.User.Username,
 				Schedule:  domain.Schedule(schedule),
 				Timezone:  timezone,
 				Type:      payloadType,
@@ -189,7 +188,6 @@ func TestJobAPI_Contract_ResponseFields(t *testing.T) {
 							Name:      "Test Job",
 							OrgID:     ident.Identity.OrgID,
 							UserID:    ident.Identity.User.UserID,
-							Username:  ident.Identity.User.Username,
 							Schedule:  "0 9 * * *",
 							Timezone:  "America/New_York",
 							Type:      domain.PayloadExport,
@@ -210,7 +208,7 @@ func TestJobAPI_Contract_ResponseFields(t *testing.T) {
 			_ = NewJobHandler(mockService) // Verify handler can be created with mock
 
 			// Get job from service - identity is required
-			job, err := mockService.GetJob(context.Background(), testIdent, "test-job-1")
+			job, err := mockService.GetJob(context.Background(), testIdent, "550e8400-e29b-41d4-a716-446655440011")
 			if err != nil {
 				t.Fatalf("Failed to get job: %v", err)
 			}
@@ -273,10 +271,11 @@ func TestJobAPI_Contract_AuthorizationEnforcement(t *testing.T) {
 	}
 
 	// Create mock that verifies identity is checked
+	jobID := "550e8400-e29b-41d4-a716-446655440012"
 	mockService := &mockAuthorizedJobService{
 		getJobFunc: func(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error) {
 			// Simulate authorization check - only return job if it belongs to user
-			if id == "job-1" && ident.Identity.User.UserID != "user-1" {
+			if id == jobID && ident.Identity.User.UserID != "user-1" {
 				return domain.Job{}, domain.ErrJobNotFound // Don't leak existence
 			}
 
@@ -285,7 +284,6 @@ func TestJobAPI_Contract_AuthorizationEnforcement(t *testing.T) {
 				Name:     "Test Job",
 				OrgID:    "org-123",
 				UserID:   "user-1",
-				Username: "user1",
 				Schedule: "0 9 * * *",
 				Timezone: "UTC",
 				Type:     domain.PayloadExport,
@@ -295,7 +293,7 @@ func TestJobAPI_Contract_AuthorizationEnforcement(t *testing.T) {
 	}
 
 	// User 1 can access their job
-	job, err := mockService.GetJob(context.Background(), user1Ident, "job-1")
+	job, err := mockService.GetJob(context.Background(), user1Ident, jobID)
 	if err != nil {
 		t.Errorf("User 1 should be able to access their job: %v", err)
 	}
@@ -304,7 +302,7 @@ func TestJobAPI_Contract_AuthorizationEnforcement(t *testing.T) {
 	}
 
 	// User 2 cannot access user 1's job
-	_, err = mockService.GetJob(context.Background(), user2Ident, "job-1")
+	_, err = mockService.GetJob(context.Background(), user2Ident, jobID)
 	if err != domain.ErrJobNotFound {
 		t.Errorf("User 2 should not be able to access user 1's job, expected ErrJobNotFound, got %v", err)
 	}

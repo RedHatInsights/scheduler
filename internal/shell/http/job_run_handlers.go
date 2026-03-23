@@ -27,6 +27,12 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	jobID := vars["id"]
 
+	// Validate UUID format
+	if !validateUUID(jobID) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", jobID)})
+		return
+	}
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
@@ -64,6 +70,12 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	runID := vars["run_id"]
+
+	// Validate UUID format
+	if !validateUUID(runID) {
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("run ID", runID)})
+		return
+	}
 
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())

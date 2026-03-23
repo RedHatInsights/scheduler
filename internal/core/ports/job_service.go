@@ -11,7 +11,7 @@ import (
 // timeouts, and request-scoped values.
 type JobService interface {
 	// CreateJob creates a new scheduled job
-	CreateJob(ctx context.Context, name, orgID, username, userID, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error)
+	CreateJob(ctx context.Context, name, orgID, userID, schedule, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error)
 
 	// GetJob retrieves a job by ID (no authorization check)
 	GetJob(ctx context.Context, id string) (domain.Job, error)
@@ -29,7 +29,7 @@ type JobService interface {
 	GetJobsByOrgID(ctx context.Context, orgID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
 
 	// UpdateJob updates an existing job (full update)
-	UpdateJob(ctx context.Context, id, name, orgID, username, userID, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
+	UpdateJob(ctx context.Context, id, name, orgID, userID, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
 
 	// PatchJobWithUserCheck partially updates a job with user authorization check
 	PatchJobWithUserCheck(ctx context.Context, id, userID string, updates map[string]interface{}) (domain.Job, error)

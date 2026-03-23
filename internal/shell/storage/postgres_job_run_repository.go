@@ -17,7 +17,10 @@ type PostgresJobRunRepository struct {
 
 func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository, error) {
 
-	connStr := buildConnectionString(cfg)
+	connStr, err := buildConnectionString(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build database connection string: %w", err)
+	}
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {

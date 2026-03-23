@@ -99,3 +99,54 @@ Jobs support four payload types:
 - `http_request` - HTTP requests (simulated)
 - `command` - Command execution (simulated)
 - `export` - Red Hat Insights export service integration (production implementation)
+
+## Environment Variables
+
+### Scheduler Timing Configuration
+
+**Graceful Shutdown Timeout**:
+- Variable: `SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT`
+- Default: `30s`
+- Description: Maximum time to wait for in-flight jobs during shutdown
+- Example: `SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT=60s`
+
+**Redis Poll Interval**:
+- Variable: `SCHEDULER_REDIS_POLL_INTERVAL`
+- Default: `10s`
+- Description: How often workers check Redis for due jobs
+- Example: `SCHEDULER_REDIS_POLL_INTERVAL=5s`
+
+**Database to Redis Sync Interval**:
+- Variable: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL`
+- Default: `1h`
+- Description: How often workers sync jobs from PostgreSQL to Redis (requires `ENABLE_PERIODIC_SYNC=true`)
+- Example: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=30m`
+
+### Database Configuration
+
+- `DB_TYPE`: Database type (`sqlite`, `postgres`)
+- `DB_HOST`: Database host (for postgres)
+- `DB_PORT`: Database port (default: `5432`)
+- `DB_NAME`: Database name (default: `scheduler`)
+- `DB_USERNAME`: Database username
+- `DB_PASSWORD`: Database password
+
+### Redis Configuration
+
+- `REDIS_ENABLED`: Enable Redis for distributed scheduling (`true`/`false`)
+- `REDIS_HOST`: Redis server host
+- `REDIS_PORT`: Redis server port (default: `6379`)
+- `REDIS_PASSWORD`: Redis authentication password (optional)
+
+### Kafka Configuration
+
+- `KAFKA_BROKERS`: Comma-separated list of Kafka broker addresses
+- `KAFKA_TOPIC`: Topic for notifications (default: `platform.notifications.ingress`)
+- `KAFKA_SASL_ENABLED`: Enable SASL authentication (`true`/`false`)
+
+### User Validation
+
+- `USER_VALIDATOR_IMPL`: Implementation to use (`fake`, `bop`, `3scale`)
+- `BOP_URL`: Back Office Portal API URL
+- `BOP_API_TOKEN`: BOP authentication token
+- `THREESCALE_URL`: 3scale validation service URL
