@@ -670,18 +670,24 @@
             "nullable": true,
             "description": "Timestamp of the next scheduled job execution in the job's timezone. Calculated from the cron schedule in the job's timezone and returned with the appropriate offset (e.g., \"2025-12-01T09:00:00-05:00\" for a 9 AM job in America/New_York).",
             "example": "2025-12-01T09:00:00-05:00"
+          },
+          "consecutive_failure_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Current streak of consecutive failed runs; reset to 0 after a successful run or when the job is resumed."
           }
         }
       },
       "JobPayload": {},
       "JobStatus": {
         "type": "string",
-        "description": "Current status of the job",
+        "description": "Current status of the job. `paused_with_errors` means the job was auto-paused after reaching the configured consecutive failure limit (SCHEDULER_MAX_FAILED_RUNS_BEFORE_PAUSE).",
         "enum": [
           "scheduled",
           "running",
           "paused",
-          "failed"
+          "failed",
+          "paused_with_errors"
         ],
         "example": "scheduled"
       },

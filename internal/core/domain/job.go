@@ -11,10 +11,11 @@ import (
 type JobStatus string
 
 const (
-	StatusScheduled JobStatus = "scheduled"
-	StatusRunning   JobStatus = "running"
-	StatusPaused    JobStatus = "paused"
-	StatusFailed    JobStatus = "failed"
+	StatusScheduled       JobStatus = "scheduled"
+	StatusRunning         JobStatus = "running"
+	StatusPaused          JobStatus = "paused"
+	StatusFailed          JobStatus = "failed"
+	StatusPausedWithErrors JobStatus = "paused_with_errors" // auto-paused after consecutive failures (see SCHEDULER_MAX_FAILED_RUNS_BEFORE_PAUSE)
 )
 
 type PayloadType string
@@ -44,9 +45,10 @@ type Job struct {
 	Timezone  string      `json:"timezone"`
 	Type      PayloadType `json:"type"`
 	Payload   interface{} `json:"payload,omitempty"`
-	Status    JobStatus   `json:"status"`
-	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
-	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
+	Status                   JobStatus   `json:"status"`
+	LastRunAt                *time.Time  `json:"last_run_at,omitempty"`
+	NextRunAt                *time.Time  `json:"next_run_at,omitempty"`
+	ConsecutiveFailureCount  int         `json:"consecutive_failure_count,omitempty"` // streak of failed runs; reset on success or resume
 }
 
 func NewJob(name string, orgID string, userID string, schedule Schedule, timezone string, payloadType PayloadType, payload interface{}) Job {
@@ -64,57 +66,78 @@ func NewJob(name string, orgID string, userID string, schedule Schedule, timezon
 		Timezone:  timezone,
 		Type:      payloadType,
 		Payload:   payload,
-		Status:    StatusScheduled,
-		LastRunAt: nil,
-		NextRunAt: nil,
+		Status:                  StatusScheduled,
+		LastRunAt:               nil,
+		NextRunAt:               nil,
+		ConsecutiveFailureCount: 0,
 	}
 }
 
 func (j Job) WithStatus(status JobStatus) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    status,
-		LastRunAt: j.LastRunAt,
-		NextRunAt: j.NextRunAt,
+		ID:                      j.ID,
+		Name:                    j.Name,
+		OrgID:                   j.OrgID,
+		UserID:                  j.UserID,
+		Schedule:                j.Schedule,
+		Timezone:                j.Timezone,
+		Type:                    j.Type,
+		Payload:                 j.Payload,
+		Status:                  status,
+		LastRunAt:               j.LastRunAt,
+		NextRunAt:               j.NextRunAt,
+		ConsecutiveFailureCount: j.ConsecutiveFailureCount,
 	}
 }
 
 func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    j.Status,
-		LastRunAt: &lastRunAt,
-		NextRunAt: j.NextRunAt,
+		ID:                      j.ID,
+		Name:                    j.Name,
+		OrgID:                   j.OrgID,
+		UserID:                  j.UserID,
+		Schedule:                j.Schedule,
+		Timezone:                j.Timezone,
+		Type:                    j.Type,
+		Payload:                 j.Payload,
+		Status:                  j.Status,
+		LastRunAt:               &lastRunAt,
+		NextRunAt:               j.NextRunAt,
+		ConsecutiveFailureCount: j.ConsecutiveFailureCount,
 	}
 }
 
 func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    j.Status,
-		LastRunAt: j.LastRunAt,
-		NextRunAt: &nextRunAt,
+		ID:                      j.ID,
+		Name:                    j.Name,
+		OrgID:                   j.OrgID,
+		UserID:                  j.UserID,
+		Schedule:                j.Schedule,
+		Timezone:                j.Timezone,
+		Type:                    j.Type,
+		Payload:                 j.Payload,
+		Status:                  j.Status,
+		LastRunAt:               j.LastRunAt,
+		NextRunAt:               &nextRunAt,
+		ConsecutiveFailureCount: j.ConsecutiveFailureCount,
+	}
+}
+
+func (j Job) WithConsecutiveFailureCount(n int) Job {
+	return Job{
+		ID:                      j.ID,
+		Name:                    j.Name,
+		OrgID:                   j.OrgID,
+		UserID:                  j.UserID,
+		Schedule:                j.Schedule,
+		Timezone:                j.Timezone,
+		Type:                    j.Type,
+		Payload:                 j.Payload,
+		Status:                  j.Status,
+		LastRunAt:               j.LastRunAt,
+		NextRunAt:               j.NextRunAt,
+		ConsecutiveFailureCount: n,
 	}
 }
 
@@ -180,7 +203,7 @@ func IsValidPayloadType(pt string) bool {
 
 func IsValidStatus(s string) bool {
 	switch JobStatus(s) {
-	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed:
+	case StatusScheduled, StatusRunning, StatusPaused, StatusFailed, StatusPausedWithErrors:
 		return true
 	default:
 		return false

@@ -55,21 +55,22 @@ func (r *PostgresJobRepository) Save(job domain.Job) error {
 	}
 
 	query := `
-		INSERT INTO jobs (id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+		INSERT INTO jobs (id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, consecutive_failure_count, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
 			COALESCE((SELECT created_at FROM jobs WHERE id = $1), CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name, org_id = EXCLUDED.org_id, user_id = EXCLUDED.user_id,
 			schedule = EXCLUDED.schedule, timezone = EXCLUDED.timezone, payload_type = EXCLUDED.payload_type, payload_details = EXCLUDED.payload_details,
-			status = EXCLUDED.status, last_run_at = EXCLUDED.last_run_at, next_run_at = EXCLUDED.next_run_at, updated_at = CURRENT_TIMESTAMP`
+			status = EXCLUDED.status, last_run_at = EXCLUDED.last_run_at, next_run_at = EXCLUDED.next_run_at,
+			consecutive_failure_count = EXCLUDED.consecutive_failure_count, updated_at = CURRENT_TIMESTAMP`
 
 	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.UserID,
-		string(job.Schedule), job.Timezone, string(job.Type), string(payloadJSON), string(job.Status), lastRunAt, nextRunAt)
+		string(job.Schedule), job.Timezone, string(job.Type), string(payloadJSON), string(job.Status), lastRunAt, nextRunAt, job.ConsecutiveFailureCount)
 	return err
 }
 
 func (r *PostgresJobRepository) FindByID(id string) (domain.Job, error) {
-	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(consecutive_failure_count, 0)
 		FROM jobs WHERE id = $1`
 
 	var job domain.Job
@@ -77,7 +78,7 @@ func (r *PostgresJobRepository) FindByID(id string) (domain.Job, error) {
 	var lastRunAtStr, nextRunAtStr sql.NullString
 
 	err := r.db.QueryRow(query, id).Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID,
-		&job.Schedule, &job.Timezone, &job.Type, &payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
+		&job.Schedule, &job.Timezone, &job.Type, &payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr, &job.ConsecutiveFailureCount)
 
 	if err == sql.ErrNoRows {
 		return domain.Job{}, domain.ErrJobNotFound
@@ -103,12 +104,12 @@ func (r *PostgresJobRepository) FindByID(id string) (domain.Job, error) {
 }
 
 func (r *PostgresJobRepository) FindAll() ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(consecutive_failure_count, 0)
 		FROM jobs ORDER BY created_at DESC`)
 }
 
 func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
-	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(consecutive_failure_count, 0)
 	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
 }
 
@@ -122,7 +123,7 @@ func (r *PostgresJobRepository) FindByUserID(userID string, offset, limit int) (
 	}
 
 	// Then get the paginated results
-	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, COALESCE(consecutive_failure_count, 0)
 	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
 	jobs, err := r.queryJobs(query, userID, limit, offset)
 	if err != nil {
@@ -146,7 +147,7 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		if err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID,
-			&job.Schedule, &job.Timezone, &job.Type, &payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr); err != nil {
+			&job.Schedule, &job.Timezone, &job.Type, &payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr, &job.ConsecutiveFailureCount); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
