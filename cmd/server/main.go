@@ -395,7 +395,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
-	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
+	coreJobService := usecases.NewJobService(jobRepo, jobRunRepo, schedService, dummyExecutor, cfg.MaxFailedRunsBeforePause)
 
 	// Initialize Redis client for scheduling coordination
 	var redisScheduler *scheduler.RedisScheduler
