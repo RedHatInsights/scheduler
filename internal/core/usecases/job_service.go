@@ -310,8 +310,13 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 		return domain.Job{}, domain.ErrInvalidStatus
 	}
 
-	scheduleVal := domain.Schedule(schedule)
+	// Prevent manual setting of system-managed statuses
 	statusVal := domain.JobStatus(status)
+	if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+		return domain.Job{}, domain.ErrInvalidStatusTransition
+	}
+
+	scheduleVal := domain.Schedule(schedule)
 
 	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
 
@@ -417,6 +422,10 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 				return domain.Job{}, domain.ErrInvalidStatus
 			}
 			statusVal := domain.JobStatus(statusStr)
+			// Prevent manual setting of system-managed statuses
+			if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+				return domain.Job{}, domain.ErrInvalidStatusTransition
+			}
 			status = &statusVal
 		}
 	}
@@ -528,6 +537,10 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 				return domain.Job{}, domain.ErrInvalidStatus
 			}
 			statusVal := domain.JobStatus(statusStr)
+			// Prevent manual setting of system-managed statuses
+			if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+				return domain.Job{}, domain.ErrInvalidStatusTransition
+			}
 			status = &statusVal
 		}
 	}

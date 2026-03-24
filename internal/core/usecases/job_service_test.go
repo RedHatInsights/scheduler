@@ -394,3 +394,162 @@ func TestCreateJobWithInvalidScheduleDoesNotSetNextRunAt(t *testing.T) {
 		t.Errorf("CreateJob() expected ErrInvalidSchedule, got %v", err)
 	}
 }
+
+func TestUpdateJob_CannotSetStatusToRunning(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to update status to "running"
+	_, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "running")
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("UpdateJob() expected ErrInvalidStatusTransition when setting status to 'running', got %v", err)
+	}
+}
+
+func TestUpdateJob_CannotSetStatusToFailed(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to update status to "failed"
+	_, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "failed")
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("UpdateJob() expected ErrInvalidStatusTransition when setting status to 'failed', got %v", err)
+	}
+}
+
+func TestUpdateJob_CanSetStatusToScheduled(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a paused job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job = job.WithStatus(domain.StatusPaused)
+	repo.Save(job)
+
+	// Update status to "scheduled" should work
+	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+
+	if err != nil {
+		t.Errorf("UpdateJob() unexpected error when setting status to 'scheduled': %v", err)
+	}
+
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("UpdateJob() expected status to be 'scheduled', got %v", updatedJob.Status)
+	}
+}
+
+func TestUpdateJob_CanSetStatusToPaused(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a scheduled job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Update status to "paused" should work
+	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "paused")
+
+	if err != nil {
+		t.Errorf("UpdateJob() unexpected error when setting status to 'paused': %v", err)
+	}
+
+	if updatedJob.Status != domain.StatusPaused {
+		t.Errorf("UpdateJob() expected status to be 'paused', got %v", updatedJob.Status)
+	}
+}
+
+func TestPatchJobWithUserCheck_CannotSetStatusToRunning(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to patch status to "running"
+	updates := map[string]interface{}{
+		"status": "running",
+	}
+
+	_, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("PatchJobWithUserCheck() expected ErrInvalidStatusTransition when setting status to 'running', got %v", err)
+	}
+}
+
+func TestPatchJobWithUserCheck_CannotSetStatusToFailed(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to patch status to "failed"
+	updates := map[string]interface{}{
+		"status": "failed",
+	}
+
+	_, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("PatchJobWithUserCheck() expected ErrInvalidStatusTransition when setting status to 'failed', got %v", err)
+	}
+}
+
+func TestPatchJobWithUserCheck_CanSetStatusToScheduled(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor)
+
+	// Create a paused job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job = job.WithStatus(domain.StatusPaused)
+	repo.Save(job)
+
+	// Patch status to "scheduled" should work
+	updates := map[string]interface{}{
+		"status": "scheduled",
+	}
+
+	updatedJob, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+
+	if err != nil {
+		t.Errorf("PatchJobWithUserCheck() unexpected error when setting status to 'scheduled': %v", err)
+	}
+
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("PatchJobWithUserCheck() expected status to be 'scheduled', got %v", updatedJob.Status)
+	}
+}

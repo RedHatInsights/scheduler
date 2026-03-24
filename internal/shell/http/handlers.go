@@ -190,7 +190,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
 			return
 		}
-		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidOrgID {
+		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidStatusTransition || err == domain.ErrInvalidOrgID {
 			log.Printf("[DEBUG] HTTP UpdateJob failed - validation error: %v", err)
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
@@ -236,7 +236,7 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
 			return
 		}
-		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidOrgID {
+		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidStatusTransition || err == domain.ErrInvalidOrgID {
 			log.Printf("[DEBUG] HTTP PatchJob failed - validation error: %v", err)
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
