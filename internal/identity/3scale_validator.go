@@ -141,6 +141,8 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
+	fmt.Println("DEBUGGING FIXME - id: ", response.XRHIdentity)
+
 	// Validate that we got an identity header
 	if response.XRHIdentity == "" {
 		log.Printf("[ThreeScaleUserValidator] Empty identity header - request_id=%s",
