@@ -58,6 +58,7 @@ func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint
 	}
 
 	url := c.baseURL + endpoint
+	fmt.Println("url: ", url)
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
