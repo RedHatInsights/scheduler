@@ -313,11 +313,10 @@ parameters:
 - name: THREESCALE_URL
   value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
 
-
 - name: JOB_COMPLETION_NOTIFIER_IMPL
   value: "notifications"
   required: true
 
-
 - name: EXPORT_SERVICE_URL
+  value: http://export-service-service:8000/api/export/v1
   required: true
