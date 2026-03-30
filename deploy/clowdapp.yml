@@ -98,10 +98,6 @@ objects:
         env:
         - name: LOG_LEVEL
           value: INFO
-        - name: EXPORT_SERVICE_TIMEOUT
-          value: 5m
-        - name: EXPORT_SERVICE_MAX_RETRIES
-          value: "3"
         - name: DB_MAX_OPEN_CONNECTIONS
           value: "25"
         - name: DB_MAX_IDLE_CONNECTIONS
@@ -219,6 +215,8 @@ objects:
           value: ${USER_VALIDATOR_IMPL}
         - name: JOB_COMPLETION_NOTIFIER_IMPL
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: EXPORT_SERVICE_URL
+          value: ${EXPORT_SERVICE_URL}
         - name: EXPORT_SERVICE_TIMEOUT
           value: 5m
         - name: EXPORT_SERVICE_MAX_RETRIES
@@ -318,4 +316,8 @@ parameters:
 
 - name: JOB_COMPLETION_NOTIFIER_IMPL
   value: "notifications"
+  required: true
+
+
+- name: EXPORT_SERVICE_URL
   required: true
