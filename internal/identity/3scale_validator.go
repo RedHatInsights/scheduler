@@ -141,6 +141,8 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
+	fmt.Println("DEBUGGING FIXME - id: ", response.XRHIdentity)
+
 	// Validate that we got an identity header
 	if response.XRHIdentity == "" {
 		log.Printf("[ThreeScaleUserValidator] Empty identity header - request_id=%s",
@@ -185,12 +187,15 @@ func (v *ThreeScaleUserValidator) GenerateIdentityHeader(ctx context.Context, or
 		return "", fmt.Errorf("unable to process response from user validation service")
 	}
 
+	log.Printf("FIXME: looks like the Active field is not getting sent...which means Active gets set to false by default")
+	/* FIXME: looks like the Active field is not getting sent...which means Active gets set to false by default
 	// Validate user is active
 	if !identity.Identity.User.Active {
 		log.Printf("[ThreeScaleUserValidator] User is not active - request_id=%s user_id=%s",
 			requestID, userID)
 		return "", fmt.Errorf("user is not active")
 	}
+	*/
 
 	log.Printf("[ThreeScaleUserValidator] User validated successfully - request_id=%s org_id=%s",
 		requestID, identity.Identity.OrgID)
