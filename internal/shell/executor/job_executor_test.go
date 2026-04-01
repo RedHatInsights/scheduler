@@ -54,6 +54,8 @@ func TestExportCompletionNotificationStructure(t *testing.T) {
 		JobID:       "job-456",
 		OrgID:       "org-789",
 		AccountID:   "account-123",
+		Username:    "testuser",
+		UserID:      "user-123",
 		Status:      "complete",
 		DownloadURL: "https://example.com/exports/export-123",
 		ErrorMsg:    "",
@@ -69,6 +71,14 @@ func TestExportCompletionNotificationStructure(t *testing.T) {
 
 	if notification.OrgID != "org-789" {
 		t.Errorf("Expected OrgID 'org-789', got %s", notification.OrgID)
+	}
+
+	if notification.Username != "testuser" {
+		t.Errorf("Expected Username 'testuser', got %s", notification.Username)
+	}
+
+	if notification.UserID != "user-123" {
+		t.Errorf("Expected UserID 'user-123', got %s", notification.UserID)
 	}
 
 	if notification.Status != "complete" {
