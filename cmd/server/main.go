@@ -574,10 +574,12 @@ func runWorker(cmd *cobra.Command, args []string) {
 			allJobs, err := jobRepo.FindAll()
 			if err != nil {
 				log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
+				scheduler.DBSyncFailures.WithLabelValues("postgres_load").Inc()
 			} else {
 				log.Printf("[WORKER] Loaded %d jobs from Postgres, syncing to Redis...", len(allJobs))
 				if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
 					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+					scheduler.DBSyncFailures.WithLabelValues("redis_sync").Inc()
 				} else {
 					count, _ := redisScheduler.GetScheduledJobCount()
 					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
