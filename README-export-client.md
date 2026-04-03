@@ -30,10 +30,11 @@ go test ./internal/clients/export/...
 import "insights-scheduler/internal/clients/export"
 
 // Create client
+// First parameter: internal service URL for API calls
+// Second parameter: public URL for generating download links
 client := export.NewClient(
+    "http://export-service-service:8000/api/export/v1",
     "https://console.redhat.com/api/export/v1",
-    "your-account-number",
-    "your-org-id",
 )
 
 // Create an export

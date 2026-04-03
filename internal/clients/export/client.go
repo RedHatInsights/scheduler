@@ -26,14 +26,18 @@ const (
 
 // Client represents the export service REST client
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL       string
+	publicBaseURL string
+	httpClient    *http.Client
 }
 
 // NewClient creates a new export service client
-func NewClient(baseURL string) *Client {
+// baseURL is used for service-to-service API calls
+// publicBaseURL is used for generating public-facing download URLs
+func NewClient(baseURL string, publicBaseURL string) *Client {
 	return &Client{
-		baseURL: baseURL,
+		baseURL:       baseURL,
+		publicBaseURL: publicBaseURL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -234,8 +238,9 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 }
 
 // GetExportDownloadURL returns the full download URL for an export
+// Uses the public-facing URL for user access
 func (c *Client) GetExportDownloadURL(exportID string) string {
-	return c.baseURL + fmt.Sprintf("/exports/%s", exportID)
+	return c.publicBaseURL + fmt.Sprintf("/exports/%s", exportID)
 }
 
 // DeleteExport deletes an export request

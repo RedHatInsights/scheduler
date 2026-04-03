@@ -23,7 +23,7 @@ type ExportJobExecutor struct {
 
 // NewExportJobExecutor creates a new ExportJobExecutor
 func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidator, notifier JobCompletionNotifier) *ExportJobExecutor {
-	exportClient := export.NewClient(cfg.ExportService.BaseURL)
+	exportClient := export.NewClient(cfg.ExportService.BaseURL, cfg.ExportService.PublicBaseURL)
 
 	return &ExportJobExecutor{
 		exportClient:  exportClient,

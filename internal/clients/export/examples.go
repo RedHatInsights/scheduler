@@ -12,8 +12,11 @@ import (
 // ExampleUsage demonstrates how to use the export service client
 func ExampleUsage() {
 	// Create a client
+	// For most use cases, use the same URL for both parameters
+	// In production scheduler, these would be different (internal vs public URLs)
 	client := NewClient(
-		"https://console.redhat.com/api/export/v1",
+		"https://console.redhat.com/api/export/v1", // Internal API URL
+		"https://console.redhat.com/api/export/v1", // Public download URL
 	)
 
 	ctx := context.Background()

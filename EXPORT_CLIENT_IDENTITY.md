@@ -75,7 +75,11 @@ result, err := e.exportClient.CreateExport(ctx, req, identityHeader)
 
 ### Direct Usage
 ```go
-client := export.NewClient("https://export-service/api/v1", "000001", "org123")
+// Create client with internal and public URLs
+client := export.NewClient(
+    "http://export-service-service:8000/api/export/v1",
+    "https://console.redhat.com/api/export/v1",
+)
 
 // Generate identity header
 identityHeader, err := client.GenerateIdentityHeader("org123", "john.doe")

@@ -41,7 +41,8 @@ func main() {
 		log.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
 
-	client := export.NewClient(*baseURL)
+	// For CLI, use the same URL for both API calls and download URLs
+	client := export.NewClient(*baseURL, *baseURL)
 
 	switch *command {
 	case "list":

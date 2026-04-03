@@ -52,7 +52,7 @@ func TestClient_CreateExport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL)
+	client := NewClient(server.URL, server.URL)
 
 	req := ExportRequest{
 		Name:   "Test Export",
@@ -131,7 +131,7 @@ func TestClient_ListExports(t *testing.T) {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
 
-	client := NewClient(server.URL)
+	client := NewClient(server.URL, server.URL)
 
 	app := AppAdvisor
 	params := &ListParams{
@@ -182,7 +182,7 @@ func TestClient_GetExportStatus(t *testing.T) {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
 
-	client := NewClient(server.URL)
+	client := NewClient(server.URL, server.URL)
 
 	result, err := client.GetExportStatus(context.Background(), "test-123", identityHeader)
 	if err != nil {
@@ -222,7 +222,7 @@ func TestClient_DownloadExport(t *testing.T) {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
 
-	client := NewClient(server.URL)
+	client := NewClient(server.URL, server.URL)
 
 	data, err := client.DownloadExport(context.Background(), "test-123", identityHeader)
 	if err != nil {
@@ -251,7 +251,7 @@ func TestClient_DeleteExport(t *testing.T) {
 		t.Fatalf("GenerateIdentityHeader failed: %v", err)
 	}
 
-	client := NewClient(server.URL)
+	client := NewClient(server.URL, server.URL)
 
 	err = client.DeleteExport(context.Background(), "test-123", identityHeader)
 	if err != nil {
@@ -269,7 +269,7 @@ func TestClient_ErrorHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL)
+	client := NewClient(server.URL, server.URL)
 
 	req := ExportRequest{
 		Format: FormatJSON,
@@ -338,10 +338,13 @@ func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
 }
 
 func TestClient_GetExportDownloadURL(t *testing.T) {
-	client := NewClient("https://example.com/api/v1")
+	// Test that public URL is used for download URLs
+	internalURL := "http://export-service:8000/api/v1"
+	publicURL := "https://console.redhat.com/api/export/v1"
+	client := NewClient(internalURL, publicURL)
 
 	url := client.GetExportDownloadURL("test-export-123")
-	expected := "https://example.com/api/v1/exports/test-export-123"
+	expected := "https://console.redhat.com/api/export/v1/exports/test-export-123"
 
 	if url != expected {
 		t.Errorf("Expected URL %s, got %s", expected, url)

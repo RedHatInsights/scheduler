@@ -144,6 +144,17 @@ Jobs support four payload types:
 - `KAFKA_TOPIC`: Topic for notifications (default: `platform.notifications.ingress`)
 - `KAFKA_SASL_ENABLED`: Enable SASL authentication (`true`/`false`)
 
+### Export Service Configuration
+
+- `EXPORT_SERVICE_URL`: Internal export service API URL (default: `http://export-service-service:8000/api/export/v1`)
+- `EXPORT_SERVICE_PUBLIC_URL`: Public-facing export service URL for download links (default: same as `EXPORT_SERVICE_URL`)
+  - In production, this should be set to the publicly accessible endpoint (e.g., `https://console.redhat.com/api/export/v1`)
+  - Used to generate download URLs sent to users in notifications
+- `EXPORT_SERVICE_TIMEOUT`: Timeout for export requests (default: `5m`)
+- `EXPORT_SERVICE_MAX_RETRIES`: Maximum retries for failed requests (default: `3`)
+- `EXPORT_SERVICE_POLL_MAX_RETRIES`: Maximum polling attempts for export completion (default: `60`)
+- `EXPORT_SERVICE_POLL_INTERVAL`: Time between polling attempts (default: `5s`)
+
 ### User Validation
 
 - `USER_VALIDATOR_IMPL`: Implementation to use (`fake`, `bop`, `3scale`)

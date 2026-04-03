@@ -217,6 +217,8 @@ objects:
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
         - name: EXPORT_SERVICE_URL
           value: ${EXPORT_SERVICE_URL}
+        - name: EXPORT_SERVICE_PUBLIC_URL
+          value: ${EXPORT_SERVICE_PUBLIC_URL}
         - name: EXPORT_SERVICE_TIMEOUT
           value: 5m
         - name: EXPORT_SERVICE_MAX_RETRIES
@@ -319,4 +321,8 @@ parameters:
 
 - name: EXPORT_SERVICE_URL
   value: http://export-service-service:8000/api/export/v1
+  required: true
+- name: EXPORT_SERVICE_PUBLIC_URL
+  description: Public-facing URL for export service download links
+  value: https://console.redhat.com/api/export/v1
   required: true
