@@ -212,8 +212,11 @@ type MetricsConfig struct {
 
 // ExportServiceConfig contains export service client settings
 type ExportServiceConfig struct {
-	// BaseURL for the export service API
+	// BaseURL for the export service API (internal service-to-service communication)
 	BaseURL string `json:"base_url"`
+
+	// PublicBaseURL for the export service API (public-facing download URLs)
+	PublicBaseURL string `json:"public_base_url"`
 
 	// Timeout for export service requests
 	Timeout time.Duration `json:"timeout"`
@@ -544,8 +547,15 @@ func loadMetricsConfig(clowderConfig *clowder.AppConfig) MetricsConfig {
 
 // loadExportServiceConfig loads export service configuration from environment
 func loadExportServiceConfig() ExportServiceConfig {
+	baseURL := getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1")
+
+	// Default to using the same URL for public access if not explicitly configured
+	// In production, this should be set to the publicly accessible endpoint
+	publicBaseURL := getEnv("EXPORT_SERVICE_PUBLIC_URL", baseURL)
+
 	return ExportServiceConfig{
-		BaseURL:        getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1"),
+		BaseURL:        baseURL,
+		PublicBaseURL:  publicBaseURL,
 		Timeout:        getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
 		MaxRetries:     getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
 		PollMaxRetries: getEnvAsInt("EXPORT_SERVICE_POLL_MAX_RETRIES", 60),
