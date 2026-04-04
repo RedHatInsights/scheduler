@@ -1,6 +1,6 @@
 module insights-scheduler
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/google/uuid v1.6.0
@@ -49,8 +49,8 @@ require (
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/net v0.47.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
