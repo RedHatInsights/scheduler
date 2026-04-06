@@ -7,12 +7,19 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"insights-scheduler/internal/shell/messaging"
+)
+
+const (
+	NOTIFICATIONS_BUNDLE string = "console"
+	NOTIFICATIONS_APP    string = "scheduler"
 )
 
 // NotificationMessage represents the structure for platform notification events
 // Based on the notifications-backend message format
 type NotificationMessage struct {
+	ID          string                 `json:"id"`
 	Version     string                 `json:"version"`
 	Bundle      string                 `json:"bundle"`
 	Application string                 `json:"application"`
@@ -39,46 +46,48 @@ func NewNotificationsBasedJobCompletionNotifier(producer *messaging.KafkaProduce
 
 // JobComplete sends a job completion notification to Kafka
 func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification) error {
-	log.Printf("Sending platform notification via Kafka for export: %s", notification.ExportID)
+	// Generate request ID for tracking
+	messageID := uuid.New().String()
+	log.Printf("Sending platform notification via Kafka for export: %s (message_id: %s)", notification.ExportID, messageID)
 
 	// Build the platform notification message
-	platformNotification := n.buildPlatformNotification(notification)
+	platformNotification := n.buildPlatformNotification(notification, messageID)
 
 	// Marshal to JSON
 	messageBytes, err := json.Marshal(platformNotification)
 	if err != nil {
-		log.Printf("Failed to marshal platform notification for export %s: %v", notification.ExportID, err)
+		log.Printf("Failed to marshal platform notification for export %s (message_id: %s): %v", notification.ExportID, messageID, err)
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
 	// Build headers for Kafka message
 	headers := map[string]string{
-		"message-type": "platform-notification",
-		"bundle":       platformNotification.Bundle,
-		"application":  platformNotification.Application,
-		"event-type":   platformNotification.EventType,
-		"org-id":       platformNotification.OrgID,
-		"account-id":   platformNotification.AccountID,
-		"version":      platformNotification.Version,
+		"bundle":      platformNotification.Bundle,
+		"application": platformNotification.Application,
+		"event-type":  platformNotification.EventType,
+		"org-id":      platformNotification.OrgID,
+		"account-id":  platformNotification.AccountID,
+		"version":     platformNotification.Version,
 	}
 
 	// Send via generic Kafka producer
 	if err := n.producer.SendMessage(platformNotification.OrgID, messageBytes, headers); err != nil {
-		log.Printf("Failed to send platform notification for export %s: %v", notification.ExportID, err)
+		log.Printf("Failed to send platform notification for export %s (message_id: %s): %v", notification.ExportID, messageID, err)
 		return err
 	}
 
-	log.Printf("Platform notification sent successfully for export %s", notification.ExportID)
+	log.Printf("Platform notification sent successfully for export %s (message_id: %s)", notification.ExportID, messageID)
 	return nil
 }
 
 // buildPlatformNotification creates a platform notification message from an export completion notification
-func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification) *NotificationMessage {
+func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification, messageID string) *NotificationMessage {
 	context := map[string]interface{}{
-		"export_id":    notification.ExportID,
-		"job_id":       notification.JobID,
-		"status":       notification.Status,
-		"download_url": notification.DownloadURL,
+		"export_id":     notification.ExportID,
+		"job_id":        notification.JobID,
+		"status":        notification.Status,
+		"error_message": notification.ErrorMsg,
+		"download_url":  notification.DownloadURL,
 	}
 
 	// Add error message if present
@@ -93,9 +102,10 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 	}
 
 	return &NotificationMessage{
-		Version:     "v1.2.0",
-		Bundle:      "rhel",
-		Application: "insights-scheduler",
+		ID:          messageID,
+		Version:     "v1.0.0",
+		Bundle:      NOTIFICATIONS_BUNDLE,
+		Application: NOTIFICATIONS_APP,
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		AccountID:   notification.AccountID,
