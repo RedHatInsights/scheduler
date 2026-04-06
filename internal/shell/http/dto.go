@@ -9,15 +9,16 @@ import (
 // JobResponse is the API response model for Job objects.
 // It excludes org_id, username, and user_id which are extracted from the identity header.
 type JobResponse struct {
-	ID        string      `json:"id"`
-	Name      string      `json:"name"`
-	Schedule  string      `json:"schedule"`
-	Timezone  string      `json:"timezone"`
-	Type      string      `json:"type"`
-	Payload   interface{} `json:"payload,omitempty"`
-	Status    string      `json:"status"`
-	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
-	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Schedule      string      `json:"schedule"`
+	Timezone      string      `json:"timezone"`
+	Type          string      `json:"type"`
+	Payload       interface{} `json:"payload,omitempty"`
+	Status                   string      `json:"status"`
+	LastRunAt                *time.Time  `json:"last_run_at,omitempty"`
+	NextRunAt                *time.Time  `json:"next_run_at,omitempty"`
+	ConsecutiveFailureCount  int         `json:"consecutive_failure_count,omitempty"`
 }
 
 // ToJobResponse converts a domain.Job to a JobResponse DTO
@@ -54,15 +55,16 @@ func ToJobResponse(job domain.Job) JobResponse {
 	}
 
 	return JobResponse{
-		ID:        job.ID,
-		Name:      job.Name,
-		Schedule:  string(job.Schedule),
-		Timezone:  job.Timezone,
-		Type:      string(job.Type),
-		Payload:   job.Payload,
-		Status:    string(job.Status),
-		LastRunAt: lastRunAtInTz,
-		NextRunAt: nextRunAtInTz,
+		ID:                      job.ID,
+		Name:                    job.Name,
+		Schedule:                string(job.Schedule),
+		Timezone:                job.Timezone,
+		Type:                    string(job.Type),
+		Payload:                 job.Payload,
+		Status:                  string(job.Status),
+		LastRunAt:               lastRunAtInTz,
+		NextRunAt:               nextRunAtInTz,
+		ConsecutiveFailureCount: job.ConsecutiveFailureCount,
 	}
 }
 

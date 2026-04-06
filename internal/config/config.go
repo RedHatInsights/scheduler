@@ -41,6 +41,9 @@ type Config struct {
 
 	UserValidatorImpl         string
 	JobCompletionNotifierImpl string
+
+	// MaxFailedRunsBeforePause: when > 0, jobs are auto-paused after this many consecutive failures (global). 0 = disabled.
+	MaxFailedRunsBeforePause int
 }
 
 // ServerConfig contains HTTP server settings
@@ -321,6 +324,7 @@ func LoadConfig() (*Config, error) {
 
 	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
 	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
+	config.MaxFailedRunsBeforePause = getEnvAsInt("SCHEDULER_MAX_FAILED_RUNS_BEFORE_PAUSE", 0)
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {

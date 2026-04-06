@@ -279,8 +279,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize job executor with map of executors
 	jobExecutor := executor.NewJobExecutor(executors, runRepo)
 
-	// Create functional core service
-	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
+	coreJobService := usecases.NewJobService(repo, runRepo, schedulingService, jobExecutor, cfg.MaxFailedRunsBeforePause)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
 	// Create adapters for different consumers
@@ -396,7 +395,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
-	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
+	coreJobService := usecases.NewJobService(jobRepo, jobRunRepo, schedService, dummyExecutor, cfg.MaxFailedRunsBeforePause)
 
 	// Initialize Redis client for scheduling coordination
 	var redisScheduler *scheduler.RedisScheduler
