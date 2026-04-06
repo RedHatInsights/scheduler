@@ -85,6 +85,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 	context := map[string]interface{}{
 		"export_id":     notification.ExportID,
 		"job_id":        notification.JobID,
+		"job_name":      notification.JobName,
 		"status":        notification.Status,
 		"error_message": notification.ErrorMsg,
 		"download_url":  notification.DownloadURL,

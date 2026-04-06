@@ -100,6 +100,7 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 	notification := &ExportCompletionNotification{
 		ExportID:    result.ID,
 		JobID:       job.ID,
+		JobName:     job.Name,
 		AccountID:   "", // FIXME: account
 		OrgID:       job.OrgID,
 		Status:      string(finalStatus.Status),
