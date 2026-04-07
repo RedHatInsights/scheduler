@@ -263,6 +263,9 @@ type SchedulerConfig struct {
 
 	// DBToRedisSyncInterval is how often workers sync jobs from PostgreSQL to Redis
 	DBToRedisSyncInterval time.Duration `json:"db_to_redis_sync_interval"`
+
+	// MaxConsecutiveFailures is the number of consecutive failures before pausing a job
+	MaxConsecutiveFailures int `json:"max_consecutive_failures"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
@@ -616,6 +619,7 @@ func loadSchedulerConfig() SchedulerConfig {
 		GracefulShutdownTimeout: getEnvAsDuration("SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT", 30*time.Second),
 		RedisPollInterval:       getEnvAsDuration("SCHEDULER_REDIS_POLL_INTERVAL", 10*time.Second),
 		DBToRedisSyncInterval:   getEnvAsDuration("SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL", 1*time.Hour),
+		MaxConsecutiveFailures:  getEnvAsInt("SCHEDULER_MAX_CONSECUTIVE_FAILURES", 3),
 	}
 }
 

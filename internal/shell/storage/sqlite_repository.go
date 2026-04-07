@@ -47,6 +47,12 @@ func (r *SQLiteJobRepository) initSchema() error {
 		return err
 	}
 
+	// Migrate to add consecutive_failures column
+	if err := r.migrateConsecutiveFailures(); err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository - consecutive_failures migration failed: %v", err)
+		return err
+	}
+
 	schema := `
 -- Schema for the job scheduler SQLite database
 
@@ -60,6 +66,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL, -- JSON string
     status TEXT NOT NULL,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
     last_run_at DATETIME NULL,
     next_run_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -237,6 +244,56 @@ func (r *SQLiteJobRepository) migrateToOrgID() error {
 	return nil
 }
 
+func (r *SQLiteJobRepository) migrateConsecutiveFailures() error {
+	log.Printf("[DEBUG] SQLiteJobRepository - checking for consecutive_failures column migration")
+
+	// First check if jobs table exists
+	var tableExists bool
+	query := `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='jobs'`
+	row := r.db.QueryRow(query)
+	var tableCount int
+	if err := row.Scan(&tableCount); err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository - error checking table existence: %v", err)
+		return err
+	}
+
+	tableExists = tableCount > 0
+
+	if !tableExists {
+		// Table doesn't exist yet, no migration needed
+		log.Printf("[DEBUG] SQLiteJobRepository - jobs table doesn't exist, skipping consecutive_failures migration")
+		return nil
+	}
+
+	// Check if consecutive_failures column exists
+	query = `SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name='consecutive_failures'`
+	row = r.db.QueryRow(query)
+	var consecutiveFailuresCount int
+	if err := row.Scan(&consecutiveFailuresCount); err != nil {
+		log.Printf("[DEBUG] SQLiteJobRepository - error checking consecutive_failures column existence: %v", err)
+		return err
+	}
+
+	consecutiveFailuresExists := consecutiveFailuresCount > 0
+
+	if !consecutiveFailuresExists {
+		log.Printf("[DEBUG] SQLiteJobRepository - adding consecutive_failures column to existing table")
+
+		// Add consecutive_failures column with default value 0
+		_, err := r.db.Exec(`ALTER TABLE jobs ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0`)
+		if err != nil {
+			log.Printf("[DEBUG] SQLiteJobRepository - error adding consecutive_failures column: %v", err)
+			return err
+		}
+
+		log.Printf("[DEBUG] SQLiteJobRepository - consecutive_failures migration completed")
+	} else {
+		log.Printf("[DEBUG] SQLiteJobRepository - consecutive_failures column already exists")
+	}
+
+	return nil
+}
+
 func (r *SQLiteJobRepository) Save(job domain.Job) error {
 	log.Printf("[DEBUG] SQLiteJobRepository.Save - saving job: %s", job.ID)
 
@@ -261,15 +318,15 @@ func (r *SQLiteJobRepository) Save(job domain.Job) error {
 
 	// Use UPSERT (INSERT OR REPLACE)
 	query := `
-		INSERT OR REPLACE INTO jobs (id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		INSERT OR REPLACE INTO jobs (id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, consecutive_failures, last_run_at, next_run_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			COALESCE((SELECT created_at FROM jobs WHERE id = ?), CURRENT_TIMESTAMP),
 			CURRENT_TIMESTAMP
 		)
 	`
 
 	_, err = r.db.Exec(query, job.ID, job.Name, job.OrgID, job.UserID, string(job.Schedule), job.Timezone, string(job.Type),
-		string(payloadJSON), string(job.Status), lastRunAt, nextRunAt, job.ID)
+		string(payloadJSON), string(job.Status), job.ConsecutiveFailures, lastRunAt, nextRunAt, job.ID)
 
 	if err != nil {
 		log.Printf("[DEBUG] SQLiteJobRepository.Save - database error: %v", err)
@@ -284,7 +341,7 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindByID - searching for job: %s", id)
 
 	query := `
-		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, consecutive_failures, last_run_at, next_run_at
 		FROM jobs
 		WHERE id = ?
 	`
@@ -296,7 +353,7 @@ func (r *SQLiteJobRepository) FindByID(id string) (domain.Job, error) {
 	var lastRunAtStr, nextRunAtStr sql.NullString
 
 	err := row.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-		&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
+		&payloadJSON, &job.Status, &job.ConsecutiveFailures, &lastRunAtStr, &nextRunAtStr)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -335,7 +392,7 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindAll - retrieving all jobs")
 
 	query := `
-		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, consecutive_failures, last_run_at, next_run_at
 		FROM jobs
 		ORDER BY created_at DESC
 	`
@@ -355,7 +412,7 @@ func (r *SQLiteJobRepository) FindAll() ([]domain.Job, error) {
 		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-			&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
+			&payloadJSON, &job.Status, &job.ConsecutiveFailures, &lastRunAtStr, &nextRunAtStr)
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindAll - scan error: %v", err)
@@ -398,7 +455,7 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	log.Printf("[DEBUG] SQLiteJobRepository.FindByOrgID - retrieving jobs for org: %s", orgID)
 
 	query := `
-		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, consecutive_failures, last_run_at, next_run_at
 		FROM jobs
 		WHERE org_id = ?
 		ORDER BY created_at DESC
@@ -419,7 +476,7 @@ func (r *SQLiteJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-			&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
+			&payloadJSON, &job.Status, &job.ConsecutiveFailures, &lastRunAtStr, &nextRunAtStr)
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindByOrgID - scan error: %v", err)
@@ -472,7 +529,7 @@ func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]
 
 	// Then get the paginated results
 	query := `
-		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at
+		SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, consecutive_failures, last_run_at, next_run_at
 		FROM jobs
 		WHERE user_id = ?
 		ORDER BY created_at DESC
@@ -494,7 +551,7 @@ func (r *SQLiteJobRepository) FindByUserID(userID string, offset, limit int) ([]
 		var lastRunAtStr, nextRunAtStr sql.NullString
 
 		err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID, &job.Schedule, &job.Timezone, &job.Type,
-			&payloadJSON, &job.Status, &lastRunAtStr, &nextRunAtStr)
+			&payloadJSON, &job.Status, &job.ConsecutiveFailures, &lastRunAtStr, &nextRunAtStr)
 
 		if err != nil {
 			log.Printf("[DEBUG] SQLiteJobRepository.FindByUserID - scan error: %v", err)

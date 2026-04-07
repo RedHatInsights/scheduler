@@ -277,7 +277,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize job executor with map of executors
-	jobExecutor := executor.NewJobExecutor(executors, runRepo)
+	jobExecutor := executor.NewJobExecutor(executors, runRepo, repo, cfg, notifier)
 
 	// Create functional core service
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
@@ -392,7 +392,9 @@ func runAPI(cmd *cobra.Command, args []string) {
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Use message executor as dummy
 	}
-	dummyExecutor := executor.NewJobExecutor(dummyExecutors, jobRunRepo)
+	// Use null notifier for API pods (they don't execute jobs)
+	nullNotifier := executor.NewNullJobCompletionNotifier()
+	dummyExecutor := executor.NewJobExecutor(dummyExecutors, jobRunRepo, jobRepo, cfg, nullNotifier)
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
@@ -528,7 +530,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
 	}
-	jobExecutor := executor.NewJobExecutor(executors, jobRunRepo)
+	jobExecutor := executor.NewJobExecutor(executors, jobRunRepo, jobRepo, cfg, notifier)
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {

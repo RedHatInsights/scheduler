@@ -116,3 +116,69 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		Recipients:  []interface{}{},
 	}
 }
+
+// JobFailed sends a job failure notification to Kafka
+func (n *NotificationsBasedJobCompletionNotifier) JobFailed(ctx context.Context, notification *JobFailureNotification) error {
+	// Generate message ID for tracking
+	messageID := uuid.New().String()
+	log.Printf("Sending job failure notification via Kafka for job: %s (message_id: %s)", notification.JobID, messageID)
+
+	// Build the platform notification message
+	platformNotification := n.buildJobFailureNotification(notification, messageID)
+
+	// Marshal to JSON
+	messageBytes, err := json.Marshal(platformNotification)
+	if err != nil {
+		log.Printf("Failed to marshal job failure notification for job %s (message_id: %s): %v", notification.JobID, messageID, err)
+		return fmt.Errorf("failed to marshal notification: %w", err)
+	}
+
+	// Build headers for Kafka message
+	headers := map[string]string{
+		"bundle":      platformNotification.Bundle,
+		"application": platformNotification.Application,
+		"event-type":  platformNotification.EventType,
+		"org-id":      platformNotification.OrgID,
+		"version":     platformNotification.Version,
+	}
+
+	// Send via generic Kafka producer
+	if err := n.producer.SendMessage(platformNotification.OrgID, messageBytes, headers); err != nil {
+		log.Printf("Failed to send job failure notification for job %s (message_id: %s): %v", notification.JobID, messageID, err)
+		return err
+	}
+
+	log.Printf("Job failure notification sent successfully for job %s (message_id: %s)", notification.JobID, messageID)
+	return nil
+}
+
+// buildJobFailureNotification creates a platform notification message from a job failure notification
+func (n *NotificationsBasedJobCompletionNotifier) buildJobFailureNotification(notification *JobFailureNotification, messageID string) *NotificationMessage {
+	context := map[string]interface{}{
+		"job_id":               notification.JobID,
+		"job_name":             notification.JobName,
+		"error_message":        notification.ErrorMsg,
+		"consecutive_failures": notification.ConsecutiveFailures,
+		"auto_paused":          notification.AutoPaused,
+	}
+
+	// Determine event type based on whether job was auto-paused
+	eventType := "job-failed"
+	if notification.AutoPaused {
+		eventType = "job-auto-paused"
+	}
+
+	return &NotificationMessage{
+		ID:          messageID,
+		Version:     "v1.0.0",
+		Bundle:      NOTIFICATIONS_BUNDLE,
+		Application: NOTIFICATIONS_APP,
+		EventType:   eventType,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		AccountID:   "", // Job failures don't have account_id currently
+		OrgID:       notification.OrgID,
+		Context:     context,
+		Events:      []interface{}{},
+		Recipients:  []interface{}{},
+	}
+}
