@@ -97,9 +97,9 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 	}
 
 	// Determine event type based on status
-	eventType := "export-completed"
+	eventType := "export-complete"
 	if notification.Status == "failed" {
-		eventType = "export-failed"
+		eventType = "job-failed"
 	}
 
 	return &NotificationMessage{
