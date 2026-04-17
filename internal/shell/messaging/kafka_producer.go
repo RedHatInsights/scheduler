@@ -30,23 +30,8 @@ func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
 
 	// Configure SASL authentication if enabled
 	if cfg.SASL.Enabled {
-		log.Printf("[DEBUG] KafkaProducer - configuring SASL authentication (mechanism: %s)", cfg.SASL.Mechanism)
-		saramaConfig.Net.SASL.Enable = true
-		saramaConfig.Net.SASL.User = cfg.SASL.Username
-		saramaConfig.Net.SASL.Password = cfg.SASL.Password
-
-		// Set SASL mechanism
-		switch cfg.SASL.Mechanism {
-		case "PLAIN":
-			saramaConfig.Net.SASL.Mechanism = sarama.SASLTypePlaintext
-		case "SCRAM-SHA-256":
-			saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
-			saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA256} }
-		case "SCRAM-SHA-512":
-			saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-			saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA512} }
-		default:
-			return nil, fmt.Errorf("unsupported SASL mechanism: %s (supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)", cfg.SASL.Mechanism)
+		if err := configureSASL(saramaConfig, cfg.SASL); err != nil {
+			return nil, err
 		}
 	}
 
@@ -113,6 +98,34 @@ func (k *KafkaProducer) Close() error {
 	if k.producer != nil {
 		return k.producer.Close()
 	}
+	return nil
+}
+
+// configureSASL configures SASL authentication for the Kafka producer
+func configureSASL(saramaConfig *sarama.Config, saslCfg config.SASLConfig) error {
+	log.Printf("[DEBUG] KafkaProducer - configuring SASL authentication (mechanism: %s)", saslCfg.Mechanism)
+	saramaConfig.Net.SASL.Enable = true
+	saramaConfig.Net.SASL.User = saslCfg.Username
+	saramaConfig.Net.SASL.Password = saslCfg.Password
+
+	// Set SASL mechanism
+	switch saslCfg.Mechanism {
+	case "PLAIN":
+		saramaConfig.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	case "SCRAM-SHA-256":
+		saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+		saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
+		}
+	case "SCRAM-SHA-512":
+		saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+		saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+		}
+	default:
+		return fmt.Errorf("unsupported SASL mechanism: %s (supported: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)", saslCfg.Mechanism)
+	}
+
 	return nil
 }
 
