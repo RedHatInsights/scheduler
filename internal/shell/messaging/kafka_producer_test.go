@@ -2,6 +2,8 @@ package messaging
 
 import (
 	"testing"
+
+	"insights-scheduler/internal/config"
 )
 
 // Note: Integration tests with actual Kafka would require a test Kafka cluster
@@ -9,11 +11,13 @@ import (
 func TestKafkaProducer_Configuration(t *testing.T) {
 	// Test that we can create a KafkaProducer instance
 	// This test will fail if Kafka is not available, which is expected in unit test environments
-	brokers := []string{"localhost:9092"}
-	topic := "test-topic"
+	cfg := &config.KafkaConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   "test-topic",
+	}
 
 	// We expect this to fail in a unit test environment without Kafka
-	producer, err := NewKafkaProducer(brokers, topic)
+	producer, err := NewKafkaProducer(cfg)
 	if err != nil {
 		t.Logf("Expected error when Kafka is not available: %v", err)
 		// This is expected in unit test environments

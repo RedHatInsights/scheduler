@@ -245,7 +245,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Printf("Initializing platform notifications job completion notifier")
 		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
-		kafkaProducer, err := messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+		kafkaProducer, err := messaging.NewKafkaProducer(&cfg.Kafka)
 		if err != nil {
 			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
@@ -498,7 +498,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 		log.Printf("Initializing platform notifications job completion notifier")
 		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
-		kafkaProducer, err := messaging.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+		kafkaProducer, err := messaging.NewKafkaProducer(&cfg.Kafka)
 		if err != nil {
 			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
