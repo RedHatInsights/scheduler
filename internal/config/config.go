@@ -157,6 +157,8 @@ type KafkaConfig struct {
 
 	// TLS configuration
 	TLS TLSConfig `json:"tls"`
+
+	SecurityProtocol string
 }
 
 // SASLConfig contains SASL authentication settings
@@ -459,6 +461,7 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 	brokers := getEnvAsStringSlice("KAFKA_BROKERS", []string{})
 	topic := getEnv("KAFKA_TOPIC", "platform.notifications.ingress")
 	enabled := len(brokers) > 0
+	securityProtocol := ""
 
 	// SASL and TLS config from environment
 	saslConfig := SASLConfig{
@@ -518,20 +521,27 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 			tlsConfig.CAFile = caPath
 		}
 
+		if clowderConfig.Kafka.Brokers[0].SecurityProtocol != nil && *clowderConfig.Kafka.Brokers[0].SecurityProtocol != "" {
+			securityProtocol = *clowderConfig.Kafka.Brokers[0].SecurityProtocol
+		} else if clowderConfig.Kafka.Brokers[0].Sasl != nil && clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol != nil && *clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol != "" {
+			securityProtocol = *clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol
+		}
+
 	}
 
 	return KafkaConfig{
-		Enabled:         enabled,
-		Brokers:         brokers,
-		Topic:           topic,
-		ClientID:        getEnv("KAFKA_CLIENT_ID", "insights-scheduler"),
-		Timeout:         getEnvAsDuration("KAFKA_TIMEOUT", 30*time.Second),
-		Retries:         getEnvAsInt("KAFKA_RETRIES", 5),
-		BatchSize:       getEnvAsInt("KAFKA_BATCH_SIZE", 100),
-		CompressionType: getEnv("KAFKA_COMPRESSION", "snappy"),
-		RequiredAcks:    getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
-		SASL:            saslConfig,
-		TLS:             tlsConfig,
+		Enabled:          enabled,
+		Brokers:          brokers,
+		Topic:            topic,
+		ClientID:         getEnv("KAFKA_CLIENT_ID", "insights-scheduler"),
+		Timeout:          getEnvAsDuration("KAFKA_TIMEOUT", 30*time.Second),
+		Retries:          getEnvAsInt("KAFKA_RETRIES", 5),
+		BatchSize:        getEnvAsInt("KAFKA_BATCH_SIZE", 100),
+		CompressionType:  getEnv("KAFKA_COMPRESSION", "snappy"),
+		RequiredAcks:     getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
+		SASL:             saslConfig,
+		TLS:              tlsConfig,
+		SecurityProtocol: securityProtocol,
 	}
 }
 

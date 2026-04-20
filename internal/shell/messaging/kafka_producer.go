@@ -40,14 +40,18 @@ func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
 	}
 
 	// Determine security protocol
-	securityProtocol := "plaintext"
-	if cfg.SASL.Enabled && cfg.TLS.Enabled {
-		securityProtocol = "sasl_ssl"
-	} else if cfg.SASL.Enabled {
-		securityProtocol = "sasl_plaintext"
-	} else if cfg.TLS.Enabled {
-		securityProtocol = "ssl"
-	}
+	/*
+		securityProtocol := "plaintext"
+		if cfg.SASL.Enabled && cfg.TLS.Enabled {
+			securityProtocol = "sasl_ssl"
+		} else if cfg.SASL.Enabled {
+			securityProtocol = "sasl_plaintext"
+		} else if cfg.TLS.Enabled {
+			securityProtocol = "ssl"
+		}
+	*/
+
+	securityProtocol := cfg.SecurityProtocol
 
 	log.Printf("[INFO] KafkaProducer - security protocol: %s", securityProtocol)
 	configMap["security.protocol"] = securityProtocol
