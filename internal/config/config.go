@@ -509,6 +509,7 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 		}
 
 		if clowderConfig.Kafka.Brokers[0].Cacert != nil {
+			fmt.Println("Kafka is using ssl/tls")
 			caPath, err := clowderConfig.KafkaCa(clowderConfig.Kafka.Brokers[0])
 			if err != nil {
 				panic("Kafka CA cert failed to write")
