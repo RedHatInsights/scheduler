@@ -507,6 +507,16 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 				saslConfig.Password = *clowderConfig.Kafka.Brokers[0].Sasl.Password
 			}
 		}
+
+		if clowderConfig.Kafka.Brokers[0].Cacert != nil {
+			caPath, err := clowderConfig.KafkaCa(clowderConfig.Kafka.Brokers[0])
+			if err != nil {
+				panic("Kafka CA cert failed to write")
+			}
+			tlsConfig.Enabled = true
+			tlsConfig.CAFile = caPath
+		}
+
 	}
 
 	return KafkaConfig{
