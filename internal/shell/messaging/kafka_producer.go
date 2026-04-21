@@ -34,7 +34,7 @@ func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
 		"batch.size":         16384,
 		"enable.idempotence": true,
 		// Enhanced logging
-		"log_level":              7,                                    // LOG_DEBUG
+		"log_level":              5,                                    // LOG_NOTICE
 		"debug":                  "broker,topic,msg,protocol,security", // Enable debug contexts
 		"statistics.interval.ms": 60000,                                // Statistics every 60 seconds
 	}
