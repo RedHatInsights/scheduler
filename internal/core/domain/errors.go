@@ -5,7 +5,7 @@ import "errors"
 var (
 	ErrJobNotFound             = errors.New("job not found")
 	ErrInvalidSchedule         = errors.New("invalid schedule format")
-	ErrInvalidPayload          = errors.New("invalid payload type")
+	ErrInvalidPayload          = errors.New("invalid payload type: only 'export' is supported")
 	ErrInvalidStatus           = errors.New("invalid job status")
 	ErrInvalidStatusTransition = errors.New("cannot manually set status to 'running' or 'failed'")
 	ErrInvalidOrgID            = errors.New("invalid or missing org_id")

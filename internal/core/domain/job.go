@@ -171,7 +171,7 @@ func IsValidSchedule(s string) bool {
 
 func IsValidPayloadType(pt string) bool {
 	switch PayloadType(pt) {
-	case PayloadMessage, PayloadHTTPRequest, PayloadCommand, PayloadExport:
+	case PayloadExport:
 		return true
 	default:
 		return false

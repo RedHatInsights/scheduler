@@ -20,10 +20,16 @@ func main() {
 	fmt.Println("Make sure the service is running on localhost:5000")
 	fmt.Println(strings.Repeat("-", 50))
 
-	// Test job creation
-	jobID, err := testCreateJob()
+	// Test that non-export job types are rejected
+	if err := testCreateJobRejectsNonExportType(); err != nil {
+		log.Fatalf("Failed non-export type rejection test: %v", err)
+	}
+	fmt.Println()
+
+	// Test export job creation
+	jobID, err := testCreateExportJob()
 	if err != nil {
-		log.Fatalf("Failed to create job: %v", err)
+		log.Fatalf("Failed to create export job: %v", err)
 	}
 	fmt.Println()
 
@@ -79,17 +85,41 @@ func main() {
 	fmt.Println("All tests completed!")
 }
 
-func testCreateJob() (string, error) {
-	fmt.Println("Testing job creation...")
+func testCreateJobRejectsNonExportType() error {
+	fmt.Println("Testing that non-export job types are rejected...")
 
 	jobData := map[string]interface{}{
 		"name":     "Test Job",
 		"schedule": "*/10 * * * *",
+		"type":     "message",
 		"payload": map[string]interface{}{
-			"type": "message",
-			"details": map[string]interface{}{
-				"message": "Hello, World!",
-			},
+			"message": "Hello, World!",
+		},
+	}
+
+	resp, err := makeRequest("POST", "/jobs", jobData)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		return fmt.Errorf("expected status 400 for non-export type, got %d", resp.StatusCode)
+	}
+
+	fmt.Println("✓ Non-export job type correctly rejected with 400")
+	return nil
+}
+
+func testCreateExportJob() (string, error) {
+	fmt.Println("Testing export job creation...")
+
+	jobData := map[string]interface{}{
+		"name":     "Test Export Job",
+		"schedule": "*/10 * * * *",
+		"type":     "export",
+		"payload": map[string]interface{}{
+			"export_name": "test-export",
 		},
 	}
 
@@ -100,7 +130,8 @@ func testCreateJob() (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("expected status 201, got %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("expected status 201, got %d: %s", resp.StatusCode, string(body))
 	}
 
 	var job domain.Job
@@ -108,7 +139,7 @@ func testCreateJob() (string, error) {
 		return "", err
 	}
 
-	fmt.Printf("✓ Job created successfully: %s\n", job.ID)
+	fmt.Printf("✓ Export job created successfully: %s\n", job.ID)
 	return job.ID, nil
 }
 
@@ -160,13 +191,11 @@ func testUpdateJob(jobID string) error {
 	fmt.Printf("Testing job update %s...\n", jobID)
 
 	updateData := map[string]interface{}{
-		"name":     "Updated Test Job",
-		"schedule": "0 0 * * * *",
+		"name":     "Updated Test Export Job",
+		"schedule": "0 * * * *",
+		"type":     "export",
 		"payload": map[string]interface{}{
-			"type": "message",
-			"details": map[string]interface{}{
-				"message": "Updated message!",
-			},
+			"export_name": "updated-export",
 		},
 		"status": "scheduled",
 	}
