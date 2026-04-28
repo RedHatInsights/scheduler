@@ -54,7 +54,9 @@ func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
 	securityProtocol := cfg.SecurityProtocol
 
 	log.Printf("[INFO] KafkaProducer - security protocol: %s", securityProtocol)
-	configMap["security.protocol"] = securityProtocol
+	if strings.TrimSpace(securityProtocol) != "" {
+		configMap["security.protocol"] = securityProtocol
+	}
 
 	// Configure SASL if enabled
 	if cfg.SASL.Enabled {

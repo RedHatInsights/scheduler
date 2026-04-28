@@ -461,7 +461,7 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 	brokers := getEnvAsStringSlice("KAFKA_BROKERS", []string{})
 	topic := getEnv("KAFKA_TOPIC", "platform.notifications.ingress")
 	enabled := len(brokers) > 0
-	securityProtocol := ""
+	securityProtocol := getEnv("KAFKA_SECURITY_PROTOCOL", "")
 
 	// SASL and TLS config from environment
 	saslConfig := SASLConfig{
