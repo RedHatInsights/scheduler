@@ -19,3 +19,9 @@ func (n *NullJobCompletionNotifier) JobComplete(ctx context.Context, notificatio
 	log.Printf("No notifier configured - skipping completion notification for export: %s", notification.ExportID)
 	return nil
 }
+
+// JobFailed does nothing - this is a no-op implementation
+func (n *NullJobCompletionNotifier) JobFailed(ctx context.Context, notification *JobFailureNotification) error {
+	log.Printf("No notifier configured - skipping failure notification for job: %s", notification.JobID)
+	return nil
+}
