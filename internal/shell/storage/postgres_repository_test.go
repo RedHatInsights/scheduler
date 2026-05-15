@@ -445,8 +445,17 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 	if retrievedUpdated.EndTime == nil {
 		t.Error("Expected EndTime to be set")
 	}
-	if retrievedUpdated.Result == nil || *retrievedUpdated.Result != "Success" {
+	if retrievedUpdated.Result == nil {
 		t.Error("Expected Result to be 'Success'")
+	} else {
+		s, ok := retrievedUpdated.Result.(string)
+		if ok {
+			if s != "Success" {
+				t.Error("Expected Result to be 'Success'")
+			}
+		} else {
+			t.Error("Expected Result to be 'Success'")
+		}
 	}
 
 	// Cleanup
