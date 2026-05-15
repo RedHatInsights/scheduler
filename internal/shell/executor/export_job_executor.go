@@ -122,28 +122,12 @@ func (e *ExportJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultT
 
 	// Build typed result
 	result := domain.ExportResult{
-		Type:        domain.ResultTypeExport,
-		ExportID:    createResult.ID,
-		Status:      string(finalStatus.Status),
-		Format:      string(finalStatus.Format),
-		CreatedAt:   finalStatus.CreatedAt,
-		CompletedAt: finalStatus.CompletedAt,
-		ExpiresAt:   finalStatus.ExpiresAt,
+		Type:     domain.ResultTypeExport,
+		ExportID: createResult.ID,
 	}
 
 	if finalStatus.Status == export.StatusComplete {
-		result.DownloadURL = e.exportClient.GetExportDownloadURL(createResult.ID)
-	}
-
-	// Map sources
-	result.Sources = make([]domain.ExportSourceStatus, len(finalStatus.Sources))
-	for i, src := range finalStatus.Sources {
-		result.Sources[i] = domain.ExportSourceStatus{
-			Application: string(src.Application),
-			Resource:    src.Resource,
-			Status:      src.Status,
-			Error:       src.Error,
-		}
+		result.URL = e.exportClient.GetExportDownloadURL(createResult.ID)
 	}
 
 	return result, domain.ResultTypeExport, nil
