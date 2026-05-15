@@ -60,7 +60,7 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] HTTP GetJobRuns success - found %d runs for job %s", len(runs), jobID)
 
-	response := buildPaginatedResponse(r.URL, offset, limit, total, runs)
+	response := buildPaginatedResponse(r.URL, offset, limit, total, ToJobRunResponseList(runs))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -103,5 +103,5 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[DEBUG] HTTP GetJobRun success - run_id=%s, status=%s", run.ID, run.Status)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(run)
+	json.NewEncoder(w).Encode(ToJobRunResponse(run))
 }
