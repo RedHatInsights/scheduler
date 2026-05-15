@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -80,6 +81,17 @@ func (r *SQLiteJobRunRepository) Save(run domain.JobRun) error {
 		endTime = &endTimeStr
 	}
 
+	// Marshal Result to JSON if present
+	var resultJSON *string
+	if run.Result != nil {
+		data, err := json.Marshal(run.Result)
+		if err != nil {
+			return fmt.Errorf("failed to marshal result: %w", err)
+		}
+		str := string(data)
+		resultJSON = &str
+	}
+
 	_, err := r.db.Exec(
 		query,
 		run.ID,
@@ -88,7 +100,7 @@ func (r *SQLiteJobRunRepository) Save(run domain.JobRun) error {
 		run.StartTime.Format(time.RFC3339),
 		endTime,
 		run.ErrorMessage,
-		run.Result,
+		resultJSON,
 		time.Now().UTC().Format(time.RFC3339),
 	)
 
@@ -147,7 +159,19 @@ func (r *SQLiteJobRunRepository) FindByID(id string) (domain.JobRun, error) {
 	}
 
 	run.ErrorMessage = errorMessage
-	run.Result = result
+
+	// Unmarshal Result from JSON if present
+	if result != nil && run.ResultType != nil {
+		// New typed result - unmarshal into interface{}
+		var resultData interface{}
+		if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+			return domain.JobRun{}, fmt.Errorf("failed to unmarshal result: %w", err)
+		}
+		run.Result = resultData
+	} else if result != nil {
+		// Legacy string result - backward compatibility
+		run.Result = *result
+	}
 
 	return run, nil
 }
@@ -214,7 +238,19 @@ func (r *SQLiteJobRunRepository) FindByJobID(jobID string, offset, limit int) ([
 		}
 
 		run.ErrorMessage = errorMessage
-		run.Result = result
+
+		// Unmarshal Result from JSON if present
+		if result != nil && run.ResultType != nil {
+			// New typed result - unmarshal into interface{}
+			var resultData interface{}
+			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+				return nil, 0, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+			run.Result = resultData
+		} else if result != nil {
+			// Legacy string result - backward compatibility
+			run.Result = *result
+		}
 
 		runs = append(runs, run)
 	}
@@ -280,7 +316,19 @@ func (r *SQLiteJobRunRepository) FindByJobIDAndOrgID(jobID string, orgID string)
 		}
 
 		run.ErrorMessage = errorMessage
-		run.Result = result
+
+		// Unmarshal Result from JSON if present
+		if result != nil && run.ResultType != nil {
+			// New typed result - unmarshal into interface{}
+			var resultData interface{}
+			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+			run.Result = resultData
+		} else if result != nil {
+			// Legacy string result - backward compatibility
+			run.Result = *result
+		}
 
 		runs = append(runs, run)
 	}
@@ -343,7 +391,19 @@ func (r *SQLiteJobRunRepository) FindAll() ([]domain.JobRun, error) {
 		}
 
 		run.ErrorMessage = errorMessage
-		run.Result = result
+
+		// Unmarshal Result from JSON if present
+		if result != nil && run.ResultType != nil {
+			// New typed result - unmarshal into interface{}
+			var resultData interface{}
+			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+			run.Result = resultData
+		} else if result != nil {
+			// Legacy string result - backward compatibility
+			run.Result = *result
+		}
 
 		runs = append(runs, run)
 	}

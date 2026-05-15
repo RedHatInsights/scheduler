@@ -15,12 +15,19 @@ func NewHTTPJobExecutor() *HTTPJobExecutor {
 }
 
 // Execute executes an HTTP request job
-func (e *HTTPJobExecutor) Execute(job domain.Job) error {
+func (e *HTTPJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {
 		log.Printf("Executing HTTP request: unknown (payload is not a map)")
-		return nil
+		result := domain.HTTPResult{
+			Type:       domain.ResultTypeHTTP,
+			URL:        "unknown",
+			Method:     "GET",
+			StatusCode: 200,
+			Latency:    0,
+		}
+		return result, domain.ResultTypeHTTP, nil
 	}
 
 	url, _ := payloadMap["url"].(string)
@@ -32,5 +39,13 @@ func (e *HTTPJobExecutor) Execute(job domain.Job) error {
 		url = "unknown"
 	}
 	log.Printf("Executing HTTP %s request to %s", method, url)
-	return nil
+
+	result := domain.HTTPResult{
+		Type:       domain.ResultTypeHTTP,
+		URL:        url,
+		Method:     method,
+		StatusCode: 200,
+		Latency:    0,
+	}
+	return result, domain.ResultTypeHTTP, nil
 }

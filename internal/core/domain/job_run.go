@@ -21,7 +21,8 @@ type JobRun struct {
 	StartTime    time.Time    `json:"start_time"`
 	EndTime      *time.Time   `json:"end_time,omitempty"`
 	ErrorMessage *string      `json:"error_message,omitempty"`
-	Result       *string      `json:"result,omitempty"`
+	ResultType   *ResultType  `json:"result_type,omitempty"`
+	Result       interface{}  `json:"result,omitempty"`
 }
 
 func NewJobRun(jobID string) JobRun {
@@ -32,11 +33,12 @@ func NewJobRun(jobID string) JobRun {
 		StartTime:    time.Now().UTC(),
 		EndTime:      nil,
 		ErrorMessage: nil,
+		ResultType:   nil,
 		Result:       nil,
 	}
 }
 
-func (jr JobRun) WithCompleted(result string) JobRun {
+func (jr JobRun) WithCompleted(resultType ResultType, result interface{}) JobRun {
 	now := time.Now().UTC()
 	return JobRun{
 		ID:           jr.ID,
@@ -45,7 +47,8 @@ func (jr JobRun) WithCompleted(result string) JobRun {
 		StartTime:    jr.StartTime,
 		EndTime:      &now,
 		ErrorMessage: nil,
-		Result:       &result,
+		ResultType:   &resultType,
+		Result:       result,
 	}
 }
 
@@ -58,6 +61,7 @@ func (jr JobRun) WithFailed(errorMessage string) JobRun {
 		StartTime:    jr.StartTime,
 		EndTime:      &now,
 		ErrorMessage: &errorMessage,
+		ResultType:   nil,
 		Result:       nil,
 	}
 }
