@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -51,8 +52,19 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 		endTime = &s
 	}
 
+	// Marshal Result to JSON if present
+	var resultJSON *string
+	if run.Result != nil {
+		data, err := json.Marshal(run.Result)
+		if err != nil {
+			return fmt.Errorf("failed to marshal result: %w", err)
+		}
+		str := string(data)
+		resultJSON = &str
+	}
+
 	_, err := r.db.Exec(query, run.ID, run.JobID, run.Status, run.StartTime.Format(time.RFC3339),
-		endTime, run.ErrorMessage, run.Result, time.Now().UTC().Format(time.RFC3339))
+		endTime, run.ErrorMessage, resultJSON, time.Now().UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("failed to save job run: %w", err)
 	}
@@ -114,7 +126,21 @@ func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) 
 			run.EndTime = &t
 		}
 	}
-	run.ErrorMessage, run.Result = errorMessage, result
+	run.ErrorMessage = errorMessage
+
+	// Unmarshal Result from JSON if present
+	if result != nil && run.ResultType != nil {
+		// New typed result - unmarshal into interface{}
+		var resultData interface{}
+		if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+			return domain.JobRun{}, fmt.Errorf("failed to unmarshal result: %w", err)
+		}
+		run.Result = resultData
+	} else if result != nil {
+		// Legacy string result - backward compatibility
+		run.Result = *result
+	}
+
 	return run, nil
 }
 
@@ -140,7 +166,21 @@ func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) 
 				run.EndTime = &t
 			}
 		}
-		run.ErrorMessage, run.Result = errorMessage, result
+		run.ErrorMessage = errorMessage
+
+		// Unmarshal Result from JSON if present
+		if result != nil && run.ResultType != nil {
+			// New typed result - unmarshal into interface{}
+			var resultData interface{}
+			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+			run.Result = resultData
+		} else if result != nil {
+			// Legacy string result - backward compatibility
+			run.Result = *result
+		}
+
 		runs = append(runs, run)
 	}
 	return runs, rows.Err()
