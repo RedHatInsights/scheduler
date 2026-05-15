@@ -13,10 +13,10 @@ BINARY_PATH=bin/$(BINARY_NAME)
 TEST_BINARY=test-client
 
 # Build targets
-.PHONY: all build clean test deps fmt run test-api help
+.PHONY: all build clean test deps fmt vet run test-api help
 
 # Default target
-all: clean deps fmt test build
+all: clean deps fmt vet test build
 
 # Build the server binary
 build:
