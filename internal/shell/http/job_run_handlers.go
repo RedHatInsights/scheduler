@@ -42,12 +42,12 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP GetJobRuns called - job_id=%s, org_id=%s", jobID, ident.Identity.OrgID)
+	log.Printf("[DEBUG] HTTP GetJobRuns called - job_id=%s, user_id=%s", jobID, ident.Identity.User.UserID)
 
 	offset, limit := parsePaginationParams(r.URL)
 
-	// Only get runs for jobs belonging to the user's organization
-	runs, total, err := h.jobRunService.GetJobRunsWithOrgCheck(jobID, ident.Identity.OrgID, offset, limit)
+	// Only get runs for jobs belonging to the user
+	runs, total, err := h.jobRunService.GetJobRunsWithUserCheck(jobID, ident, offset, limit)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", jobID)})
@@ -86,10 +86,10 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP GetJobRun called - run_id=%s, org_id=%s", runID, ident.Identity.OrgID)
+	log.Printf("[DEBUG] HTTP GetJobRun called - run_id=%s, user_id=%s", runID, ident.Identity.User.UserID)
 
-	// Only get run if it belongs to a job in the user's organization
-	run, err := h.jobRunService.GetJobRunWithOrgCheck(runID, ident.Identity.OrgID)
+	// Only get run if it belongs to a job owned by the user
+	run, err := h.jobRunService.GetJobRunWithUserCheck(runID, ident)
 	if err != nil {
 		if err == domain.ErrJobRunNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job run", runID)})

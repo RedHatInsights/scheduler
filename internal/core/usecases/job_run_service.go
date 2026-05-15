@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
+
 	"insights-scheduler/internal/core/domain"
 )
 
@@ -49,6 +51,28 @@ func (s *JobRunService) GetJobRunWithOrgCheck(runID string, orgID string) (domai
 	return run, nil
 }
 
+// GetJobRunWithUserCheck retrieves a job run only if it belongs to the specified user
+func (s *JobRunService) GetJobRunWithUserCheck(runID string, ident identity.XRHID) (domain.JobRun, error) {
+	run, err := s.runRepo.FindByID(runID)
+	if err != nil {
+		return domain.JobRun{}, err
+	}
+
+	// Get the parent job to check user_id
+	job, err := s.jobRepo.FindByID(run.JobID)
+	if err != nil {
+		return domain.JobRun{}, err
+	}
+
+	userID := ident.Identity.User.UserID
+	if job.UserID != userID {
+		log.Printf("[DEBUG] JobRunService - user_id mismatch: run belongs to job with user_id=%s, requested user_id=%s", job.UserID, userID)
+		return domain.JobRun{}, domain.ErrJobRunNotFound
+	}
+
+	return run, nil
+}
+
 // GetJobRuns retrieves all runs for a specific job
 func (s *JobRunService) GetJobRuns(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
 	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
@@ -68,6 +92,27 @@ func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string, offse
 
 	if job.OrgID != orgID {
 		log.Printf("[DEBUG] JobRunService - org_id mismatch: job belongs to org_id=%s, requested org_id=%s", job.OrgID, orgID)
+		return nil, 0, domain.ErrJobNotFound
+	}
+
+	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	return runs, total, nil
+}
+
+// GetJobRunsWithUserCheck retrieves all runs for a job only if it belongs to the specified user
+func (s *JobRunService) GetJobRunsWithUserCheck(jobID string, ident identity.XRHID, offset, limit int) ([]domain.JobRun, int, error) {
+	// First verify the job exists and belongs to this user
+	job, err := s.jobRepo.FindByID(jobID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	userID := ident.Identity.User.UserID
+	if job.UserID != userID {
+		log.Printf("[DEBUG] JobRunService - user_id mismatch: job belongs to user_id=%s, requested user_id=%s", job.UserID, userID)
 		return nil, 0, domain.ErrJobNotFound
 	}
 
