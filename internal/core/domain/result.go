@@ -1,7 +1,5 @@
 package domain
 
-import "time"
-
 type ResultType string
 
 const (
@@ -13,23 +11,9 @@ const (
 
 // ExportResult represents the result of an export job execution
 type ExportResult struct {
-	Type        ResultType           `json:"type"`
-	ExportID    string               `json:"export_id"`
-	Status      string               `json:"status"`
-	DownloadURL string               `json:"download_url,omitempty"`
-	Format      string               `json:"format"`
-	CreatedAt   time.Time            `json:"created_at"`
-	CompletedAt *time.Time           `json:"completed_at,omitempty"`
-	ExpiresAt   *time.Time           `json:"expires_at,omitempty"`
-	Sources     []ExportSourceStatus `json:"sources,omitempty"`
-}
-
-// ExportSourceStatus represents the status of a specific data source in an export
-type ExportSourceStatus struct {
-	Application string  `json:"application"`
-	Resource    string  `json:"resource"`
-	Status      string  `json:"status"`
-	Error       *string `json:"error,omitempty"`
+	Type     ResultType `json:"type"`
+	ExportID string     `json:"export_id"`
+	URL      string     `json:"url,omitempty"`
 }
 
 // CommandResult represents the result of a command execution
