@@ -471,6 +471,79 @@ func TestToJobRunResponseLegacyStringResult(t *testing.T) {
 	}
 }
 
+func TestToJobRunResponseStringifiedJSON(t *testing.T) {
+	// Create a JobRun where result is a JSON string (edge case - should be parsed)
+	jobRun := domain.NewJobRun("job-json-string")
+	jobRun.Status = domain.RunStatusCompleted
+	jobRun.Result = `{"type":"export","export_id":"test-123","url":"https://example.com/test-123"}` // JSON as string
+	jobRun.ResultType = nil
+
+	// Convert to response DTO
+	response := ToJobRunResponse(jobRun)
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// Verify result was parsed as JSON object, not kept as string
+	if contains(jsonString, `"result":"{`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should be parsed as JSON object, not escaped as string")
+	}
+
+	// Verify result contains the nested fields
+	if !contains(jsonString, `"export_id":"test-123"`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should contain export_id field")
+	}
+
+	if !contains(jsonString, `"url":"https://example.com/test-123"`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should contain url field")
+	}
+}
+
+func TestToJobRunResponseWithStructResult(t *testing.T) {
+	// Create a JobRun with a proper struct result (normal case)
+	jobRun := domain.NewJobRun("job-struct")
+	jobRun.Status = domain.RunStatusCompleted
+
+	exportResult := domain.ExportResult{
+		Type:     domain.ResultTypeExport,
+		ExportID: "struct-export-789",
+		URL:      "https://example.com/struct-export-789",
+	}
+	resultType := domain.ResultTypeExport
+	jobRun.ResultType = &resultType
+	jobRun.Result = exportResult
+
+	// Convert to response DTO
+	response := ToJobRunResponse(jobRun)
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// Verify result is properly serialized as object
+	if !contains(jsonString, `"export_id":"struct-export-789"`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should contain export_id from struct")
+	}
+
+	if !contains(jsonString, `"url":"https://example.com/struct-export-789"`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should contain url from struct")
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || contains(s[1:], substr)))
