@@ -34,7 +34,7 @@ func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidat
 }
 
 // Execute executes an export job
-func (e *ExportJobExecutor) Execute(job domain.Job) error {
+func (e *ExportJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultType, error) {
 	// Use a longer timeout for export operations as they can take time
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -42,52 +42,52 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 	// Generate identity header for the export request
 	identityHeader, err := e.userValidator.GenerateIdentityHeader(ctx, job.OrgID, job.UserID)
 	if err != nil {
-		return fmt.Errorf("failed to verify user: %w", err)
+		return nil, domain.ResultTypeExport, fmt.Errorf("failed to verify user: %w", err)
 	}
 
 	// Marshal the payload to JSON then unmarshal into ExportRequest
 	// This preserves the payload structure exactly as provided
 	payloadJSON, err := json.Marshal(job.Payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
+		return nil, domain.ResultTypeExport, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
 	var req export.ExportRequest
 	if err := json.Unmarshal(payloadJSON, &req); err != nil {
-		return fmt.Errorf("failed to unmarshal payload into ExportRequest: %w", err)
+		return nil, domain.ResultTypeExport, fmt.Errorf("failed to unmarshal payload into ExportRequest: %w", err)
 	}
 
 	log.Printf("Creating export request: %s (format: %s, sources: %d)", req.Name, req.Format, len(req.Sources))
 
 	// Create the export
-	result, err := e.exportClient.CreateExport(ctx, req, identityHeader)
+	createResult, err := e.exportClient.CreateExport(ctx, req, identityHeader)
 	if err != nil {
-		return fmt.Errorf("failed to create export: %w", err)
+		return nil, domain.ResultTypeExport, fmt.Errorf("failed to create export: %w", err)
 	}
 
-	log.Printf("Export created successfully - ID: %s, Status: %s", result.ID, result.Status)
+	log.Printf("Export created successfully - ID: %s, Status: %s", createResult.ID, createResult.Status)
 
 	// Wait for completion using configuration values for polling
-	log.Printf("Waiting for export %s to complete...", result.ID)
+	log.Printf("Waiting for export %s to complete...", createResult.ID)
 
 	maxRetries := e.config.ExportService.PollMaxRetries
 	pollInterval := e.config.ExportService.PollInterval
 
 	log.Printf("Polling export with maxRetries=%d, pollInterval=%s", maxRetries, pollInterval)
 
-	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, result.ID, identityHeader, maxRetries, pollInterval)
+	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, createResult.ID, identityHeader, maxRetries, pollInterval)
 	if err != nil {
-		return fmt.Errorf("export failed or timed out: %w", err)
+		return nil, domain.ResultTypeExport, fmt.Errorf("export failed or timed out: %w", err)
 	}
 
-	log.Printf("Export %s completed with status: %s", result.ID, finalStatus.Status)
+	log.Printf("Export %s completed with status: %s", createResult.ID, finalStatus.Status)
 
 	// Send notification
 	downloadURL := ""
 	errorMsg := ""
 
 	if finalStatus.Status == export.StatusComplete {
-		downloadURL = e.exportClient.GetExportDownloadURL(result.ID)
+		downloadURL = e.exportClient.GetExportDownloadURL(createResult.ID)
 	} else if finalStatus.Status == export.StatusFailed {
 		// Extract error message if available from the status
 		if len(finalStatus.Sources) > 0 && finalStatus.Sources[0].Error != nil {
@@ -98,7 +98,7 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 	}
 
 	notification := &ExportCompletionNotification{
-		ExportID:    result.ID,
+		ExportID:    createResult.ID,
 		JobID:       job.ID,
 		JobName:     job.Name,
 		AccountID:   "", // FIXME: account
@@ -110,15 +110,25 @@ func (e *ExportJobExecutor) Execute(job domain.Job) error {
 
 	if err := e.notifier.JobComplete(ctx, notification); err != nil {
 		// Don't fail the job execution if notification fails
-		log.Printf("Warning: Failed to send completion notification for export %s", result.ID)
+		log.Printf("Warning: Failed to send completion notification for export %s", createResult.ID)
 	}
 
 	log.Printf("Scheduled report has been generated")
 
-	path := e.exportClient.GetExportDownloadURL(result.ID)
+	path := e.exportClient.GetExportDownloadURL(createResult.ID)
 
 	log.Printf("Sending email to notify customer of generation of scheduled report")
 	log.Printf("Hello Valued Customer, your report can be downloaded from here: %s", path)
 
-	return nil
+	// Build typed result
+	result := domain.ExportResult{
+		Type:     domain.ResultTypeExport,
+		ExportID: createResult.ID,
+	}
+
+	if finalStatus.Status == export.StatusComplete {
+		result.URL = e.exportClient.GetExportDownloadURL(createResult.ID)
+	}
+
+	return result, domain.ResultTypeExport, nil
 }

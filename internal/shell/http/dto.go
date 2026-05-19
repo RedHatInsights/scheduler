@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"time"
 
 	"insights-scheduler/internal/core/domain"
@@ -71,6 +72,66 @@ func ToJobResponseList(jobs []domain.Job) []JobResponse {
 	responses := make([]JobResponse, len(jobs))
 	for i, job := range jobs {
 		responses[i] = ToJobResponse(job)
+	}
+	return responses
+}
+
+// JobRunResponse is the API response model for JobRun objects.
+type JobRunResponse struct {
+	ID           string      `json:"id"`
+	JobID        string      `json:"job_id"`
+	Status       string      `json:"status"`
+	StartTime    time.Time   `json:"start_time"`
+	EndTime      *time.Time  `json:"end_time,omitempty"`
+	ErrorMessage *string     `json:"error_message,omitempty"`
+	ResultType   *string     `json:"result_type,omitempty"`
+	Result       interface{} `json:"result,omitempty"`
+}
+
+// ToJobRunResponse converts a domain.JobRun to a JobRunResponse DTO
+func ToJobRunResponse(run domain.JobRun) JobRunResponse {
+	var resultType *string
+	if run.ResultType != nil {
+		rt := string(*run.ResultType)
+		resultType = &rt
+	}
+
+	// Process the result field: try to ensure it's a proper JSON object or string
+	var processedResult interface{}
+	if run.Result != nil {
+		// If result is a string, try to unmarshal it as JSON
+		if resultStr, ok := run.Result.(string); ok {
+			var jsonObj interface{}
+			if err := json.Unmarshal([]byte(resultStr), &jsonObj); err == nil {
+				// Successfully unmarshaled as JSON - use the object
+				processedResult = jsonObj
+			} else {
+				// Not valid JSON - keep as string (legacy result)
+				processedResult = resultStr
+			}
+		} else {
+			// Already an object (map, struct, etc.) - keep as is
+			processedResult = run.Result
+		}
+	}
+
+	return JobRunResponse{
+		ID:           run.ID,
+		JobID:        run.JobID,
+		Status:       string(run.Status),
+		StartTime:    run.StartTime,
+		EndTime:      run.EndTime,
+		ErrorMessage: run.ErrorMessage,
+		ResultType:   resultType,
+		Result:       processedResult,
+	}
+}
+
+// ToJobRunResponseList converts a slice of domain.JobRun to a slice of JobRunResponse DTOs
+func ToJobRunResponseList(runs []domain.JobRun) []JobRunResponse {
+	responses := make([]JobRunResponse, len(runs))
+	for i, run := range runs {
+		responses[i] = ToJobRunResponse(run)
 	}
 	return responses
 }
