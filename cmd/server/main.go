@@ -72,6 +72,7 @@ func init() {
 	rootCmd.AddCommand(dbMigrationCmd)
 	rootCmd.AddCommand(apiCmd)
 	rootCmd.AddCommand(workerCmd)
+	rootCmd.AddCommand(cleanupCmd)
 }
 
 var apiCmd = &cobra.Command{
@@ -86,6 +87,15 @@ var workerCmd = &cobra.Command{
 	Short: "Run the worker",
 	Long:  `Run the worker for executing scheduled jobs. Polls Redis and writes job run history to Postgres.`,
 	Run:   runWorker,
+}
+
+var cleanupCmd = &cobra.Command{
+	Use:   "cleanup",
+	Short: "Clean up old job run records",
+	Long: `Remove old job run records from the database, retaining only the most recent N runs per job.
+The retention count is configurable via JOB_RUN_RETENTION_COUNT (default: 10).
+Designed to be invoked as an OpenShift CronJob.`,
+	RunE: runCleanup,
 }
 
 var dbMigrationCmd = &cobra.Command{
@@ -158,6 +168,56 @@ func runDatabaseDown(cmd *cobra.Command, args []string) error {
 	} else {
 		log.Println("Successfully rolled back last migration")
 	}
+	return nil
+}
+
+func runCleanup(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	keepCount := cfg.Scheduler.JobRunRetentionCount
+	if keepCount < 1 {
+		return fmt.Errorf("JOB_RUN_RETENTION_COUNT must be at least 1, got %d", keepCount)
+	}
+
+	log.Printf("[CLEANUP] Starting job run cleanup (retaining %d runs per job)", keepCount)
+
+	var runRepo interface {
+		CleanupOldRuns(keepPerJob int) (int64, error)
+		Close() error
+	}
+
+	switch cfg.Database.Type {
+	case "sqlite":
+		repo, err := storage.NewSQLiteJobRunRepository(cfg.Database.Path)
+		if err != nil {
+			return fmt.Errorf("failed to initialize SQLite job run repository: %w", err)
+		}
+		runRepo = repo
+	case "postgres", "postgresql":
+		repo, err := storage.NewPostgresJobRunRepository(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to initialize PostgreSQL job run repository: %w", err)
+		}
+		runRepo = repo
+	default:
+		return fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
+	}
+	defer runRepo.Close()
+
+	deleted, err := runRepo.CleanupOldRuns(keepCount)
+	if err != nil {
+		return fmt.Errorf("cleanup failed: %w", err)
+	}
+
+	if deleted == 0 {
+		log.Println("[CLEANUP] No old job runs to remove")
+	} else {
+		log.Printf("[CLEANUP] Successfully removed %d old job run(s)", deleted)
+	}
+
 	return nil
 }
 
