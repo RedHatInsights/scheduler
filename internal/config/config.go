@@ -263,6 +263,9 @@ type SchedulerConfig struct {
 
 	// DBToRedisSyncInterval is how often workers sync jobs from PostgreSQL to Redis
 	DBToRedisSyncInterval time.Duration `json:"db_to_redis_sync_interval"`
+
+	// JobRunRetentionCount is the number of recent job runs to keep per job during cleanup
+	JobRunRetentionCount int `json:"job_run_retention_count"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
@@ -616,6 +619,7 @@ func loadSchedulerConfig() SchedulerConfig {
 		GracefulShutdownTimeout: getEnvAsDuration("SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT", 30*time.Second),
 		RedisPollInterval:       getEnvAsDuration("SCHEDULER_REDIS_POLL_INTERVAL", 10*time.Second),
 		DBToRedisSyncInterval:   getEnvAsDuration("SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL", 1*time.Hour),
+		JobRunRetentionCount:    getEnvAsInt("JOB_RUN_RETENTION_COUNT", 10),
 	}
 }
 
