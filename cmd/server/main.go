@@ -594,7 +594,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 	// Optional: Periodic re-sync from Postgres to catch any missed updates
 	// This is a safety mechanism in case API pods fail to update Redis
-	if os.Getenv("ENABLE_PERIODIC_SYNC") == "true" {
+	if cfg.Scheduler.EnablePeriodicSync {
 		syncInterval := cfg.Scheduler.DBToRedisSyncInterval
 		log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
 		go func() {
