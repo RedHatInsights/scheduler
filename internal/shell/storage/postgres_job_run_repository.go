@@ -146,6 +146,30 @@ func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) 
 	return runs, rows.Err()
 }
 
+func (r *PostgresJobRunRepository) CleanupOldRuns(keepPerJob int) (int64, error) {
+	query := `
+		DELETE FROM job_runs
+		WHERE id IN (
+			SELECT id FROM (
+				SELECT id, ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY start_time DESC) AS rn
+				FROM job_runs
+			) ranked
+			WHERE rn > $1
+		)`
+
+	result, err := r.db.Exec(query, keepPerJob)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old job runs: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return deleted, nil
+}
+
 func (r *PostgresJobRunRepository) Close() error {
 	return r.db.Close()
 }

@@ -355,6 +355,30 @@ func (r *SQLiteJobRunRepository) FindAll() ([]domain.JobRun, error) {
 	return runs, nil
 }
 
+func (r *SQLiteJobRunRepository) CleanupOldRuns(keepPerJob int) (int64, error) {
+	query := `
+		DELETE FROM job_runs
+		WHERE id IN (
+			SELECT id FROM (
+				SELECT id, ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY start_time DESC) AS rn
+				FROM job_runs
+			) ranked
+			WHERE rn > ?
+		)`
+
+	result, err := r.db.Exec(query, keepPerJob)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old job runs: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return deleted, nil
+}
+
 func (r *SQLiteJobRunRepository) Close() error {
 	return r.db.Close()
 }

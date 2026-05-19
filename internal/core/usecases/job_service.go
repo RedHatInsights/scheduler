@@ -27,6 +27,7 @@ type JobRunRepository interface {
 	FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error)
 	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
 	FindAll() ([]domain.JobRun, error)
+	CleanupOldRuns(keepPerJob int) (int64, error)
 }
 
 type SchedulingService interface {
