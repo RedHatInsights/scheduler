@@ -18,4 +18,7 @@ type SchedulerJobService interface {
 
 	// ExecuteScheduledJob executes a job (called when cron fires)
 	ExecuteScheduledJob(job domain.Job) error
+
+	// ExecuteScheduledJobWithJobRun executes a job with a pre-created job run ID
+	ExecuteScheduledJobWithJobRun(job domain.Job, jobRunID string) error
 }

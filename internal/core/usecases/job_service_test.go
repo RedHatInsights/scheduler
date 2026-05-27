@@ -210,12 +210,20 @@ func (m *mockSchedulingService) ShouldRun(job domain.Job, currentTime time.Time)
 }
 
 type mockJobExecutor struct {
-	executeFunc func(job domain.Job) error
+	executeFunc           func(job domain.Job) error
+	executeWithJobRunFunc func(job domain.Job, jobRunID string) error
 }
 
 func (m *mockJobExecutor) Execute(job domain.Job) error {
 	if m.executeFunc != nil {
 		return m.executeFunc(job)
+	}
+	return nil
+}
+
+func (m *mockJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) error {
+	if m.executeWithJobRunFunc != nil {
+		return m.executeWithJobRunFunc(job, jobRunID)
 	}
 	return nil
 }
@@ -273,7 +281,7 @@ func TestRunJobUpdatesLastRunAndNextRunAt(t *testing.T) {
 	timeBefore := time.Now()
 
 	// Run the job
-	err := service.RunJob(context.Background(), job.ID)
+	_, err := service.RunJob(context.Background(), job.ID)
 	if err != nil {
 		t.Fatalf("RunJob() unexpected error: %v", err)
 	}
@@ -551,5 +559,172 @@ func TestPatchJobWithUserCheck_CanSetStatusToScheduled(t *testing.T) {
 
 	if updatedJob.Status != domain.StatusScheduled {
 		t.Errorf("PatchJobWithUserCheck() expected status to be 'scheduled', got %v", updatedJob.Status)
+	}
+}
+
+// Mock CronScheduler for testing
+
+type mockCronScheduler struct {
+	scheduleJobFunc            func(job domain.Job) error
+	unscheduleJobFunc          func(jobID string)
+	scheduleJobImmediatelyFunc func(job domain.Job, jobRunID string) error
+	scheduledJobs              map[string]domain.Job
+	immediateJobs              []domain.Job
+	immediateJobRunIDs         []string
+}
+
+func newMockCronScheduler() *mockCronScheduler {
+	return &mockCronScheduler{
+		scheduledJobs:      make(map[string]domain.Job),
+		immediateJobs:      make([]domain.Job, 0),
+		immediateJobRunIDs: make([]string, 0),
+	}
+}
+
+func (m *mockCronScheduler) ScheduleJob(job domain.Job) error {
+	if m.scheduleJobFunc != nil {
+		return m.scheduleJobFunc(job)
+	}
+	m.scheduledJobs[job.ID] = job
+	return nil
+}
+
+func (m *mockCronScheduler) UnscheduleJob(jobID string) {
+	if m.unscheduleJobFunc != nil {
+		m.unscheduleJobFunc(jobID)
+		return
+	}
+	delete(m.scheduledJobs, jobID)
+}
+
+func (m *mockCronScheduler) ScheduleJobImmediately(job domain.Job, jobRunID string) error {
+	if m.scheduleJobImmediatelyFunc != nil {
+		return m.scheduleJobImmediatelyFunc(job, jobRunID)
+	}
+	m.immediateJobs = append(m.immediateJobs, job)
+	m.immediateJobRunIDs = append(m.immediateJobRunIDs, jobRunID)
+	return nil
+}
+
+// Tests for RunJob with scheduler
+
+func TestRunJob_WithScheduler_CallsScheduleJobImmediately(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+	cronScheduler := newMockCronScheduler()
+
+	service := NewJobService(repo, schedulingSvc, executor)
+	service.SetCronScheduler(cronScheduler)
+	// Note: Not setting runRepo, so job run ID will be empty but that's OK for this test
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Run the job
+	jobRunID, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	// Verify job run ID is returned (will be empty since no runRepo set, but should not error)
+	if jobRunID != "" {
+		t.Logf("RunJob() returned job run ID: %s", jobRunID)
+	}
+
+	// Verify ScheduleJobImmediately was called
+	if len(cronScheduler.immediateJobs) != 1 {
+		t.Errorf("RunJob() expected ScheduleJobImmediately to be called once, got %d calls", len(cronScheduler.immediateJobs))
+	}
+
+	if len(cronScheduler.immediateJobs) > 0 && cronScheduler.immediateJobs[0].ID != job.ID {
+		t.Errorf("RunJob() called ScheduleJobImmediately with wrong job ID: got %s, want %s", cronScheduler.immediateJobs[0].ID, job.ID)
+	}
+}
+
+func TestRunJob_WithoutScheduler_ExecutesDirectly(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, schedulingSvc, executor)
+	// Don't set a cron scheduler
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Run the job
+	jobRunID, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	// Without runRepo set, jobRunID should be empty but execution should still work
+	if jobRunID != "" {
+		t.Logf("RunJob() returned job run ID: %s", jobRunID)
+	}
+
+	// Verify job status was updated
+	updatedJob, _ := repo.FindByID(job.ID)
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("RunJob() expected status to be 'scheduled' after execution, got %s", updatedJob.Status)
+	}
+}
+
+func TestRunJob_WithScheduler_DoesNotExecuteDirectly(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+
+	executeCalled := false
+	executor := &mockJobExecutor{
+		executeFunc: func(job domain.Job) error {
+			executeCalled = true
+			return nil
+		},
+		executeWithJobRunFunc: func(job domain.Job, jobRunID string) error {
+			executeCalled = true
+			return nil
+		},
+	}
+	cronScheduler := newMockCronScheduler()
+
+	service := NewJobService(repo, schedulingSvc, executor)
+	service.SetCronScheduler(cronScheduler)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Run the job
+	_, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	// Verify executor was NOT called directly (scheduler handles it)
+	if executeCalled {
+		t.Error("RunJob() with scheduler should not call executor directly, but it did")
+	}
+
+	// Verify ScheduleJobImmediately was called instead
+	if len(cronScheduler.immediateJobs) != 1 {
+		t.Errorf("RunJob() expected ScheduleJobImmediately to be called, but got %d calls", len(cronScheduler.immediateJobs))
+	}
+}
+
+func TestRunJob_JobNotFound_ReturnsError(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, schedulingSvc, executor)
+
+	// Try to run a non-existent job
+	_, err := service.RunJob(context.Background(), "non-existent-id")
+	if err != domain.ErrJobNotFound {
+		t.Errorf("RunJob() expected ErrJobNotFound, got %v", err)
 	}
 }

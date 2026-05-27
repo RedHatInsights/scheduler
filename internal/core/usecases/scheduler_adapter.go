@@ -35,3 +35,8 @@ func (s *SchedulerJobServiceAdapter) ExecuteScheduledJob(job domain.Job) error {
 	// Delegate to core service to execute the job
 	return s.core.ExecuteScheduledJob(job)
 }
+
+func (s *SchedulerJobServiceAdapter) ExecuteScheduledJobWithJobRun(job domain.Job, jobRunID string) error {
+	// Delegate to core service to execute the job with pre-created job run
+	return s.core.ExecuteScheduledJobWithJobRun(job, jobRunID)
+}

@@ -120,6 +120,28 @@ func (s *CronScheduler) UnscheduleJob(jobID string) {
 	}
 }
 
+// ScheduleJobImmediately executes a job immediately in the cron scheduler
+// For the in-memory cron scheduler, we execute directly since there's no distributed system
+func (s *CronScheduler) ScheduleJobImmediately(job domain.Job, jobRunID string) error {
+	log.Printf("[CronScheduler] Executing job %s immediately (job run: %s)", job.ID, jobRunID)
+
+	// Get the latest job state from repository
+	currentJob, err := s.jobService.GetJob(context.Background(), job.ID)
+	if err != nil {
+		log.Printf("[CronScheduler] Error getting job %s for immediate execution: %v", job.ID, err)
+		return err
+	}
+
+	// Execute the job immediately with the pre-created job run
+	if err := s.jobService.ExecuteScheduledJobWithJobRun(currentJob, jobRunID); err != nil {
+		log.Printf("[CronScheduler] Error executing job %s immediately: %v", job.ID, err)
+		return err
+	}
+
+	log.Printf("[CronScheduler] Job %s executed immediately (job run: %s)", job.ID, jobRunID)
+	return nil
+}
+
 // loadAndScheduleAllJobs loads all scheduled jobs from the repository and schedules them
 func (s *CronScheduler) loadAndScheduleAllJobs() {
 	jobs, err := s.jobService.ListJobs()

@@ -35,16 +35,19 @@ type SchedulingService interface {
 
 type JobExecutor interface {
 	Execute(job domain.Job) error
+	ExecuteWithJobRun(job domain.Job, jobRunID string) error
 }
 
 type CronScheduler interface {
 	ScheduleJob(job domain.Job) error
 	UnscheduleJob(jobID string)
+	ScheduleJobImmediately(job domain.Job, jobRunID string) error
 }
 
 // DefaultJobService is the default implementation of ports.JobService
 type DefaultJobService struct {
 	repo          JobRepository
+	runRepo       JobRunRepository
 	scheduler     SchedulingService
 	executor      JobExecutor
 	cronScheduler CronScheduler
@@ -63,6 +66,10 @@ func NewJobService(repo JobRepository, scheduler SchedulingService, executor Job
 
 func (s *DefaultJobService) SetCronScheduler(cronScheduler CronScheduler) {
 	s.cronScheduler = cronScheduler
+}
+
+func (s *DefaultJobService) SetJobRunRepository(runRepo JobRunRepository) {
+	s.runRepo = runRepo
 }
 
 // calculateNextRunAt calculates the next run time for a job based on its cron schedule
@@ -628,23 +635,54 @@ func (s *DefaultJobService) DeleteJobWithUserCheck(ctx context.Context, id strin
 	return s.repo.Delete(id)
 }
 
-func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
+func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
-		return err
+		return "", err
 	}
+
+	// Create job run record synchronously so we can return the ID
+	var jobRunID string
+	if s.runRepo != nil {
+		jobRun := domain.NewJobRun(job.ID)
+		jobRunID = jobRun.ID
+		if err := s.runRepo.Save(jobRun); err != nil {
+			log.Printf("[DEBUG] RunJob - failed to create job run record: %v", err)
+			return "", fmt.Errorf("failed to create job run: %w", err)
+		}
+		log.Printf("[DEBUG] RunJob - created job run %s for job %s", jobRunID, id)
+	}
+
+	// If we have a cron scheduler (Redis or in-memory), use it for immediate execution
+	// This ensures proper distributed locking in Redis mode and consistent execution path
+	if s.cronScheduler != nil {
+		log.Printf("[DEBUG] RunJob - scheduling job %s for immediate execution via scheduler", id)
+		err := s.cronScheduler.ScheduleJobImmediately(job, jobRunID)
+		if err != nil {
+			return "", err
+		}
+		return jobRunID, nil
+	}
+
+	// Fallback to direct execution if no scheduler is configured
+	log.Printf("[DEBUG] RunJob - executing job %s directly (no scheduler configured)", id)
 
 	runningJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(time.Now().UTC())
 	err = s.repo.Save(runningJob)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	err = s.executor.Execute(runningJob)
+	var execErr error
+	if jobRunID != "" {
+		execErr = s.executor.ExecuteWithJobRun(runningJob, jobRunID)
+	} else {
+		execErr = s.executor.Execute(runningJob)
+	}
 
 	var finalStatus domain.JobStatus
-	if err != nil {
-		log.Printf("Job execution failed for job %s: %v", job.ID, err)
+	if execErr != nil {
+		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
 		finalStatus = domain.StatusFailed
 	} else {
 		finalStatus = domain.StatusScheduled
@@ -661,7 +699,12 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) error {
 		log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
 	}
 
-	return s.repo.Save(finalJob)
+	err = s.repo.Save(finalJob)
+	if err != nil {
+		return "", err
+	}
+
+	return jobRunID, nil
 }
 
 func (s *DefaultJobService) PauseJob(id string) (domain.Job, error) {
@@ -864,29 +907,29 @@ func (s *DefaultJobService) ResumeJobWithUserCheck(ctx context.Context, id strin
 	return resumedJob, nil
 }
 
-func (s *DefaultJobService) RunJobWithOrgCheck(ctx context.Context, id string, orgID string) error {
+func (s *DefaultJobService) RunJobWithOrgCheck(ctx context.Context, id string, orgID string) (string, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Check if job belongs to the same organization
 	if job.OrgID != orgID {
-		return domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+		return "", domain.ErrJobNotFound // Don't reveal existence of job from other orgs
 	}
 
 	return s.RunJob(ctx, id)
 }
 
-func (s *DefaultJobService) RunJobWithUserCheck(ctx context.Context, id string, userID string) error {
+func (s *DefaultJobService) RunJobWithUserCheck(ctx context.Context, id string, userID string) (string, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Check if job belongs to the same user
 	if job.UserID != userID {
-		return domain.ErrJobNotFound // Don't reveal existence of job from other users
+		return "", domain.ErrJobNotFound // Don't reveal existence of job from other users
 	}
 
 	return s.RunJob(ctx, id)
@@ -910,5 +953,41 @@ func (s *DefaultJobService) GetScheduledJobs() ([]domain.Job, error) {
 
 func (s *DefaultJobService) ExecuteScheduledJob(job domain.Job) error {
 	// Use background context for scheduled job execution
-	return s.RunJob(context.Background(), job.ID)
+	_, err := s.RunJob(context.Background(), job.ID)
+	return err
+}
+
+func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRunID string) error {
+	// Execute job directly with pre-created job run ID
+	log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - job: %s, job run: %s", job.ID, jobRunID)
+
+	runningJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(time.Now().UTC())
+	err := s.repo.Save(runningJob)
+	if err != nil {
+		return err
+	}
+
+	// Execute with the pre-created job run
+	execErr := s.executor.ExecuteWithJobRun(runningJob, jobRunID)
+
+	var finalStatus domain.JobStatus
+	if execErr != nil {
+		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
+		finalStatus = domain.StatusFailed
+	} else {
+		finalStatus = domain.StatusScheduled
+	}
+
+	finalJob := runningJob.WithStatus(finalStatus)
+
+	// Calculate next run time after execution
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - failed to calculate next run time for job %s: %v", job.ID, calcErr)
+	} else if nextRunAt != nil {
+		finalJob = finalJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - calculated next run time for job %s: %s", job.ID, nextRunAt.Format(time.RFC3339))
+	}
+
+	return s.repo.Save(finalJob)
 }

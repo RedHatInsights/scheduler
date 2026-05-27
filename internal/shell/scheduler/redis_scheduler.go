@@ -27,6 +27,7 @@ type RedisScheduler struct {
 // JobExecutor executes jobs
 type JobExecutor interface {
 	Execute(job domain.Job) error
+	ExecuteWithJobRun(job domain.Job, jobRunID string) error
 }
 
 // JobRepository provides access to job storage
@@ -41,6 +42,7 @@ type ScheduledJob struct {
 	NextRun    time.Time  `json:"next_run"`
 	Schedule   string     `json:"schedule"`
 	LastUpdate time.Time  `json:"last_update"`
+	JobRunID   string     `json:"job_run_id,omitempty"` // Pre-created job run ID for immediate execution
 }
 
 const (
@@ -169,6 +171,50 @@ func (s *RedisScheduler) ScheduleJob(job domain.Job) error {
 	return nil
 }
 
+// ScheduleJobImmediately schedules a job to run immediately (bypassing the regular schedule)
+// This is used for manual job runs triggered via the API
+func (s *RedisScheduler) ScheduleJobImmediately(job domain.Job, jobRunID string) error {
+	log.Printf("[RedisScheduler] Scheduling job %s for immediate execution (job run: %s)", job.ID, jobRunID)
+
+	// Set next run to current time (or slightly in the past to ensure immediate pickup)
+	now := time.Now()
+	immediateRun := now.Add(-5 * time.Second) // 5 seconds in the past to ensure it's picked up
+
+	// Store job data with immediate run time and job run ID
+	scheduledJob := ScheduledJob{
+		Job:        job,
+		NextRun:    immediateRun,
+		Schedule:   string(job.Schedule),
+		LastUpdate: now,
+		JobRunID:   jobRunID, // Store the pre-created job run ID
+	}
+
+	jobData, err := json.Marshal(scheduledJob)
+	if err != nil {
+		return fmt.Errorf("failed to marshal job: %w", err)
+	}
+
+	pipe := s.client.Pipeline()
+
+	// Store job data in Redis hash
+	jobKey := jobDataKeyPrefix + job.ID
+	pipe.Set(s.ctx, jobKey, jobData, 0)
+
+	// Add to sorted set with immediate run time as score
+	pipe.ZAdd(s.ctx, scheduledJobsKey, &redis.Z{
+		Score:  float64(immediateRun.Unix()),
+		Member: job.ID,
+	})
+
+	_, err = pipe.Exec(s.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to schedule job for immediate execution in Redis: %w", err)
+	}
+
+	log.Printf("[RedisScheduler] Job %s scheduled for immediate execution (next run: %s, job run: %s)", job.ID, immediateRun.Format(time.RFC3339), jobRunID)
+	return nil
+}
+
 // UnscheduleJob removes a job from the Redis schedule
 func (s *RedisScheduler) UnscheduleJob(jobID string) {
 	pipe := s.client.Pipeline()
@@ -260,10 +306,17 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	now := time.Now()
 	scheduledJob.Job = scheduledJob.Job.WithLastRunAt(now)
 
-	// Execute the job
-	log.Printf("[RedisScheduler] Executing job %s", jobID)
-	if err := s.executor.Execute(scheduledJob.Job); err != nil {
-		log.Printf("[RedisScheduler] Error executing job %s: %v", jobID, err)
+	// Execute the job (with job run ID if this is an immediate execution)
+	if scheduledJob.JobRunID != "" {
+		log.Printf("[RedisScheduler] Executing job %s with pre-created job run %s", jobID, scheduledJob.JobRunID)
+		if err := s.executor.ExecuteWithJobRun(scheduledJob.Job, scheduledJob.JobRunID); err != nil {
+			log.Printf("[RedisScheduler] Error executing job %s: %v", jobID, err)
+		}
+	} else {
+		log.Printf("[RedisScheduler] Executing job %s", jobID)
+		if err := s.executor.Execute(scheduledJob.Job); err != nil {
+			log.Printf("[RedisScheduler] Error executing job %s: %v", jobID, err)
+		}
 	}
 
 	// Calculate next run time and reschedule
@@ -276,6 +329,7 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	nextRun := schedule.Next(time.Now())
 	scheduledJob.NextRun = nextRun
 	scheduledJob.LastUpdate = time.Now()
+	scheduledJob.JobRunID = "" // Clear the job run ID after execution (it was for immediate execution only)
 
 	// Update next_run_at on the Job domain object
 	scheduledJob.Job = scheduledJob.Job.WithNextRunAt(nextRun)

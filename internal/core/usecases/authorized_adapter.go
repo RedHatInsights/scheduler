@@ -60,7 +60,7 @@ func (a *AuthorizedJobServiceAdapter) DeleteJob(ctx context.Context, ident ident
 	return a.core.DeleteJobWithUserCheck(ctx, id, ident.Identity.User.UserID)
 }
 
-func (a *AuthorizedJobServiceAdapter) RunJob(ctx context.Context, ident identity.XRHID, id string) error {
+func (a *AuthorizedJobServiceAdapter) RunJob(ctx context.Context, ident identity.XRHID, id string) (string, error) {
 	// Delegate to core service with user authorization check
 	return a.core.RunJobWithUserCheck(ctx, id, ident.Identity.User.UserID)
 }

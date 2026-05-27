@@ -73,6 +73,63 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 	return execErr
 }
 
+// ExecuteWithJobRun executes a job with a pre-created job run ID
+func (e *DefaultJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) error {
+	// Track this job for graceful shutdown
+	e.wg.Add(1)
+	defer e.wg.Done()
+
+	log.Printf("Executing job: %s (%s) with job run: %s", job.Name, job.ID, jobRunID)
+
+	// Increment the currently running jobs metric
+	JobsCurrentlyRunning.Inc()
+	defer JobsCurrentlyRunning.Dec()
+
+	// Load the existing job run record
+	var jobRun domain.JobRun
+	if e.runRepo != nil && jobRunID != "" {
+		var err error
+		jobRun, err = e.runRepo.FindByID(jobRunID)
+		if err != nil {
+			log.Printf("Failed to load job run %s: %v", jobRunID, err)
+			// Continue with execution but create a new run as fallback
+			jobRun = domain.NewJobRun(job.ID)
+			if saveErr := e.runRepo.Save(jobRun); saveErr != nil {
+				log.Printf("Failed to create fallback job run: %v", saveErr)
+			}
+		} else {
+			log.Printf("Using pre-created job run: %s for job: %s", jobRun.ID, job.ID)
+		}
+	}
+
+	// Execute the job using the appropriate executor
+	var execErr error
+	executor, ok := e.executors[job.Type]
+	if !ok {
+		execErr = fmt.Errorf("no executor found for payload type: %s", job.Type)
+	} else {
+		execErr = executor.Execute(job)
+	}
+
+	// Update the job run record
+	if e.runRepo != nil && jobRun.ID != "" {
+		if execErr != nil {
+			jobRun = jobRun.WithFailed(execErr.Error())
+		} else {
+			result := fmt.Sprintf("Job %s completed successfully", job.Name)
+			jobRun = jobRun.WithCompleted(result)
+		}
+
+		if err := e.runRepo.Save(jobRun); err != nil {
+			log.Printf("Failed to update job run record: %v", err)
+		} else {
+			log.Printf("Updated job run: %s with status: %s", jobRun.ID, jobRun.Status)
+		}
+	}
+
+	return execErr
+}
+
 // Wait blocks until all in-flight jobs complete
 // This is used for graceful shutdown
 func (e *DefaultJobExecutor) Wait() {

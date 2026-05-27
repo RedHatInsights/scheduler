@@ -346,7 +346,14 @@
         "operationId": "runJob",
         "responses": {
           "202": {
-            "description": "Job execution triggered successfully"
+            "description": "Job execution triggered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunJobResponse"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -839,6 +846,21 @@
           "failed"
         ],
         "example": "completed"
+      },
+      "RunJobResponse": {
+        "type": "object",
+        "description": "Response when manually triggering a job run",
+        "required": [
+          "run_id"
+        ],
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique identifier for the created job run",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          }
+        }
       },
       "ErrorObject": {
         "type": "object",

@@ -43,14 +43,14 @@ type JobService interface {
 	// DeleteJobWithOrgCheck deletes a job with organization authorization check
 	DeleteJobWithOrgCheck(ctx context.Context, id, orgID string) error
 
-	// RunJob executes a job immediately (no authorization check)
-	RunJob(ctx context.Context, id string) error
+	// RunJob executes a job immediately (no authorization check) and returns the job run ID
+	RunJob(ctx context.Context, id string) (string, error)
 
-	// RunJobWithUserCheck executes a job immediately with user authorization check
-	RunJobWithUserCheck(ctx context.Context, id, userID string) error
+	// RunJobWithUserCheck executes a job immediately with user authorization check and returns the job run ID
+	RunJobWithUserCheck(ctx context.Context, id, userID string) (string, error)
 
-	// RunJobWithOrgCheck executes a job immediately with organization authorization check
-	RunJobWithOrgCheck(ctx context.Context, id, orgID string) error
+	// RunJobWithOrgCheck executes a job immediately with organization authorization check and returns the job run ID
+	RunJobWithOrgCheck(ctx context.Context, id, orgID string) (string, error)
 
 	// PauseJobWithUserCheck pauses a job with user authorization check
 	PauseJobWithUserCheck(ctx context.Context, id, userID string) (domain.Job, error)
