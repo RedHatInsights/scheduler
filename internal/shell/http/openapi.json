@@ -858,43 +858,28 @@
             "example": "Connection timeout"
           },
           "result_type": {
-            "$ref": "#/components/schemas/ResultType"
+            "type": "string",
+            "description": "Type discriminator for the result object",
+            "nullable": true,
+            "enum": [
+              "export"
+            ],
+            "example": "export"
           },
           "result": {
             "nullable": true,
-            "description": "Typed result object from the job run. The structure depends on the result_type field.",
-            "oneOf": [
+            "description": "Result object from the export job execution",
+            "allOf": [
               {
                 "$ref": "#/components/schemas/ExportResult"
-              },
-              {
-                "$ref": "#/components/schemas/CommandResult"
-              },
-              {
-                "$ref": "#/components/schemas/HTTPResult"
-              },
-              {
-                "$ref": "#/components/schemas/MessageResult"
               }
             ]
           }
         }
       },
-      "ResultType": {
-        "type": "string",
-        "description": "Discriminator for the result type",
-        "nullable": true,
-        "enum": [
-          "export",
-          "command",
-          "http_request",
-          "message"
-        ],
-        "example": "export"
-      },
       "ExportResult": {
         "type": "object",
-        "description": "Result from an export job execution (type discriminator is in result_type field at JobRun level)",
+        "description": "Result from an export job execution. The result_type field at the JobRun level will be 'export'.",
         "required": [
           "export_id"
         ],
@@ -909,97 +894,6 @@
             "format": "uri",
             "description": "Download URL for the completed export",
             "example": "https://console.redhat.com/api/export/v1/exports/abc-123-def-456"
-          }
-        }
-      },
-      "CommandResult": {
-        "type": "object",
-        "description": "Result from a command job execution (type discriminator is in result_type field at JobRun level)",
-        "required": [
-          "command",
-          "exit_code",
-          "duration"
-        ],
-        "properties": {
-          "command": {
-            "type": "string",
-            "description": "The command that was executed",
-            "example": "echo hello"
-          },
-          "exit_code": {
-            "type": "integer",
-            "description": "Exit code from the command",
-            "example": 0
-          },
-          "stdout": {
-            "type": "string",
-            "description": "Standard output from the command",
-            "example": "hello"
-          },
-          "stderr": {
-            "type": "string",
-            "description": "Standard error from the command",
-            "example": ""
-          },
-          "duration": {
-            "type": "number",
-            "format": "float",
-            "description": "Execution duration in milliseconds",
-            "example": 123.45
-          }
-        }
-      },
-      "HTTPResult": {
-        "type": "object",
-        "description": "Result from an HTTP request job execution (type discriminator is in result_type field at JobRun level)",
-        "required": [
-          "url",
-          "method",
-          "status_code",
-          "latency"
-        ],
-        "properties": {
-          "url": {
-            "type": "string",
-            "format": "uri",
-            "description": "The URL that was requested",
-            "example": "https://api.example.com/data"
-          },
-          "method": {
-            "type": "string",
-            "description": "HTTP method used",
-            "example": "GET"
-          },
-          "status_code": {
-            "type": "integer",
-            "description": "HTTP response status code",
-            "example": 200
-          },
-          "latency": {
-            "type": "number",
-            "format": "float",
-            "description": "Request latency in milliseconds",
-            "example": 45.67
-          }
-        }
-      },
-      "MessageResult": {
-        "type": "object",
-        "description": "Result from a message job execution (type discriminator is in result_type field at JobRun level)",
-        "required": [
-          "message",
-          "delivery_status"
-        ],
-        "properties": {
-          "message": {
-            "type": "string",
-            "description": "The message that was sent",
-            "example": "Hello, world!"
-          },
-          "delivery_status": {
-            "type": "string",
-            "description": "Delivery status of the message",
-            "example": "sent"
           }
         }
       },
