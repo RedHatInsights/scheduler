@@ -21,7 +21,6 @@ func (e *CommandJobExecutor) Execute(job domain.Job) (interface{}, domain.Result
 	if !ok {
 		log.Printf("Executing command: unknown (payload is not a map)")
 		result := domain.CommandResult{
-			Type:     domain.ResultTypeCommand,
 			Command:  "unknown",
 			ExitCode: 0,
 			Duration: 0,
@@ -36,7 +35,6 @@ func (e *CommandJobExecutor) Execute(job domain.Job) (interface{}, domain.Result
 	log.Printf("Executing command: %s", command)
 
 	result := domain.CommandResult{
-		Type:     domain.ResultTypeCommand,
 		Command:  command,
 		ExitCode: 0,
 		Duration: 0,

@@ -604,7 +604,6 @@
                       "end_time": "2025-11-07T10:05:30Z",
                       "result_type": "export",
                       "result": {
-                        "type": "export",
                         "export_id": "abc-123-def-456",
                         "url": "https://console.redhat.com/api/export/v1/exports/abc-123-def-456"
                       }
@@ -895,20 +894,11 @@
       },
       "ExportResult": {
         "type": "object",
-        "description": "Result from an export job execution",
+        "description": "Result from an export job execution (type discriminator is in result_type field at JobRun level)",
         "required": [
-          "type",
           "export_id"
         ],
         "properties": {
-          "type": {
-            "type": "string",
-            "description": "Result type discriminator",
-            "enum": [
-              "export"
-            ],
-            "example": "export"
-          },
           "export_id": {
             "type": "string",
             "description": "ID of the created export",
@@ -924,22 +914,13 @@
       },
       "CommandResult": {
         "type": "object",
-        "description": "Result from a command job execution",
+        "description": "Result from a command job execution (type discriminator is in result_type field at JobRun level)",
         "required": [
-          "type",
           "command",
           "exit_code",
           "duration"
         ],
         "properties": {
-          "type": {
-            "type": "string",
-            "description": "Result type discriminator",
-            "enum": [
-              "command"
-            ],
-            "example": "command"
-          },
           "command": {
             "type": "string",
             "description": "The command that was executed",
@@ -970,23 +951,14 @@
       },
       "HTTPResult": {
         "type": "object",
-        "description": "Result from an HTTP request job execution",
+        "description": "Result from an HTTP request job execution (type discriminator is in result_type field at JobRun level)",
         "required": [
-          "type",
           "url",
           "method",
           "status_code",
           "latency"
         ],
         "properties": {
-          "type": {
-            "type": "string",
-            "description": "Result type discriminator",
-            "enum": [
-              "http_request"
-            ],
-            "example": "http_request"
-          },
           "url": {
             "type": "string",
             "format": "uri",
@@ -1013,21 +985,12 @@
       },
       "MessageResult": {
         "type": "object",
-        "description": "Result from a message job execution",
+        "description": "Result from a message job execution (type discriminator is in result_type field at JobRun level)",
         "required": [
-          "type",
           "message",
           "delivery_status"
         ],
         "properties": {
-          "type": {
-            "type": "string",
-            "description": "Result type discriminator",
-            "enum": [
-              "message"
-            ],
-            "example": "message"
-          },
           "message": {
             "type": "string",
             "description": "The message that was sent",

@@ -21,7 +21,6 @@ func (e *HTTPJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultTyp
 	if !ok {
 		log.Printf("Executing HTTP request: unknown (payload is not a map)")
 		result := domain.HTTPResult{
-			Type:       domain.ResultTypeHTTP,
 			URL:        "unknown",
 			Method:     "GET",
 			StatusCode: 200,
@@ -41,7 +40,6 @@ func (e *HTTPJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultTyp
 	log.Printf("Executing HTTP %s request to %s", method, url)
 
 	result := domain.HTTPResult{
-		Type:       domain.ResultTypeHTTP,
 		URL:        url,
 		Method:     method,
 		StatusCode: 200,

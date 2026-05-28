@@ -122,7 +122,6 @@ func (e *ExportJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultT
 
 	// Build typed result
 	result := domain.ExportResult{
-		Type:     domain.ResultTypeExport,
 		ExportID: createResult.ID,
 	}
 

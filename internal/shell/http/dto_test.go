@@ -258,7 +258,6 @@ func TestToJobRunResponse(t *testing.T) {
 	jobRun := domain.NewJobRun("job-123")
 
 	exportResult := domain.ExportResult{
-		Type:     domain.ResultTypeExport,
 		ExportID: "export-abc-123",
 		URL:      "https://console.redhat.com/api/export/v1/exports/export-abc-123",
 	}
@@ -300,12 +299,7 @@ func TestToJobRunResponse(t *testing.T) {
 		t.Error("JSON should contain 'result_type' field")
 	}
 
-	// Check that result contains the type discriminator
-	if !contains(jsonString, "\"type\":\"export\"") {
-		t.Error("Result should contain type discriminator 'export'")
-	}
-
-	// Check that result contains export_id
+	// Check that result contains export_id (no type field inside result)
 	if !contains(jsonString, "\"export_id\":\"export-abc-123\"") {
 		t.Error("Result should contain export_id")
 	}
@@ -321,7 +315,6 @@ func TestToJobRunResponseWithCommandResult(t *testing.T) {
 	jobRun := domain.NewJobRun("job-456")
 
 	commandResult := domain.CommandResult{
-		Type:     domain.ResultTypeCommand,
 		Command:  "echo hello",
 		ExitCode: 0,
 		Duration: 123.45,
@@ -349,12 +342,7 @@ func TestToJobRunResponseWithCommandResult(t *testing.T) {
 
 	jsonString := string(jsonBytes)
 
-	// Verify result type discriminator
-	if !contains(jsonString, "\"type\":\"command\"") {
-		t.Error("Result should contain type discriminator 'command'")
-	}
-
-	// Verify command details
+	// Verify command details (no type field inside result)
 	if !contains(jsonString, "\"command\":\"echo hello\"") {
 		t.Error("Result should contain command")
 	}
@@ -399,7 +387,6 @@ func TestToJobRunResponseList(t *testing.T) {
 	// Create multiple JobRuns
 	run1 := domain.NewJobRun("job-123")
 	exportResult := domain.ExportResult{
-		Type:     domain.ResultTypeExport,
 		ExportID: "export-1",
 		URL:      "https://example.com/export-1",
 	}
@@ -475,7 +462,7 @@ func TestToJobRunResponseStringifiedJSON(t *testing.T) {
 	// Create a JobRun where result is a JSON string (edge case - should be parsed)
 	jobRun := domain.NewJobRun("job-json-string")
 	jobRun.Status = domain.RunStatusCompleted
-	jobRun.Result = `{"type":"export","export_id":"test-123","url":"https://example.com/test-123"}` // JSON as string
+	jobRun.Result = `{"export_id":"test-123","url":"https://example.com/test-123"}` // JSON as string
 	jobRun.ResultType = nil
 
 	// Convert to response DTO
@@ -513,7 +500,6 @@ func TestToJobRunResponseWithStructResult(t *testing.T) {
 	jobRun.Status = domain.RunStatusCompleted
 
 	exportResult := domain.ExportResult{
-		Type:     domain.ResultTypeExport,
 		ExportID: "struct-export-789",
 		URL:      "https://example.com/struct-export-789",
 	}

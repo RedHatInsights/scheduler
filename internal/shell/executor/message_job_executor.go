@@ -21,7 +21,6 @@ func (e *MessageJobExecutor) Execute(job domain.Job) (interface{}, domain.Result
 	if !ok {
 		log.Printf("Processing message: unknown (payload is not a map)")
 		result := domain.MessageResult{
-			Type:           domain.ResultTypeMessage,
 			Message:        "unknown",
 			DeliveryStatus: "sent",
 		}
@@ -35,7 +34,6 @@ func (e *MessageJobExecutor) Execute(job domain.Job) (interface{}, domain.Result
 	log.Printf("Processing message: %s", message)
 
 	result := domain.MessageResult{
-		Type:           domain.ResultTypeMessage,
 		Message:        message,
 		DeliveryStatus: "sent",
 	}
