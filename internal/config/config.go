@@ -3,326 +3,192 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/spf13/viper"
 
 	clowder "github.com/redhatinsights/app-common-go/pkg/api/v1"
 )
 
-// Config holds all application configuration
+// Config holds all application configuration.
+//
+// Configuration is loaded in priority order (highest wins):
+//  1. Clowder (production deployment platform)
+//  2. Environment variables
+//  3. Config file (config.yaml in . or /etc/scheduler/)
+//  4. Defaults
 type Config struct {
-	// Server configuration (with Clowder integration)
-	Server ServerConfig `json:"server"`
+	Server    ServerConfig    `mapstructure:"server" json:"server"`
+	Database  DatabaseConfig  `mapstructure:"database" json:"database"`
+	Redis     RedisConfig     `mapstructure:"redis" json:"redis"`
+	Kafka     KafkaConfig     `mapstructure:"kafka" json:"kafka"`
+	Metrics   MetricsConfig   `mapstructure:"metrics" json:"metrics"`
+	ExportService ExportServiceConfig `mapstructure:"export_service" json:"export_service"`
+	Bop       BopConfig       `mapstructure:"bop" json:"bop"`
+	Scheduler SchedulerConfig `mapstructure:"scheduler" json:"scheduler"`
+	ThreeScale ThreeScaleConfig `mapstructure:"threescale" json:"threescale"`
 
-	// Database configuration (uses Clowder when available)
-	Database DatabaseConfig `json:"database"`
-
-	// Redis configuration
-	Redis RedisConfig `json:"redis"`
-
-	// Kafka configuration (uses Clowder when available)
-	Kafka KafkaConfig `json:"kafka"`
-
-	// Metrics configuration (uses Clowder when available)
-	Metrics MetricsConfig `json:"metrics"`
-
-	// Export service configuration
-	ExportService ExportServiceConfig `json:"export_service"`
-
-	// BOP service configuration
-	Bop BopConfig `json:"bop"`
-
-	// Scheduler configuration
-	Scheduler SchedulerConfig `json:"scheduler"`
-
-	// 3scale service configuration
-	ThreeScale ThreeScaleConfig `json:"threescale"`
-
-	UserValidatorImpl         string
-	JobCompletionNotifierImpl string
+	UserValidatorImpl         string `mapstructure:"user_validator_impl" json:"user_validator_impl"`
+	JobCompletionNotifierImpl string `mapstructure:"job_completion_notifier_impl" json:"job_completion_notifier_impl"`
 }
 
 // ServerConfig contains HTTP server settings
 type ServerConfig struct {
-	// Port is the main HTTP server port
-	Port int `json:"port"`
-
-	// PrivatePort is the port for internal/admin endpoints
-	PrivatePort int `json:"private_port"`
-
-	// Host is the server bind address
-	Host string `json:"host"`
-
-	// ReadTimeout for HTTP requests
-	ReadTimeout time.Duration `json:"read_timeout"`
-
-	// WriteTimeout for HTTP responses
-	WriteTimeout time.Duration `json:"write_timeout"`
-
-	// ShutdownTimeout for graceful shutdown
-	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
+	Port            int           `mapstructure:"port" json:"port"`
+	PrivatePort     int           `mapstructure:"private_port" json:"private_port"`
+	Host            string        `mapstructure:"host" json:"host"`
+	ReadTimeout     time.Duration `mapstructure:"read_timeout" json:"read_timeout"`
+	WriteTimeout    time.Duration `mapstructure:"write_timeout" json:"write_timeout"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout" json:"shutdown_timeout"`
 }
 
 // DatabaseConfig contains database connection settings
 type DatabaseConfig struct {
-	// Type of database (sqlite, postgres, mysql)
-	Type string `json:"type"`
-
-	// Path to SQLite database file
-	Path string `json:"path"`
-
-	// Host for external databases (postgres, mysql)
-	Host string `json:"host"`
-
-	// Port for external databases
-	Port int `json:"port"`
-
-	// Name of the database
-	Name string `json:"name"`
-
-	// Username for database authentication
-	Username string `json:"username"`
-
-	// Password for database authentication
-	Password string `json:"password"`
-
-	// SSLMode for database connections (disable, require, verify-ca, verify-full)
-	SSLMode string `json:"ssl_mode"`
-
-	SSLRootCert string `json:"ssl_root_cert"`
-
-	// MaxOpenConnections for connection pooling
-	MaxOpenConnections int `json:"max_open_connections"`
-
-	// MaxIdleConnections for connection pooling
-	MaxIdleConnections int `json:"max_idle_connections"`
-
-	// ConnectionMaxLifetime for connection recycling
-	ConnectionMaxLifetime time.Duration `json:"connection_max_lifetime"`
+	Type                  string        `mapstructure:"type" json:"type"`
+	Path                  string        `mapstructure:"path" json:"path"`
+	Host                  string        `mapstructure:"host" json:"host"`
+	Port                  int           `mapstructure:"port" json:"port"`
+	Name                  string        `mapstructure:"name" json:"name"`
+	Username              string        `mapstructure:"username" json:"username"`
+	Password              string        `mapstructure:"password" json:"password"`
+	SSLMode               string        `mapstructure:"ssl_mode" json:"ssl_mode"`
+	SSLRootCert           string        `mapstructure:"ssl_root_cert" json:"ssl_root_cert"`
+	MaxOpenConnections    int           `mapstructure:"max_open_connections" json:"max_open_connections"`
+	MaxIdleConnections    int           `mapstructure:"max_idle_connections" json:"max_idle_connections"`
+	ConnectionMaxLifetime time.Duration `mapstructure:"connection_max_lifetime" json:"connection_max_lifetime"`
 }
 
 // RedisConfig contains Redis connection settings
 type RedisConfig struct {
-	// Enabled indicates if Redis integration is active
-	Enabled bool `json:"enabled"`
-
-	// Host for Redis server
-	Host string `json:"host"`
-
-	// Port for Redis server
-	Port int `json:"port"`
-
-	// Password for Redis authentication (optional)
-	Password string `json:"password"`
-
-	// DB number to use (0-15)
-	DB int `json:"db"`
-
-	// PoolSize for connection pooling
-	PoolSize int `json:"pool_size"`
+	Enabled  bool   `mapstructure:"enabled" json:"enabled"`
+	Host     string `mapstructure:"host" json:"host"`
+	Port     int    `mapstructure:"port" json:"port"`
+	Password string `mapstructure:"password" json:"password"`
+	DB       int    `mapstructure:"db" json:"db"`
+	PoolSize int    `mapstructure:"pool_size" json:"pool_size"`
 }
 
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	// Enabled indicates if Kafka integration is active
-	Enabled bool `json:"enabled"`
-
-	// Brokers is a list of Kafka broker addresses
-	Brokers []string `json:"brokers"`
-
-	// Topic for export completion messages
-	Topic string `json:"topic"`
-
-	// ClientID for Kafka producer identification
-	ClientID string `json:"client_id"`
-
-	// Timeout for Kafka operations
-	Timeout time.Duration `json:"timeout"`
-
-	// Retries for failed message sends
-	Retries int `json:"retries"`
-
-	// BatchSize for batching messages
-	BatchSize int `json:"batch_size"`
-
-	// CompressionType (none, gzip, snappy, lz4, zstd)
-	CompressionType string `json:"compression_type"`
-
-	// RequiredAcks (0=no ack, 1=leader ack, -1=all replicas ack)
-	RequiredAcks int `json:"required_acks"`
-
-	// SASL configuration for authentication
-	SASL SASLConfig `json:"sasl"`
-
-	// TLS configuration
-	TLS TLSConfig `json:"tls"`
-
-	SecurityProtocol string
+	Enabled          bool       `mapstructure:"enabled" json:"enabled"`
+	Brokers          []string   `mapstructure:"brokers" json:"brokers"`
+	Topic            string     `mapstructure:"topic" json:"topic"`
+	ClientID         string     `mapstructure:"client_id" json:"client_id"`
+	Timeout          time.Duration `mapstructure:"timeout" json:"timeout"`
+	Retries          int        `mapstructure:"retries" json:"retries"`
+	BatchSize        int        `mapstructure:"batch_size" json:"batch_size"`
+	CompressionType  string     `mapstructure:"compression_type" json:"compression_type"`
+	RequiredAcks     int        `mapstructure:"required_acks" json:"required_acks"`
+	SASL             SASLConfig `mapstructure:"sasl" json:"sasl"`
+	TLS              TLSConfig  `mapstructure:"tls" json:"tls"`
+	SecurityProtocol string     `mapstructure:"security_protocol" json:"security_protocol"`
 }
 
 // SASLConfig contains SASL authentication settings
 type SASLConfig struct {
-	// Enabled indicates if SASL is active
-	Enabled bool `json:"enabled"`
-
-	// Mechanism (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
-	Mechanism string `json:"mechanism"`
-
-	// Username for SASL authentication
-	Username string `json:"username"`
-
-	// Password for SASL authentication
-	Password string `json:"password"`
+	Enabled   bool   `mapstructure:"enabled" json:"enabled"`
+	Mechanism string `mapstructure:"mechanism" json:"mechanism"`
+	Username  string `mapstructure:"username" json:"username"`
+	Password  string `mapstructure:"password" json:"password"`
 }
 
 // TLSConfig contains TLS settings
 type TLSConfig struct {
-	// Enabled indicates if TLS is active
-	Enabled bool `json:"enabled"`
-
-	// InsecureSkipVerify skips certificate verification
-	InsecureSkipVerify bool `json:"insecure_skip_verify"`
-
-	// CertFile path to client certificate
-	CertFile string `json:"cert_file"`
-
-	// KeyFile path to client private key
-	KeyFile string `json:"key_file"`
-
-	// CAFile path to CA certificate
-	CAFile string `json:"ca_file"`
+	Enabled            bool   `mapstructure:"enabled" json:"enabled"`
+	InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify" json:"insecure_skip_verify"`
+	CertFile           string `mapstructure:"cert_file" json:"cert_file"`
+	KeyFile            string `mapstructure:"key_file" json:"key_file"`
+	CAFile             string `mapstructure:"ca_file" json:"ca_file"`
 }
 
 // MetricsConfig contains metrics and monitoring settings
 type MetricsConfig struct {
-	// Port for metrics endpoint
-	Port int `json:"port"`
-
-	// Path for metrics endpoint
-	Path string `json:"path"`
-
-	// Enabled indicates if metrics are active
-	Enabled bool `json:"enabled"`
-
-	// Namespace for metric names
-	Namespace string `json:"namespace"`
-
-	// Subsystem for metric names
-	Subsystem string `json:"subsystem"`
+	Port      int    `mapstructure:"port" json:"port"`
+	Path      string `mapstructure:"path" json:"path"`
+	Enabled   bool   `mapstructure:"enabled" json:"enabled"`
+	Namespace string `mapstructure:"namespace" json:"namespace"`
+	Subsystem string `mapstructure:"subsystem" json:"subsystem"`
 }
 
 // ExportServiceConfig contains export service client settings
 type ExportServiceConfig struct {
-	// BaseURL for the export service API (internal service-to-service communication)
-	BaseURL string `json:"base_url"`
-
-	// PublicBaseURL for the export service API (public-facing download URLs)
-	PublicBaseURL string `json:"public_base_url"`
-
-	// Timeout for export service requests
-	Timeout time.Duration `json:"timeout"`
-
-	// MaxRetries for failed requests
-	MaxRetries int `json:"max_retries"`
-
-	// PollMaxRetries is the maximum number of times to poll for export completion
-	PollMaxRetries int `json:"poll_max_retries"`
-
-	// PollInterval is the duration to wait between polling attempts
-	PollInterval time.Duration `json:"poll_interval"`
+	BaseURL        string        `mapstructure:"base_url" json:"base_url"`
+	PublicBaseURL  string        `mapstructure:"public_base_url" json:"public_base_url"`
+	Timeout        time.Duration `mapstructure:"timeout" json:"timeout"`
+	MaxRetries     int           `mapstructure:"max_retries" json:"max_retries"`
+	PollMaxRetries int           `mapstructure:"poll_max_retries" json:"poll_max_retries"`
+	PollInterval   time.Duration `mapstructure:"poll_interval" json:"poll_interval"`
 }
 
 // BopConfig contains BOP (Back Office Portal) service settings
 type BopConfig struct {
-	// BaseURL for the BOP API
-	BaseURL string `json:"base_url"`
-
-	// APIToken for BOP authentication
-	APIToken string `json:"api_token"`
-
-	// ClientID for BOP client identification
-	ClientID string `json:"client_id"`
-
-	// InsightsEnv specifies the environment (dev, stage, prod)
-	InsightsEnv string `json:"insights_env"`
-
-	// Enabled indicates if BOP integration is active
-	Enabled bool `json:"enabled"`
-
-	EphemeralMode bool `json:"ephemeral_mode"`
+	BaseURL       string `mapstructure:"base_url" json:"base_url"`
+	APIToken      string `mapstructure:"api_token" json:"api_token"`
+	ClientID      string `mapstructure:"client_id" json:"client_id"`
+	InsightsEnv   string `mapstructure:"insights_env" json:"insights_env"`
+	Enabled       bool   `mapstructure:"enabled" json:"enabled"`
+	EphemeralMode bool   `mapstructure:"ephemeral_mode" json:"ephemeral_mode"`
 }
 
 // SchedulerConfig contains scheduler timing and polling settings
 type SchedulerConfig struct {
-	// GracefulShutdownTimeout is the maximum time to wait for in-flight jobs during shutdown
-	GracefulShutdownTimeout time.Duration `json:"graceful_shutdown_timeout"`
-
-	// RedisPollInterval is how often workers check Redis for due jobs
-	RedisPollInterval time.Duration `json:"redis_poll_interval"`
-
-	// DBToRedisSyncInterval is how often workers sync jobs from PostgreSQL to Redis
-	DBToRedisSyncInterval time.Duration `json:"db_to_redis_sync_interval"`
+	GracefulShutdownTimeout time.Duration `mapstructure:"graceful_shutdown_timeout" json:"graceful_shutdown_timeout"`
+	RedisPollInterval       time.Duration `mapstructure:"redis_poll_interval" json:"redis_poll_interval"`
+	DBToRedisSyncInterval   time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
+	EnablePeriodicSync      bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
 type ThreeScaleConfig struct {
-	// BaseURL for the 3scale API
-	BaseURL string `json:"base_url"`
-
-	// Timeout for 3scale validation requests
-	Timeout time.Duration `json:"timeout"`
-
-	// Enabled indicates if 3scale integration is active
-	Enabled bool `json:"enabled"`
+	BaseURL string        `mapstructure:"base_url" json:"base_url"`
+	Timeout time.Duration `mapstructure:"timeout" json:"timeout"`
+	Enabled bool          `mapstructure:"enabled" json:"enabled"`
 }
 
-// LoadConfig loads configuration from app-common-go (Clowder) with fallback to environment variables
+// LoadConfig loads configuration using Viper with support for config files,
+// environment variables, and Clowder integration.
 func LoadConfig() (*Config, error) {
-	var clowderConfig *clowder.AppConfig
+	v := viper.New()
 
-	// Try to load Clowder configuration first
-	if clowder.IsClowderEnabled() {
+	// Config file support (optional)
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(".")
+	v.AddConfigPath("/etc/scheduler")
 
-		fmt.Println("Clowder enabled!!")
+	// Set all defaults
+	setDefaults(v)
 
-		clowderConfig = clowder.LoadedConfig
-		if clowderConfig == nil {
-			return nil, fmt.Errorf("failed to load Clowder configuration (nil)")
+	// Bind environment variables
+	bindEnvVars(v)
+
+	// Try reading config file (silently ignore if not found)
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("error reading config file: %w", err)
+			}
 		}
 	}
 
+	// Unmarshal into config struct
 	config := &Config{}
+	if err := v.Unmarshal(config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
 
-	// Load server configuration with Clowder integration
-	config.Server = loadServerConfig(clowderConfig)
+	// Apply Clowder overrides (highest priority)
+	if clowder.IsClowderEnabled() {
+		fmt.Println("Clowder enabled!!")
+		clowderConfig := clowder.LoadedConfig
+		if clowderConfig == nil {
+			return nil, fmt.Errorf("failed to load Clowder configuration (nil)")
+		}
+		applyClowderOverrides(config, clowderConfig)
+	}
 
-	// Load database configuration with Clowder integration
-	config.Database = loadDatabaseConfig(clowderConfig)
-
-	// Load Redis configuration with Clowder integration
-	config.Redis = loadRedisConfig(clowderConfig)
-
-	// Load Kafka configuration with Clowder integration
-	config.Kafka = loadKafkaConfig(clowderConfig)
-
-	// Load metrics configuration with Clowder integration
-	config.Metrics = loadMetricsConfig(clowderConfig)
-
-	// Load export service configuration (no Clowder integration needed)
-	config.ExportService = loadExportServiceConfig()
-
-	// Load BOP configuration
-	config.Bop = loadBopConfig()
-
-	// Load scheduler configuration
-	config.Scheduler = loadSchedulerConfig()
-
-	// Load 3scale configuration
-	config.ThreeScale = loadThreeScaleConfig()
-
-	config.UserValidatorImpl = getEnv("USER_VALIDATOR_IMPL", "bop")
-	config.JobCompletionNotifierImpl = getEnv("JOB_COMPLETION_NOTIFIER_IMPL", "notifications")
+	// Handle derived/special values (after all sources are applied)
+	applyDerivedValues(config)
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
@@ -332,182 +198,268 @@ func LoadConfig() (*Config, error) {
 	return config, nil
 }
 
-// loadServerConfig loads server configuration with Clowder integration
-func loadServerConfig(clowderConfig *clowder.AppConfig) ServerConfig {
-	// Default values
-	port := getEnvAsInt("PORT", 5000)
-	privatePort := getEnvAsInt("PRIVATE_PORT", 9090)
-	host := getEnv("HOST", "0.0.0.0")
+// setDefaults registers default values for all configuration keys.
+func setDefaults(v *viper.Viper) {
+	// Server
+	v.SetDefault("server.port", 5000)
+	v.SetDefault("server.private_port", 9090)
+	v.SetDefault("server.host", "0.0.0.0")
+	v.SetDefault("server.read_timeout", 30*time.Second)
+	v.SetDefault("server.write_timeout", 30*time.Second)
+	v.SetDefault("server.shutdown_timeout", 10*time.Second)
 
-	// Override with Clowder values if available
-	if clowderConfig != nil {
-		if clowderConfig.PublicPort != nil {
-			port = *clowderConfig.PublicPort
-		}
-		if clowderConfig.PrivatePort != nil {
-			privatePort = *clowderConfig.PrivatePort
-		}
-	}
+	// Database
+	v.SetDefault("database.type", "sqlite")
+	v.SetDefault("database.path", "./jobs.db")
+	v.SetDefault("database.host", "localhost")
+	v.SetDefault("database.port", 5432)
+	v.SetDefault("database.name", "scheduler")
+	v.SetDefault("database.username", "insights")
+	v.SetDefault("database.password", "insights")
+	v.SetDefault("database.ssl_mode", "disable")
+	v.SetDefault("database.ssl_root_cert", "")
+	v.SetDefault("database.max_open_connections", 25)
+	v.SetDefault("database.max_idle_connections", 5)
+	v.SetDefault("database.connection_max_lifetime", 5*time.Minute)
 
-	return ServerConfig{
-		Port:            port,
-		PrivatePort:     privatePort,
-		Host:            host,
-		ReadTimeout:     getEnvAsDuration("READ_TIMEOUT", 30*time.Second),
-		WriteTimeout:    getEnvAsDuration("WRITE_TIMEOUT", 30*time.Second),
-		ShutdownTimeout: getEnvAsDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
-	}
+	// Redis
+	v.SetDefault("redis.enabled", false)
+	v.SetDefault("redis.host", "localhost")
+	v.SetDefault("redis.port", 6379)
+	v.SetDefault("redis.password", "")
+	v.SetDefault("redis.db", 0)
+	v.SetDefault("redis.pool_size", 10)
+
+	// Kafka
+	v.SetDefault("kafka.enabled", false)
+	v.SetDefault("kafka.brokers", []string{})
+	v.SetDefault("kafka.topic", "platform.notifications.ingress")
+	v.SetDefault("kafka.security_protocol", "")
+	v.SetDefault("kafka.client_id", "insights-scheduler")
+	v.SetDefault("kafka.timeout", 30*time.Second)
+	v.SetDefault("kafka.retries", 5)
+	v.SetDefault("kafka.batch_size", 100)
+	v.SetDefault("kafka.compression_type", "snappy")
+	v.SetDefault("kafka.required_acks", -1)
+	v.SetDefault("kafka.sasl.enabled", false)
+	v.SetDefault("kafka.sasl.mechanism", "PLAIN")
+	v.SetDefault("kafka.sasl.username", "")
+	v.SetDefault("kafka.sasl.password", "")
+	v.SetDefault("kafka.tls.enabled", false)
+	v.SetDefault("kafka.tls.insecure_skip_verify", false)
+	v.SetDefault("kafka.tls.cert_file", "")
+	v.SetDefault("kafka.tls.key_file", "")
+	v.SetDefault("kafka.tls.ca_file", "")
+
+	// Metrics
+	v.SetDefault("metrics.port", 8080)
+	v.SetDefault("metrics.path", "/metrics")
+	v.SetDefault("metrics.enabled", true)
+	v.SetDefault("metrics.namespace", "insights")
+	v.SetDefault("metrics.subsystem", "scheduler")
+
+	// Export Service
+	v.SetDefault("export_service.base_url", "http://export-service-service:8000/api/export/v1")
+	v.SetDefault("export_service.public_base_url", "")
+	v.SetDefault("export_service.timeout", 5*time.Minute)
+	v.SetDefault("export_service.max_retries", 3)
+	v.SetDefault("export_service.poll_max_retries", 60)
+	v.SetDefault("export_service.poll_interval", 5*time.Second)
+
+	// BOP
+	v.SetDefault("bop.base_url", "https://backoffice.apps.ext.spoke.preprod.us-east-1.aws.paas.redhat.com")
+	v.SetDefault("bop.api_token", "")
+	v.SetDefault("bop.client_id", "insights-scheduler")
+	v.SetDefault("bop.insights_env", "preprod")
+	v.SetDefault("bop.enabled", true)
+	v.SetDefault("bop.ephemeral_mode", false)
+
+	// Scheduler
+	v.SetDefault("scheduler.graceful_shutdown_timeout", 30*time.Second)
+	v.SetDefault("scheduler.redis_poll_interval", 10*time.Second)
+	v.SetDefault("scheduler.db_to_redis_sync_interval", 1*time.Hour)
+	v.SetDefault("scheduler.enable_periodic_sync", false)
+
+	// 3scale
+	v.SetDefault("threescale.base_url", "http://3scale-service:8000")
+	v.SetDefault("threescale.timeout", 5*time.Second)
+	v.SetDefault("threescale.enabled", true)
+
+	// Feature flags
+	v.SetDefault("user_validator_impl", "bop")
+	v.SetDefault("job_completion_notifier_impl", "notifications")
 }
 
-// loadDatabaseConfig loads database configuration with Clowder integration
-func loadDatabaseConfig(clowderConfig *clowder.AppConfig) DatabaseConfig {
-	// Default values
-	dbType := getEnv("DB_TYPE", "sqlite")
-	dbPath := getEnv("DB_PATH", "./jobs.db")
-	host := getEnv("DB_HOST", "localhost")
-	port := getEnvAsInt("DB_PORT", 5432)
-	name := getEnv("DB_NAME", "scheduler")
-	username := getEnv("DB_USERNAME", "insights")
-	password := getEnv("DB_PASSWORD", "insights")
-	sslMode := getEnv("DB_SSL_MODE", "disable")
-	sslRootCert := ""
+// bindEnvVars maps environment variable names to viper configuration keys.
+// This preserves backward compatibility with all existing env var names.
+func bindEnvVars(v *viper.Viper) {
+	// Server
+	_ = v.BindEnv("server.port", "PORT")
+	_ = v.BindEnv("server.private_port", "PRIVATE_PORT")
+	_ = v.BindEnv("server.host", "HOST")
+	_ = v.BindEnv("server.read_timeout", "READ_TIMEOUT")
+	_ = v.BindEnv("server.write_timeout", "WRITE_TIMEOUT")
+	_ = v.BindEnv("server.shutdown_timeout", "SHUTDOWN_TIMEOUT")
 
-	// Override with Clowder values if available
-	if clowderConfig != nil && clowderConfig.Database != nil {
-		dbType = "postgres" // Clowder always provides PostgreSQL
-		host = clowderConfig.Database.Hostname
-		port = clowderConfig.Database.Port
-		name = clowderConfig.Database.Name
-		username = clowderConfig.Database.Username
-		password = clowderConfig.Database.Password
-		sslMode = clowderConfig.Database.SslMode
+	// Database
+	_ = v.BindEnv("database.type", "DB_TYPE")
+	_ = v.BindEnv("database.path", "DB_PATH")
+	_ = v.BindEnv("database.host", "DB_HOST")
+	_ = v.BindEnv("database.port", "DB_PORT")
+	_ = v.BindEnv("database.name", "DB_NAME")
+	_ = v.BindEnv("database.username", "DB_USERNAME")
+	_ = v.BindEnv("database.password", "DB_PASSWORD")
+	_ = v.BindEnv("database.ssl_mode", "DB_SSL_MODE")
+	_ = v.BindEnv("database.max_open_connections", "DB_MAX_OPEN_CONNECTIONS")
+	_ = v.BindEnv("database.max_idle_connections", "DB_MAX_IDLE_CONNECTIONS")
+	_ = v.BindEnv("database.connection_max_lifetime", "DB_CONNECTION_MAX_LIFETIME")
+
+	// Redis
+	_ = v.BindEnv("redis.enabled", "REDIS_ENABLED")
+	_ = v.BindEnv("redis.host", "REDIS_HOST")
+	_ = v.BindEnv("redis.port", "REDIS_PORT")
+	_ = v.BindEnv("redis.password", "REDIS_PASSWORD")
+	_ = v.BindEnv("redis.db", "REDIS_DB")
+	_ = v.BindEnv("redis.pool_size", "REDIS_POOL_SIZE")
+
+	// Kafka
+	_ = v.BindEnv("kafka.brokers", "KAFKA_BROKERS")
+	_ = v.BindEnv("kafka.topic", "KAFKA_TOPIC")
+	_ = v.BindEnv("kafka.security_protocol", "KAFKA_SECURITY_PROTOCOL")
+	_ = v.BindEnv("kafka.client_id", "KAFKA_CLIENT_ID")
+	_ = v.BindEnv("kafka.timeout", "KAFKA_TIMEOUT")
+	_ = v.BindEnv("kafka.retries", "KAFKA_RETRIES")
+	_ = v.BindEnv("kafka.batch_size", "KAFKA_BATCH_SIZE")
+	_ = v.BindEnv("kafka.compression_type", "KAFKA_COMPRESSION")
+	_ = v.BindEnv("kafka.required_acks", "KAFKA_REQUIRED_ACKS")
+	_ = v.BindEnv("kafka.sasl.enabled", "KAFKA_SASL_ENABLED")
+	_ = v.BindEnv("kafka.sasl.mechanism", "KAFKA_SASL_MECHANISM")
+	_ = v.BindEnv("kafka.sasl.username", "KAFKA_SASL_USERNAME")
+	_ = v.BindEnv("kafka.sasl.password", "KAFKA_SASL_PASSWORD")
+	_ = v.BindEnv("kafka.tls.enabled", "KAFKA_TLS_ENABLED")
+	_ = v.BindEnv("kafka.tls.insecure_skip_verify", "KAFKA_TLS_INSECURE_SKIP_VERIFY")
+	_ = v.BindEnv("kafka.tls.cert_file", "KAFKA_TLS_CERT_FILE")
+	_ = v.BindEnv("kafka.tls.key_file", "KAFKA_TLS_KEY_FILE")
+	_ = v.BindEnv("kafka.tls.ca_file", "KAFKA_TLS_CA_FILE")
+
+	// Metrics
+	_ = v.BindEnv("metrics.port", "METRICS_PORT")
+	_ = v.BindEnv("metrics.path", "METRICS_PATH")
+	_ = v.BindEnv("metrics.enabled", "METRICS_ENABLED")
+	_ = v.BindEnv("metrics.namespace", "METRICS_NAMESPACE")
+	_ = v.BindEnv("metrics.subsystem", "METRICS_SUBSYSTEM")
+
+	// Export Service
+	_ = v.BindEnv("export_service.base_url", "EXPORT_SERVICE_URL")
+	_ = v.BindEnv("export_service.public_base_url", "EXPORT_SERVICE_PUBLIC_URL")
+	_ = v.BindEnv("export_service.timeout", "EXPORT_SERVICE_TIMEOUT")
+	_ = v.BindEnv("export_service.max_retries", "EXPORT_SERVICE_MAX_RETRIES")
+	_ = v.BindEnv("export_service.poll_max_retries", "EXPORT_SERVICE_POLL_MAX_RETRIES")
+	_ = v.BindEnv("export_service.poll_interval", "EXPORT_SERVICE_POLL_INTERVAL")
+
+	// BOP
+	_ = v.BindEnv("bop.base_url", "BOP_URL")
+	_ = v.BindEnv("bop.api_token", "BOP_API_TOKEN")
+	_ = v.BindEnv("bop.client_id", "BOP_CLIENT_ID")
+	_ = v.BindEnv("bop.insights_env", "BOP_INSIGHTS_ENV")
+	_ = v.BindEnv("bop.enabled", "BOP_ENABLED")
+	_ = v.BindEnv("bop.ephemeral_mode", "BOP_EPHEMERAL_MODE")
+
+	// Scheduler
+	_ = v.BindEnv("scheduler.graceful_shutdown_timeout", "SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT")
+	_ = v.BindEnv("scheduler.redis_poll_interval", "SCHEDULER_REDIS_POLL_INTERVAL")
+	_ = v.BindEnv("scheduler.db_to_redis_sync_interval", "SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL")
+	_ = v.BindEnv("scheduler.enable_periodic_sync", "ENABLE_PERIODIC_SYNC")
+
+	// 3scale
+	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")
+	_ = v.BindEnv("threescale.timeout", "THREESCALE_TIMEOUT")
+	_ = v.BindEnv("threescale.enabled", "THREESCALE_ENABLED")
+
+	// Feature flags
+	_ = v.BindEnv("user_validator_impl", "USER_VALIDATOR_IMPL")
+	_ = v.BindEnv("job_completion_notifier_impl", "JOB_COMPLETION_NOTIFIER_IMPL")
+}
+
+// applyClowderOverrides applies Clowder platform configuration on top of
+// viper-loaded values. Clowder is the highest-priority config source in
+// production Red Hat deployments.
+func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
+	// Server
+	if clowderConfig.PublicPort != nil {
+		config.Server.Port = *clowderConfig.PublicPort
+	}
+	if clowderConfig.PrivatePort != nil {
+		config.Server.PrivatePort = *clowderConfig.PrivatePort
+	}
+
+	// Database
+	if clowderConfig.Database != nil {
+		config.Database.Type = "postgres"
+		config.Database.Host = clowderConfig.Database.Hostname
+		config.Database.Port = clowderConfig.Database.Port
+		config.Database.Name = clowderConfig.Database.Name
+		config.Database.Username = clowderConfig.Database.Username
+		config.Database.Password = clowderConfig.Database.Password
+		config.Database.SSLMode = clowderConfig.Database.SslMode
 
 		if clowderConfig.Database.RdsCa != nil {
 			pathToDBCertFile, err := clowderConfig.RdsCa()
 			if err != nil {
 				panic(err)
 			}
-
-			sslRootCert = pathToDBCertFile
+			config.Database.SSLRootCert = pathToDBCertFile
 		}
 	}
 
-	return DatabaseConfig{
-		Type:                  dbType,
-		Path:                  dbPath,
-		Host:                  host,
-		Port:                  port,
-		Name:                  name,
-		Username:              username,
-		Password:              password,
-		SSLMode:               sslMode,
-		SSLRootCert:           sslRootCert,
-		MaxOpenConnections:    getEnvAsInt("DB_MAX_OPEN_CONNECTIONS", 25),
-		MaxIdleConnections:    getEnvAsInt("DB_MAX_IDLE_CONNECTIONS", 5),
-		ConnectionMaxLifetime: getEnvAsDuration("DB_CONNECTION_MAX_LIFETIME", 5*time.Minute),
-	}
-}
+	// Redis
+	if clowderConfig.InMemoryDb != nil {
+		config.Redis.Enabled = true
+		config.Redis.Host = clowderConfig.InMemoryDb.Hostname
+		config.Redis.Port = clowderConfig.InMemoryDb.Port
 
-// loadRedisConfig loads Redis configuration with Clowder integration
-func loadRedisConfig(clowderConfig *clowder.AppConfig) RedisConfig {
-	// Default values from environment
-	enabled := getEnvAsBool("REDIS_ENABLED", false)
-	host := getEnv("REDIS_HOST", "localhost")
-	port := getEnvAsInt("REDIS_PORT", 6379)
-	password := getEnv("REDIS_PASSWORD", "")
-	db := getEnvAsInt("REDIS_DB", 0)
-	poolSize := getEnvAsInt("REDIS_POOL_SIZE", 10)
-
-	// Override with Clowder InMemoryDb values if available
-	if clowderConfig != nil && clowderConfig.InMemoryDb != nil {
-		enabled = true // Clowder provides Redis, so enable it
-		host = clowderConfig.InMemoryDb.Hostname
-		port = clowderConfig.InMemoryDb.Port
-
-		// Use password if provided by Clowder
 		if clowderConfig.InMemoryDb.Password != nil && *clowderConfig.InMemoryDb.Password != "" {
-			password = *clowderConfig.InMemoryDb.Password
+			config.Redis.Password = *clowderConfig.InMemoryDb.Password
 			fmt.Println("Redis authentication: password configured")
 		}
 
-		// Use username if provided (some Redis configs use username for ACLs)
-		// Note: go-redis client doesn't use username in basic auth, but we log it for awareness
 		if clowderConfig.InMemoryDb.Username != nil && *clowderConfig.InMemoryDb.Username != "" {
 			fmt.Printf("Redis username provided: %s (note: currently only password auth is used)\n", *clowderConfig.InMemoryDb.Username)
-			// Could be used for Redis 6+ ACL authentication if needed in the future
-			// For now, we only use password-based auth which is compatible with both old and new Redis
 		}
 	} else {
-		if enabled {
-			fmt.Printf("Redis: %s:%d\n", host, port)
+		if config.Redis.Enabled {
+			fmt.Printf("Redis: %s:%d\n", config.Redis.Host, config.Redis.Port)
 		} else {
 			fmt.Println("Redis: disabled")
 		}
 	}
 
-	return RedisConfig{
-		Enabled:  enabled,
-		Host:     host,
-		Port:     port,
-		Password: password,
-		DB:       db,
-		PoolSize: poolSize,
-	}
-}
+	// Kafka
+	if clowderConfig.Kafka != nil {
+		config.Kafka.Enabled = true
+		config.Kafka.Brokers = []string{}
 
-// loadKafkaConfig loads Kafka configuration with Clowder integration
-func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
-	// Default values from environment
-	brokers := getEnvAsStringSlice("KAFKA_BROKERS", []string{})
-	topic := getEnv("KAFKA_TOPIC", "platform.notifications.ingress")
-	enabled := len(brokers) > 0
-	securityProtocol := getEnv("KAFKA_SECURITY_PROTOCOL", "")
-
-	// SASL and TLS config from environment
-	saslConfig := SASLConfig{
-		Enabled:   getEnvAsBool("KAFKA_SASL_ENABLED", false),
-		Mechanism: getEnv("KAFKA_SASL_MECHANISM", "PLAIN"),
-		Username:  getEnv("KAFKA_SASL_USERNAME", ""),
-		Password:  getEnv("KAFKA_SASL_PASSWORD", ""),
-	}
-
-	tlsConfig := TLSConfig{
-		Enabled:            getEnvAsBool("KAFKA_TLS_ENABLED", false),
-		InsecureSkipVerify: getEnvAsBool("KAFKA_TLS_INSECURE_SKIP_VERIFY", false),
-		CertFile:           getEnv("KAFKA_TLS_CERT_FILE", ""),
-		KeyFile:            getEnv("KAFKA_TLS_KEY_FILE", ""),
-		CAFile:             getEnv("KAFKA_TLS_CA_FILE", ""),
-	}
-
-	// Override with Clowder values if available
-	if clowderConfig != nil && clowderConfig.Kafka != nil {
-		enabled = true
-		brokers = []string{}
-
-		// Convert Clowder broker configs to string list
 		for _, broker := range clowderConfig.Kafka.Brokers {
-			brokers = append(brokers, fmt.Sprintf("%s:%d", broker.Hostname, *broker.Port))
+			config.Kafka.Brokers = append(config.Kafka.Brokers, fmt.Sprintf("%s:%d", broker.Hostname, *broker.Port))
 		}
 
-		// Find the export topic from Clowder config
 		for _, topicConfig := range clowderConfig.Kafka.Topics {
-			if topicConfig.RequestedName == topic || topicConfig.Name == topic {
-				topic = topicConfig.Name
+			if topicConfig.RequestedName == config.Kafka.Topic || topicConfig.Name == config.Kafka.Topic {
+				config.Kafka.Topic = topicConfig.Name
 				break
 			}
 		}
 
-		// Configure SASL if available in Clowder
 		if len(clowderConfig.Kafka.Brokers) > 0 && clowderConfig.Kafka.Brokers[0].Sasl != nil {
-			saslConfig.Enabled = true
+			config.Kafka.SASL.Enabled = true
 			if clowderConfig.Kafka.Brokers[0].Sasl.SaslMechanism != nil {
-				saslConfig.Mechanism = *clowderConfig.Kafka.Brokers[0].Sasl.SaslMechanism
+				config.Kafka.SASL.Mechanism = *clowderConfig.Kafka.Brokers[0].Sasl.SaslMechanism
 			}
 			if clowderConfig.Kafka.Brokers[0].Sasl.Username != nil {
-				saslConfig.Username = *clowderConfig.Kafka.Brokers[0].Sasl.Username
+				config.Kafka.SASL.Username = *clowderConfig.Kafka.Brokers[0].Sasl.Username
 			}
 			if clowderConfig.Kafka.Brokers[0].Sasl.Password != nil {
-				saslConfig.Password = *clowderConfig.Kafka.Brokers[0].Sasl.Password
+				config.Kafka.SASL.Password = *clowderConfig.Kafka.Brokers[0].Sasl.Password
 			}
 		}
 
@@ -517,118 +469,47 @@ func loadKafkaConfig(clowderConfig *clowder.AppConfig) KafkaConfig {
 			if err != nil {
 				panic("Kafka CA cert failed to write")
 			}
-			tlsConfig.Enabled = true
-			tlsConfig.CAFile = caPath
+			config.Kafka.TLS.Enabled = true
+			config.Kafka.TLS.CAFile = caPath
 		}
 
 		if clowderConfig.Kafka.Brokers[0].SecurityProtocol != nil && *clowderConfig.Kafka.Brokers[0].SecurityProtocol != "" {
-			securityProtocol = *clowderConfig.Kafka.Brokers[0].SecurityProtocol
+			config.Kafka.SecurityProtocol = *clowderConfig.Kafka.Brokers[0].SecurityProtocol
 		} else if clowderConfig.Kafka.Brokers[0].Sasl != nil && clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol != nil && *clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol != "" {
-			securityProtocol = *clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol
+			config.Kafka.SecurityProtocol = *clowderConfig.Kafka.Brokers[0].Sasl.SecurityProtocol
 		}
-
 	}
 
-	return KafkaConfig{
-		Enabled:          enabled,
-		Brokers:          brokers,
-		Topic:            topic,
-		ClientID:         getEnv("KAFKA_CLIENT_ID", "insights-scheduler"),
-		Timeout:          getEnvAsDuration("KAFKA_TIMEOUT", 30*time.Second),
-		Retries:          getEnvAsInt("KAFKA_RETRIES", 5),
-		BatchSize:        getEnvAsInt("KAFKA_BATCH_SIZE", 100),
-		CompressionType:  getEnv("KAFKA_COMPRESSION", "snappy"),
-		RequiredAcks:     getEnvAsInt("KAFKA_REQUIRED_ACKS", -1),
-		SASL:             saslConfig,
-		TLS:              tlsConfig,
-		SecurityProtocol: securityProtocol,
-	}
+	// Metrics
+	config.Metrics.Port = clowderConfig.MetricsPort
+	config.Metrics.Path = clowderConfig.MetricsPath
 }
 
-// loadMetricsConfig loads metrics configuration with Clowder integration
-func loadMetricsConfig(clowderConfig *clowder.AppConfig) MetricsConfig {
-	// Default values
-	port := getEnvAsInt("METRICS_PORT", 8080)
-	path := getEnv("METRICS_PATH", "/metrics")
-
-	// Override with Clowder values if available
-	if clowderConfig != nil {
-		port = clowderConfig.MetricsPort
-		path = clowderConfig.MetricsPath
+// applyDerivedValues computes values that depend on other config fields.
+// Called after all config sources (viper, Clowder) have been applied.
+func applyDerivedValues(config *Config) {
+	// Kafka enabled is derived from having brokers configured
+	if len(config.Kafka.Brokers) > 0 {
+		config.Kafka.Enabled = true
 	}
 
-	return MetricsConfig{
-		Port:      port,
-		Path:      path,
-		Enabled:   getEnvAsBool("METRICS_ENABLED", true),
-		Namespace: getEnv("METRICS_NAMESPACE", "insights"),
-		Subsystem: getEnv("METRICS_SUBSYSTEM", "scheduler"),
+	// BOP enabled requires an API token
+	if config.Bop.APIToken == "" {
+		config.Bop.Enabled = false
 	}
-}
 
-// loadExportServiceConfig loads export service configuration from environment
-func loadExportServiceConfig() ExportServiceConfig {
-	baseURL := getEnv("EXPORT_SERVICE_URL", "http://export-service-service:8000/api/export/v1")
-
-	// Default to using the same URL for public access if not explicitly configured
-	// In production, this should be set to the publicly accessible endpoint
-	publicBaseURL := getEnv("EXPORT_SERVICE_PUBLIC_URL", baseURL)
-
-	return ExportServiceConfig{
-		BaseURL:        baseURL,
-		PublicBaseURL:  publicBaseURL,
-		Timeout:        getEnvAsDuration("EXPORT_SERVICE_TIMEOUT", 5*time.Minute),
-		MaxRetries:     getEnvAsInt("EXPORT_SERVICE_MAX_RETRIES", 3),
-		PollMaxRetries: getEnvAsInt("EXPORT_SERVICE_POLL_MAX_RETRIES", 60),
-		PollInterval:   getEnvAsDuration("EXPORT_SERVICE_POLL_INTERVAL", 5*time.Second),
+	// Export service public URL defaults to base URL
+	if config.ExportService.PublicBaseURL == "" {
+		config.ExportService.PublicBaseURL = config.ExportService.BaseURL
 	}
-}
 
-// loadBopConfig loads BOP configuration from environment
-func loadBopConfig() BopConfig {
-	apiToken := getEnv("BOP_API_TOKEN", "")
-	enabled := apiToken != "" && getEnvAsBool("BOP_ENABLED", true)
-
-	var baseUrl string
-	ephemeralMode := getEnvAsBool("BOP_EPHEMERAL_MODE", false)
-	if ephemeralMode {
+	// BOP ephemeral mode dynamically constructs the BOP URL from the K8s namespace
+	if config.Bop.EphemeralMode {
 		namespace, err := getOpenshiftNamespace()
 		if err != nil {
 			panic("Running in BOP ephemeral mode but cannot determine OpenShift namespace")
 		}
-		baseUrl = fmt.Sprintf("http://env-%s-mbop.%s.svc.cluster.local:8090", namespace, namespace)
-	} else {
-		baseUrl = getEnv("BOP_URL", "https://backoffice.apps.ext.spoke.preprod.us-east-1.aws.paas.redhat.com")
-	}
-
-	return BopConfig{
-		BaseURL:     baseUrl,
-		APIToken:    apiToken,
-		ClientID:    getEnv("BOP_CLIENT_ID", "insights-scheduler"),
-		InsightsEnv: getEnv("BOP_INSIGHTS_ENV", "preprod"),
-		Enabled:     enabled,
-	}
-}
-
-// loadSchedulerConfig loads scheduler timing configuration from environment
-func loadSchedulerConfig() SchedulerConfig {
-	return SchedulerConfig{
-		GracefulShutdownTimeout: getEnvAsDuration("SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT", 30*time.Second),
-		RedisPollInterval:       getEnvAsDuration("SCHEDULER_REDIS_POLL_INTERVAL", 10*time.Second),
-		DBToRedisSyncInterval:   getEnvAsDuration("SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL", 1*time.Hour),
-	}
-}
-
-// loadThreeScaleConfig loads 3scale configuration from environment
-func loadThreeScaleConfig() ThreeScaleConfig {
-	baseURL := getEnv("THREESCALE_URL", "http://3scale-service:8000")
-	timeout := getEnvAsDuration("THREESCALE_TIMEOUT", 5*time.Second)
-	enabled := getEnvAsBool("THREESCALE_ENABLED", true)
-
-	return ThreeScaleConfig{
-		BaseURL: baseURL,
-		Timeout: timeout,
-		Enabled: enabled,
+		config.Bop.BaseURL = fmt.Sprintf("http://env-%s-mbop.%s.svc.cluster.local:8090", namespace, namespace)
 	}
 }
 
@@ -636,14 +517,11 @@ func getOpenshiftNamespace() (string, error) {
 	filePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 	contentBytes, err := os.ReadFile(filePath)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %v", err)
 	}
 
-	namespace := string(contentBytes)
-
-	return namespace, nil
+	return string(contentBytes), nil
 }
 
 // Validate checks if the configuration is valid
@@ -719,47 +597,4 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
-}
-
-// Helper functions for environment variable parsing
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvAsInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
-
-func getEnvAsBool(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		if boolValue, err := strconv.ParseBool(value); err == nil {
-			return boolValue
-		}
-	}
-	return defaultValue
-}
-
-func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
-}
-
-func getEnvAsStringSlice(key string, defaultValue []string) []string {
-	if value := os.Getenv(key); value != "" {
-		return strings.Split(value, ",")
-	}
-	return defaultValue
 }
