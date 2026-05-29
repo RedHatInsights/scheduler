@@ -18,15 +18,15 @@ import (
 //  3. Config file (config.yaml in . or /etc/scheduler/)
 //  4. Defaults
 type Config struct {
-	Server    ServerConfig    `mapstructure:"server" json:"server"`
-	Database  DatabaseConfig  `mapstructure:"database" json:"database"`
-	Redis     RedisConfig     `mapstructure:"redis" json:"redis"`
-	Kafka     KafkaConfig     `mapstructure:"kafka" json:"kafka"`
-	Metrics   MetricsConfig   `mapstructure:"metrics" json:"metrics"`
+	Server        ServerConfig        `mapstructure:"server" json:"server"`
+	Database      DatabaseConfig      `mapstructure:"database" json:"database"`
+	Redis         RedisConfig         `mapstructure:"redis" json:"redis"`
+	Kafka         KafkaConfig         `mapstructure:"kafka" json:"kafka"`
+	Metrics       MetricsConfig       `mapstructure:"metrics" json:"metrics"`
 	ExportService ExportServiceConfig `mapstructure:"export_service" json:"export_service"`
-	Bop       BopConfig       `mapstructure:"bop" json:"bop"`
-	Scheduler SchedulerConfig `mapstructure:"scheduler" json:"scheduler"`
-	ThreeScale ThreeScaleConfig `mapstructure:"threescale" json:"threescale"`
+	Bop           BopConfig           `mapstructure:"bop" json:"bop"`
+	Scheduler     SchedulerConfig     `mapstructure:"scheduler" json:"scheduler"`
+	ThreeScale    ThreeScaleConfig    `mapstructure:"threescale" json:"threescale"`
 
 	UserValidatorImpl         string `mapstructure:"user_validator_impl" json:"user_validator_impl"`
 	JobCompletionNotifierImpl string `mapstructure:"job_completion_notifier_impl" json:"job_completion_notifier_impl"`
@@ -70,18 +70,18 @@ type RedisConfig struct {
 
 // KafkaConfig contains Kafka connection settings
 type KafkaConfig struct {
-	Enabled          bool       `mapstructure:"enabled" json:"enabled"`
-	Brokers          []string   `mapstructure:"brokers" json:"brokers"`
-	Topic            string     `mapstructure:"topic" json:"topic"`
-	ClientID         string     `mapstructure:"client_id" json:"client_id"`
+	Enabled          bool          `mapstructure:"enabled" json:"enabled"`
+	Brokers          []string      `mapstructure:"brokers" json:"brokers"`
+	Topic            string        `mapstructure:"topic" json:"topic"`
+	ClientID         string        `mapstructure:"client_id" json:"client_id"`
 	Timeout          time.Duration `mapstructure:"timeout" json:"timeout"`
-	Retries          int        `mapstructure:"retries" json:"retries"`
-	BatchSize        int        `mapstructure:"batch_size" json:"batch_size"`
-	CompressionType  string     `mapstructure:"compression_type" json:"compression_type"`
-	RequiredAcks     int        `mapstructure:"required_acks" json:"required_acks"`
-	SASL             SASLConfig `mapstructure:"sasl" json:"sasl"`
-	TLS              TLSConfig  `mapstructure:"tls" json:"tls"`
-	SecurityProtocol string     `mapstructure:"security_protocol" json:"security_protocol"`
+	Retries          int           `mapstructure:"retries" json:"retries"`
+	BatchSize        int           `mapstructure:"batch_size" json:"batch_size"`
+	CompressionType  string        `mapstructure:"compression_type" json:"compression_type"`
+	RequiredAcks     int           `mapstructure:"required_acks" json:"required_acks"`
+	SASL             SASLConfig    `mapstructure:"sasl" json:"sasl"`
+	TLS              TLSConfig     `mapstructure:"tls" json:"tls"`
+	SecurityProtocol string        `mapstructure:"security_protocol" json:"security_protocol"`
 }
 
 // SASLConfig contains SASL authentication settings
