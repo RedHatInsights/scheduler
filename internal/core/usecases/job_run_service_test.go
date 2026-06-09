@@ -52,6 +52,10 @@ func (m *mockJobRunRepository) Save(run domain.JobRun) error {
 	return nil
 }
 
+func (m *mockJobRunRepository) CleanupOldRuns(keepPerJob int) (int64, error) {
+	return 0, nil
+}
+
 type mockJobRepositoryForRuns struct {
 	findByIDFunc func(id string) (domain.Job, error)
 }
