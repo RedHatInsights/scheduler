@@ -18,7 +18,7 @@ type mockAuthorizedJobService struct {
 	updateJobFunc func(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
 	patchJobFunc  func(ctx context.Context, ident identity.XRHID, id string, updates map[string]interface{}) (domain.Job, error)
 	deleteJobFunc func(ctx context.Context, ident identity.XRHID, id string) error
-	runJobFunc    func(ctx context.Context, ident identity.XRHID, id string) error
+	runJobFunc    func(ctx context.Context, ident identity.XRHID, id string) (string, error)
 	pauseJobFunc  func(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error)
 	resumeJobFunc func(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error)
 }
@@ -68,11 +68,11 @@ func (m *mockAuthorizedJobService) DeleteJob(ctx context.Context, ident identity
 	return nil
 }
 
-func (m *mockAuthorizedJobService) RunJob(ctx context.Context, ident identity.XRHID, id string) error {
+func (m *mockAuthorizedJobService) RunJob(ctx context.Context, ident identity.XRHID, id string) (string, error) {
 	if m.runJobFunc != nil {
 		return m.runJobFunc(ctx, ident, id)
 	}
-	return nil
+	return "", nil
 }
 
 func (m *mockAuthorizedJobService) PauseJob(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error) {

@@ -29,8 +29,8 @@ type AuthorizedJobService interface {
 	// DeleteJob deletes a job with authorization check
 	DeleteJob(ctx context.Context, ident identity.XRHID, id string) error
 
-	// RunJob executes a job immediately with authorization check
-	RunJob(ctx context.Context, ident identity.XRHID, id string) error
+	// RunJob executes a job immediately with authorization check and returns the job run ID
+	RunJob(ctx context.Context, ident identity.XRHID, id string) (string, error)
 
 	// PauseJob pauses a job with authorization check
 	PauseJob(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error)

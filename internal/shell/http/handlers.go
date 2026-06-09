@@ -303,7 +303,7 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Service handles authorization check
-	err := h.jobService.RunJob(r.Context(), ident, id)
+	jobRunID, err := h.jobService.RunJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
@@ -313,7 +313,14 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Return the job run ID in the response
+	response := map[string]string{
+		"run_id": jobRunID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {

@@ -283,6 +283,9 @@ func runServer(cmd *cobra.Command, args []string) {
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
+	// Set job run repository on core service
+	coreJobService.SetJobRunRepository(runRepo)
+
 	// Create adapters for different consumers
 	httpJobService := usecases.NewAuthorizedJobService(coreJobService)
 	schedulerJobService := usecases.NewSchedulerJobService(coreJobService)
@@ -397,6 +400,9 @@ func runAPI(cmd *cobra.Command, args []string) {
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
 	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
+
+	// Set job run repository on core service
+	coreJobService.SetJobRunRepository(jobRunRepo)
 
 	// Initialize Redis client for scheduling coordination
 	var redisScheduler *scheduler.RedisScheduler
