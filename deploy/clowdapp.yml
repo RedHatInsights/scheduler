@@ -254,7 +254,7 @@ objects:
         image: ${IMAGE}:${IMAGE_TAG}
         command:
           - ./scheduler
-          - cleanup
+          - prune-job-runs
         resources:
           limits:
             cpu: 200m

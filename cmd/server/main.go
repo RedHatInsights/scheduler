@@ -72,7 +72,7 @@ func init() {
 	rootCmd.AddCommand(dbMigrationCmd)
 	rootCmd.AddCommand(apiCmd)
 	rootCmd.AddCommand(workerCmd)
-	rootCmd.AddCommand(cleanupCmd)
+	rootCmd.AddCommand(pruneJobRunsCmd)
 }
 
 var apiCmd = &cobra.Command{
@@ -89,13 +89,13 @@ var workerCmd = &cobra.Command{
 	Run:   runWorker,
 }
 
-var cleanupCmd = &cobra.Command{
-	Use:   "cleanup",
-	Short: "Clean up old job run records",
+var pruneJobRunsCmd = &cobra.Command{
+	Use:   "prune-job-runs",
+	Short: "Prune old job run records",
 	Long: `Remove old job run records from the database, retaining only the most recent N runs per job.
 The retention count is configurable via JOB_RUN_RETENTION_COUNT (default: 10).
 Designed to be invoked as an OpenShift CronJob.`,
-	RunE: runCleanup,
+	RunE: runPruneJobRuns,
 }
 
 var dbMigrationCmd = &cobra.Command{
@@ -171,7 +171,7 @@ func runDatabaseDown(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runCleanup(cmd *cobra.Command, args []string) error {
+func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
@@ -182,7 +182,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("JOB_RUN_RETENTION_COUNT must be at least 1, got %d", keepCount)
 	}
 
-	log.Printf("[CLEANUP] Starting job run cleanup (retaining %d runs per job)", keepCount)
+	log.Printf("[PRUNE] Starting job run pruning (retaining %d runs per job)", keepCount)
 
 	var runRepo interface {
 		CleanupOldRuns(keepPerJob int) (int64, error)
@@ -209,13 +209,13 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	deleted, err := runRepo.CleanupOldRuns(keepCount)
 	if err != nil {
-		return fmt.Errorf("cleanup failed: %w", err)
+		return fmt.Errorf("prune failed: %w", err)
 	}
 
 	if deleted == 0 {
-		log.Println("[CLEANUP] No old job runs to remove")
+		log.Println("[PRUNE] No old job runs to remove")
 	} else {
-		log.Printf("[CLEANUP] Successfully removed %d old job run(s)", deleted)
+		log.Printf("[PRUNE] Successfully removed %d old job run(s)", deleted)
 	}
 
 	return nil
