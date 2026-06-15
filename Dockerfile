@@ -1,5 +1,7 @@
 # Multi-stage build for smaller final image
-FROM registry.access.redhat.com/ubi9/go-toolset:latest AS builder
+FROM registry.access.redhat.com/hi/go:latest-fips-builder AS builder
+
+USER 0
 
 # Set working directory
 WORKDIR /opt/app-root/src
@@ -8,30 +10,31 @@ WORKDIR /opt/app-root/src
 COPY go.mod go.sum ./
 
 # Download dependencies
-RUN go mod download
+RUN if [ -f /cachi2/cachi2.env ]; then source /cachi2/cachi2.env; fi && \
+    go mod download
 
 # Copy source code
 COPY . .
 
 # Build the application binaries
 # Main scheduler binary (supports: server, api, worker, db_migration subcommands)
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o scheduler cmd/server/main.go
 # Kafka producer utility
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o kafka-producer cmd/kafka-producer/main.go
+RUN if [ -f /cachi2/cachi2.env ]; then source /cachi2/cachi2.env; fi && \
+    CGO_ENABLED=1 GOOS=linux go build -o scheduler cmd/server/main.go && \
+    CGO_ENABLED=1 GOOS=linux go build -o kafka-producer cmd/kafka-producer/main.go
+
+# Install runtime dependencies in builder (runtime image has no package manager)
+RUN dnf5 install -y ca-certificates sqlite && \
+    dnf5 clean all
 
 # Final stage - minimal runtime image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/hi/go:latest-fips
 
-# Install ca-certificates for HTTPS calls
-RUN microdnf update -y && \
-    microdnf install -y ca-certificates sqlite && \
-    microdnf clean all
-
-# Create non-root user
-RUN groupadd -r scheduler && useradd -r -g scheduler -u 1001 scheduler
+# Copy runtime dependencies from builder
+COPY --from=builder /usr/lib64/libsqlite3* /usr/lib64/
 
 # Create data directory
-RUN mkdir -p /data && chown scheduler:scheduler /data
+RUN mkdir -p /data && chown 1001:0 /data
 
 # Set working directory
 WORKDIR /app
@@ -42,18 +45,11 @@ COPY --from=builder /opt/app-root/src/kafka-producer .
 COPY --from=builder /opt/app-root/src/trigger_swatch_report_gen.sh .
 COPY --from=builder /opt/app-root/src/db/migrations db/migrations/
 
-# Change ownership of the binaries
-RUN chown scheduler:scheduler scheduler kafka-producer
-
 # Switch to non-root user
 USER 1001
 
 # Expose port
 EXPOSE 5000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:5000/api/v1/jobs || exit 1
 
 # Set environment variables
 ENV DB_PATH=/data/jobs.db
