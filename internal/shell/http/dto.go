@@ -1,7 +1,6 @@
 package http
 
 import (
-	"encoding/json"
 	"time"
 
 	"insights-scheduler/internal/core/domain"
@@ -96,25 +95,6 @@ func ToJobRunResponse(run domain.JobRun) JobRunResponse {
 		resultType = &rt
 	}
 
-	// Process the result field: try to ensure it's a proper JSON object or string
-	var processedResult interface{}
-	if run.Result != nil {
-		// If result is a string, try to unmarshal it as JSON
-		if resultStr, ok := run.Result.(string); ok {
-			var jsonObj interface{}
-			if err := json.Unmarshal([]byte(resultStr), &jsonObj); err == nil {
-				// Successfully unmarshaled as JSON - use the object
-				processedResult = jsonObj
-			} else {
-				// Not valid JSON - keep as string (legacy result)
-				processedResult = resultStr
-			}
-		} else {
-			// Already an object (map, struct, etc.) - keep as is
-			processedResult = run.Result
-		}
-	}
-
 	return JobRunResponse{
 		ID:           run.ID,
 		JobID:        run.JobID,
@@ -123,7 +103,7 @@ func ToJobRunResponse(run domain.JobRun) JobRunResponse {
 		EndTime:      run.EndTime,
 		ErrorMessage: run.ErrorMessage,
 		ResultType:   resultType,
-		Result:       processedResult,
+		Result:       run.Result,
 	}
 }
 

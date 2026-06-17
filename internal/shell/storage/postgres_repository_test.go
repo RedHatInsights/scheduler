@@ -424,11 +424,12 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 	}
 
 	// Test Update (complete the run)
-	endTime := time.Now().UTC()
-	run.Status = domain.RunStatusCompleted
-	run.EndTime = &endTime
-	result := "Success"
-	run.Result = &result
+	commandResult := domain.CommandResult{
+		Command:  "test-command",
+		ExitCode: 0,
+		Duration: 100.5,
+	}
+	run = run.WithCompleted(domain.ResultTypeCommand, commandResult)
 
 	err = runRepo.Save(run)
 	if err != nil {
@@ -446,17 +447,13 @@ func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
 	if retrievedUpdated.EndTime == nil {
 		t.Error("Expected EndTime to be set")
 	}
+	if retrievedUpdated.ResultType == nil {
+		t.Error("Expected ResultType to be set")
+	} else if *retrievedUpdated.ResultType != domain.ResultTypeCommand {
+		t.Errorf("Expected ResultType %s, got %s", domain.ResultTypeCommand, *retrievedUpdated.ResultType)
+	}
 	if retrievedUpdated.Result == nil {
-		t.Error("Expected Result to be 'Success' - nil")
-	} else {
-		s, ok := retrievedUpdated.Result.(string)
-		if ok {
-			if s != "\"Success\"" {
-				t.Errorf("Expected Result to be 'Success' - actual %s", s)
-			}
-		} else {
-			t.Error("Expected Result to be 'Success' - not ok")
-		}
+		t.Error("Expected Result to be set")
 	}
 
 	// Cleanup

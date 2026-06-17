@@ -23,25 +23,20 @@ func (lw loggerWrapper) Verbose() bool {
 func CreateMigration(cfg *config.Config) (*migrate.Migrate, error) {
 	var databaseURL string
 
-	switch cfg.Database.Type {
-	case "sqlite":
-		databaseURL = fmt.Sprintf("sqlite3://%s", cfg.Database.Path)
-		log.Printf("Running migrations for SQLite database: %s", cfg.Database.Path)
-	case "postgres", "postgresql":
-
-		connStr, err := buildConnectionString(cfg)
-		if err != nil {
-			return nil, err
-		}
-
-		databaseURL = connStr
-
-		// Log connection info WITHOUT password
-		log.Printf("Running migrations for PostgreSQL database: %s@%s:%d/%s?sslmode=%s",
-			cfg.Database.Username, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name, cfg.Database.SSLMode)
-	default:
-		return nil, fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
+	if cfg.Database.Type != "postgres" && cfg.Database.Type != "postgresql" {
+		return nil, fmt.Errorf("unsupported database type: %s (only 'postgres' is supported)", cfg.Database.Type)
 	}
+
+	connStr, err := buildConnectionString(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	databaseURL = connStr
+
+	// Log connection info WITHOUT password
+	log.Printf("Running migrations for PostgreSQL database: %s@%s:%d/%s?sslmode=%s",
+		cfg.Database.Username, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name, cfg.Database.SSLMode)
 
 	migrationsPath := "file://db/migrations"
 	m, err := migrate.New(migrationsPath, databaseURL)
