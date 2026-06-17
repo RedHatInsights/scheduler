@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -920,4 +921,161 @@ func TestPostgresJobRepository_NullTimestamps(t *testing.T) {
 
 	// Cleanup
 	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRunRepository_CleanupOldRuns(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create two jobs
+	job1 := domain.NewJob("Prune Job 1", "org-prune", "user-prune", "*/5 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"msg": "test"})
+	job1.ID = "00000000-0000-0000-0000-000000000010"
+	job2 := domain.NewJob("Prune Job 2", "org-prune", "user-prune", "*/10 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"msg": "test"})
+	job2.ID = "00000000-0000-0000-0000-000000000011"
+
+	if err := jobRepo.Save(job1); err != nil {
+		t.Fatalf("Failed to save job1: %v", err)
+	}
+	if err := jobRepo.Save(job2); err != nil {
+		t.Fatalf("Failed to save job2: %v", err)
+	}
+
+	// Create 5 runs for job1 with distinct start times
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		run := domain.JobRun{
+			ID:        fmt.Sprintf("10000000-0000-0000-0010-%012d", i),
+			JobID:     job1.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: baseTime.Add(time.Duration(i) * time.Hour),
+		}
+		endTime := run.StartTime.Add(5 * time.Minute)
+		run.EndTime = &endTime
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run for job1: %v", err)
+		}
+	}
+
+	// Create 3 runs for job2
+	for i := 0; i < 3; i++ {
+		run := domain.JobRun{
+			ID:        fmt.Sprintf("10000000-0000-0000-0011-%012d", i),
+			JobID:     job2.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: baseTime.Add(time.Duration(i) * time.Hour),
+		}
+		endTime := run.StartTime.Add(10 * time.Minute)
+		run.EndTime = &endTime
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run for job2: %v", err)
+		}
+	}
+
+	// Cleanup keeping 2 per job
+	deleted, err := runRepo.CleanupOldRuns(2)
+	if err != nil {
+		t.Fatalf("CleanupOldRuns failed: %v", err)
+	}
+
+	// job1: 5 runs - keep 2 = delete 3
+	// job2: 3 runs - keep 2 = delete 1
+	// total deleted = 4
+	if deleted != 4 {
+		t.Errorf("Expected 4 deleted, got %d", deleted)
+	}
+
+	// Verify remaining runs for job1
+	job1Runs, _, err := runRepo.FindByJobID(job1.ID, 0, 10)
+	if err != nil {
+		t.Fatalf("Failed to find job1 runs: %v", err)
+	}
+	if len(job1Runs) != 2 {
+		t.Errorf("Expected 2 runs for job1, got %d", len(job1Runs))
+	}
+	// Runs ordered by start_time DESC — most recent first
+	if len(job1Runs) == 2 {
+		if job1Runs[0].ID != fmt.Sprintf("10000000-0000-0000-0010-%012d", 4) {
+			t.Errorf("Expected most recent run (idx 4), got %s", job1Runs[0].ID)
+		}
+		if job1Runs[1].ID != fmt.Sprintf("10000000-0000-0000-0010-%012d", 3) {
+			t.Errorf("Expected second most recent run (idx 3), got %s", job1Runs[1].ID)
+		}
+	}
+
+	// Verify remaining runs for job2
+	job2Runs, _, err := runRepo.FindByJobID(job2.ID, 0, 10)
+	if err != nil {
+		t.Fatalf("Failed to find job2 runs: %v", err)
+	}
+	if len(job2Runs) != 2 {
+		t.Errorf("Expected 2 runs for job2, got %d", len(job2Runs))
+	}
+
+	// Cleanup test data
+	jobRepo.Delete(job1.ID)
+	jobRepo.Delete(job2.ID)
+}
+
+func TestPostgresJobRunRepository_CleanupOldRuns_NoRunsToDelete(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create a job with 2 runs
+	job := domain.NewJob("Prune NoOp Job", "org-prune", "user-prune", "*/5 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"msg": "test"})
+	job.ID = "00000000-0000-0000-0000-000000000012"
+	if err := jobRepo.Save(job); err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 2; i++ {
+		run := domain.JobRun{
+			ID:        fmt.Sprintf("10000000-0000-0000-0012-%012d", i),
+			JobID:     job.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: baseTime.Add(time.Duration(i) * time.Hour),
+		}
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run: %v", err)
+		}
+	}
+
+	// Cleanup keeping 10 (more than exist)
+	deleted, err := runRepo.CleanupOldRuns(10)
+	if err != nil {
+		t.Fatalf("CleanupOldRuns failed: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Expected 0 deleted, got %d", deleted)
+	}
+
+	// Verify all runs still exist
+	runs, _, err := runRepo.FindByJobID(job.ID, 0, 10)
+	if err != nil {
+		t.Fatalf("Failed to find runs: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Errorf("Expected 2 runs, got %d", len(runs))
+	}
+
+	// Cleanup test data
+	jobRepo.Delete(job.ID)
+}
+
+func TestPostgresJobRunRepository_CleanupOldRuns_EmptyTable(t *testing.T) {
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Cleanup on table with no test-specific data should not error
+	deleted, err := runRepo.CleanupOldRuns(10)
+	if err != nil {
+		t.Fatalf("CleanupOldRuns failed: %v", err)
+	}
+	_ = deleted
 }

@@ -243,6 +243,35 @@ objects:
         - name: THREESCALE_URL
           value: ${THREESCALE_URL}
 
+    jobs:
+    - name: job-run-cleanup
+      schedule: ${CLEANUP_SCHEDULE}
+      suspend: ${{CLEANUP_SUSPEND}}
+      concurrencyPolicy: Forbid
+      successfulJobsHistoryLimit: 3
+      failedJobsHistoryLimit: 3
+      podSpec:
+        image: ${IMAGE}:${IMAGE_TAG}
+        command:
+          - ./scheduler
+          - prune-job-runs
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        env:
+        - name: JOB_RUN_RETENTION_COUNT
+          value: ${JOB_RUN_RETENTION_COUNT}
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "5"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "2"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 1m
+
 parameters:
 - description: Initial amount of memory the scheduler api container will request.
   displayName: Memory Request
@@ -327,3 +356,13 @@ parameters:
   description: Public-facing URL for export service download links
   value: https://console.redhat.com/api/export/v1
   required: true
+
+- name: CLEANUP_SCHEDULE
+  description: Cron schedule for job run cleanup (default daily at 2 AM UTC)
+  value: "0 2 * * *"
+- name: CLEANUP_SUSPEND
+  description: Whether to suspend the cleanup CronJob
+  value: "false"
+- name: JOB_RUN_RETENTION_COUNT
+  description: Number of recent job runs to retain per job during cleanup
+  value: "10"
