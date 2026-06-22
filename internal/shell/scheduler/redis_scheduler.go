@@ -319,7 +319,42 @@ func (s *RedisScheduler) executeJob(jobID string) {
 		}
 	}
 
-	// Calculate next run time and reschedule
+	// Reload the job from the database to get updated status/failure tracking
+	// The executor may have updated consecutive_failures and auto-paused the job
+	var updatedJob domain.Job
+	if s.jobRepo != nil {
+		reloadedJob, err := s.jobRepo.FindByID(jobID)
+		if err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to reload job %s from database: %v", jobID, err)
+			updatedJob = scheduledJob.Job // Fallback to the job we had
+		} else {
+			updatedJob = reloadedJob
+			log.Printf("[RedisScheduler] Reloaded job %s: status=%s, consecutive_failures=%d",
+				jobID, updatedJob.Status, updatedJob.ConsecutiveFailures)
+		}
+	} else {
+		updatedJob = scheduledJob.Job
+	}
+
+	// Check if the job was auto-paused or manually paused during execution
+	if updatedJob.Status == domain.StatusPaused {
+		log.Printf("[RedisScheduler] Job %s is now paused (consecutive_failures=%d), removing from schedule",
+			jobID, updatedJob.ConsecutiveFailures)
+
+		// Remove from Redis sorted set (do not reschedule)
+		if err := s.client.ZRem(s.ctx, scheduledJobsKey, jobID).Err(); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to remove paused job %s from schedule: %v", jobID, err)
+		}
+
+		// Remove job data from Redis
+		if err := s.client.Del(s.ctx, jobKey).Err(); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to remove paused job data for %s: %v", jobID, err)
+		}
+
+		return // Do not reschedule
+	}
+
+	// Calculate next run time and reschedule (only if not paused)
 	schedule, err := s.parser.Parse(scheduledJob.Schedule)
 	if err != nil {
 		log.Printf("[RedisScheduler] Error parsing schedule for job %s: %v", jobID, err)
@@ -331,8 +366,8 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	scheduledJob.LastUpdate = time.Now()
 	scheduledJob.JobRunID = "" // Clear the job run ID after execution (it was for immediate execution only)
 
-	// Update next_run_at on the Job domain object
-	scheduledJob.Job = scheduledJob.Job.WithNextRunAt(nextRun)
+	// Use the reloaded job (with updated failure tracking) for rescheduling
+	scheduledJob.Job = updatedJob.WithNextRunAt(nextRun)
 
 	// Persist updated job to PostgreSQL (if repository is available)
 	if s.jobRepo != nil {
