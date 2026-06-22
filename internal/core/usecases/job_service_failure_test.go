@@ -291,3 +291,64 @@ func TestExecuteScheduledJobWithJobRunAutoPauseLogic(t *testing.T) {
 		t.Errorf("After reaching threshold, expected status=paused, got %s", finalJob.Status)
 	}
 }
+
+func TestAutoPauseClearsNextRunAt(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &failingMockExecutor{shouldFail: true}
+
+	threshold := 2
+	service := NewJobService(repo, scheduler, executor, threshold)
+
+	// Create a job (will have next_run_at set)
+	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CreateJob() failed: %v", err)
+	}
+
+	if job.NextRunAt == nil {
+		t.Fatal("New job should have next_run_at set")
+	}
+
+	// Fail the job twice to trigger auto-pause
+	service.RunJob(context.Background(), job.ID)
+	service.RunJob(context.Background(), job.ID)
+
+	pausedJob, _ := service.GetJob(context.Background(), job.ID)
+
+	if pausedJob.Status != domain.StatusPaused {
+		t.Errorf("Expected job to be paused, got status=%s", pausedJob.Status)
+	}
+
+	if pausedJob.NextRunAt != nil {
+		t.Errorf("Auto-paused job should have next_run_at=nil, got %v", pausedJob.NextRunAt)
+	}
+}
+
+func TestManualPauseClearsNextRunAt(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &failingMockExecutor{shouldFail: false}
+
+	service := NewJobService(repo, scheduler, executor, 3)
+
+	// Create a job (will have next_run_at set)
+	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CreateJob() failed: %v", err)
+	}
+
+	if job.NextRunAt == nil {
+		t.Fatal("New job should have next_run_at set")
+	}
+
+	// Manually pause the job
+	pausedJob, err := service.PauseJob(job.ID)
+	if err != nil {
+		t.Fatalf("PauseJob() failed: %v", err)
+	}
+
+	if pausedJob.NextRunAt != nil {
+		t.Errorf("Manually paused job should have next_run_at=nil, got %v", pausedJob.NextRunAt)
+	}
+}

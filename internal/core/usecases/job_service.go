@@ -723,6 +723,9 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, erro
 			finalJob = finalJob.WithNextRunAt(*nextRunAt)
 			log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
 		}
+	} else {
+		// Clear next_run_at when job is paused
+		finalJob = finalJob.WithNextRunAtCleared()
 	}
 
 	err = s.repo.Save(finalJob)
@@ -743,7 +746,7 @@ func (s *DefaultJobService) PauseJob(id string) (domain.Job, error) {
 		return domain.Job{}, domain.ErrJobAlreadyPaused
 	}
 
-	pausedJob := job.WithStatus(domain.StatusPaused)
+	pausedJob := job.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
 	err = s.repo.Save(pausedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -772,7 +775,7 @@ func (s *DefaultJobService) PauseJobWithOrgCheck(ctx context.Context, id string,
 		return domain.Job{}, domain.ErrJobAlreadyPaused
 	}
 
-	pausedJob := job.WithStatus(domain.StatusPaused)
+	pausedJob := job.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
 	err = s.repo.Save(pausedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -801,7 +804,7 @@ func (s *DefaultJobService) PauseJobWithUserCheck(ctx context.Context, id string
 		return domain.Job{}, domain.ErrJobAlreadyPaused
 	}
 
-	pausedJob := job.WithStatus(domain.StatusPaused)
+	pausedJob := job.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
 	err = s.repo.Save(pausedJob)
 	if err != nil {
 		return domain.Job{}, err
@@ -1039,6 +1042,9 @@ func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRun
 			finalJob = finalJob.WithNextRunAt(*nextRunAt)
 			log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - calculated next run time for job %s: %s", job.ID, nextRunAt.Format(time.RFC3339))
 		}
+	} else {
+		// Clear next_run_at when job is paused
+		finalJob = finalJob.WithNextRunAtCleared()
 	}
 
 	return s.repo.Save(finalJob)

@@ -128,6 +128,24 @@ func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 	}
 }
 
+func (j Job) WithNextRunAtCleared() Job {
+	return Job{
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              j.Status,
+		LastRunAt:           j.LastRunAt,
+		NextRunAt:           nil,
+		ConsecutiveFailures: j.ConsecutiveFailures,
+		LastFailedAt:        j.LastFailedAt,
+	}
+}
+
 func (j Job) WithFailureIncremented(now time.Time) Job {
 	return Job{
 		ID:                  j.ID,

@@ -66,7 +66,7 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 			if e.maxConsecutiveFailures > 0 && updatedJob.ConsecutiveFailures >= e.maxConsecutiveFailures {
 				log.Printf("[FailureTrackingExecutor] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
 					job.ID, e.maxConsecutiveFailures)
-				updatedJob = updatedJob.WithStatus(domain.StatusPaused)
+				updatedJob = updatedJob.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
 			} else {
 				updatedJob = updatedJob.WithStatus(domain.StatusFailed)
 			}
