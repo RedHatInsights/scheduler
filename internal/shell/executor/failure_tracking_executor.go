@@ -12,6 +12,7 @@ import (
 type SchedulerExecutor interface {
 	Execute(job domain.Job) error
 	ExecuteWithJobRun(job domain.Job, jobRunID string) error
+	Wait() // Wait for all in-flight jobs to complete (used for graceful shutdown)
 }
 
 // FailureTrackingExecutor wraps a SchedulerExecutor and adds automatic failure tracking
@@ -37,6 +38,11 @@ func (e *FailureTrackingExecutor) Execute(job domain.Job) error {
 
 func (e *FailureTrackingExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) error {
 	return e.executeWithTracking(job, jobRunID)
+}
+
+func (e *FailureTrackingExecutor) Wait() {
+	// Delegate to the inner executor's Wait method for graceful shutdown
+	e.inner.Wait()
 }
 
 func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID string) error {
