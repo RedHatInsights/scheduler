@@ -47,21 +47,23 @@ type CronScheduler interface {
 
 // DefaultJobService is the default implementation of ports.JobService
 type DefaultJobService struct {
-	repo          JobRepository
-	runRepo       JobRunRepository
-	scheduler     SchedulingService
-	executor      JobExecutor
-	cronScheduler CronScheduler
+	repo                   JobRepository
+	runRepo                JobRunRepository
+	scheduler              SchedulingService
+	executor               JobExecutor
+	cronScheduler          CronScheduler
+	maxConsecutiveFailures int
 }
 
 // Ensure DefaultJobService implements ports.JobService
 var _ ports.JobService = (*DefaultJobService)(nil)
 
-func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor) *DefaultJobService {
+func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor, maxConsecutiveFailures int) *DefaultJobService {
 	return &DefaultJobService{
-		repo:      repo,
-		scheduler: scheduler,
-		executor:  executor,
+		repo:                   repo,
+		scheduler:              scheduler,
+		executor:               executor,
+		maxConsecutiveFailures: maxConsecutiveFailures,
 	}
 }
 
@@ -682,22 +684,45 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, erro
 	}
 
 	var finalStatus domain.JobStatus
+	var finalJob domain.Job
+
 	if execErr != nil {
 		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
-		finalStatus = domain.StatusFailed
+
+		// Increment failure counter
+		finalJob = runningJob.WithFailureIncremented(time.Now().UTC())
+
+		// Check if we should auto-pause due to consecutive failures
+		if s.maxConsecutiveFailures > 0 && finalJob.ConsecutiveFailures >= s.maxConsecutiveFailures {
+			log.Printf("[JobService] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
+				job.ID, s.maxConsecutiveFailures)
+			finalStatus = domain.StatusPaused
+
+			// Unschedule from cron scheduler
+			if s.cronScheduler != nil {
+				s.cronScheduler.UnscheduleJob(job.ID)
+			}
+		} else {
+			finalStatus = domain.StatusFailed
+		}
+
+		finalJob = finalJob.WithStatus(finalStatus)
 	} else {
+		// Success - reset failure counter
+		finalJob = runningJob.WithFailuresReset()
 		finalStatus = domain.StatusScheduled
+		finalJob = finalJob.WithStatus(finalStatus)
 	}
 
-	finalJob := runningJob.WithStatus(finalStatus)
-
-	// Calculate next run time after execution
-	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
-	if calcErr != nil {
-		log.Printf("[DEBUG] RunJob - failed to calculate next run time for job %s: %v", id, calcErr)
-	} else if nextRunAt != nil {
-		finalJob = finalJob.WithNextRunAt(*nextRunAt)
-		log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
+	// Calculate next run time after execution (unless paused)
+	if finalStatus != domain.StatusPaused {
+		nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] RunJob - failed to calculate next run time for job %s: %v", id, calcErr)
+		} else if nextRunAt != nil {
+			finalJob = finalJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
+		}
 	}
 
 	err = s.repo.Save(finalJob)
@@ -800,7 +825,8 @@ func (s *DefaultJobService) ResumeJob(ctx context.Context, id string) (domain.Jo
 		return domain.Job{}, domain.ErrJobNotPaused
 	}
 
-	resumedJob := job.WithStatus(domain.StatusScheduled)
+	// Reset failure counter when resuming
+	resumedJob := job.WithFailuresReset().WithStatus(domain.StatusScheduled)
 
 	// Recalculate next run time when resuming
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
@@ -841,7 +867,8 @@ func (s *DefaultJobService) ResumeJobWithOrgCheck(ctx context.Context, id string
 		return domain.Job{}, domain.ErrJobNotPaused
 	}
 
-	resumedJob := job.WithStatus(domain.StatusScheduled)
+	// Reset failure counter when resuming
+	resumedJob := job.WithFailuresReset().WithStatus(domain.StatusScheduled)
 
 	// Recalculate next run time when resuming
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
@@ -882,7 +909,8 @@ func (s *DefaultJobService) ResumeJobWithUserCheck(ctx context.Context, id strin
 		return domain.Job{}, domain.ErrJobNotPaused
 	}
 
-	resumedJob := job.WithStatus(domain.StatusScheduled)
+	// Reset failure counter when resuming
+	resumedJob := job.WithFailuresReset().WithStatus(domain.StatusScheduled)
 
 	// Recalculate next run time when resuming
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
@@ -972,22 +1000,45 @@ func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRun
 	execErr := s.executor.ExecuteWithJobRun(runningJob, jobRunID)
 
 	var finalStatus domain.JobStatus
+	var finalJob domain.Job
+
 	if execErr != nil {
 		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
-		finalStatus = domain.StatusFailed
+
+		// Increment failure counter
+		finalJob = runningJob.WithFailureIncremented(time.Now().UTC())
+
+		// Check if we should auto-pause due to consecutive failures
+		if s.maxConsecutiveFailures > 0 && finalJob.ConsecutiveFailures >= s.maxConsecutiveFailures {
+			log.Printf("[JobService] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
+				job.ID, s.maxConsecutiveFailures)
+			finalStatus = domain.StatusPaused
+
+			// Unschedule from cron scheduler
+			if s.cronScheduler != nil {
+				s.cronScheduler.UnscheduleJob(job.ID)
+			}
+		} else {
+			finalStatus = domain.StatusFailed
+		}
+
+		finalJob = finalJob.WithStatus(finalStatus)
 	} else {
+		// Success - reset failure counter
+		finalJob = runningJob.WithFailuresReset()
 		finalStatus = domain.StatusScheduled
+		finalJob = finalJob.WithStatus(finalStatus)
 	}
 
-	finalJob := runningJob.WithStatus(finalStatus)
-
-	// Calculate next run time after execution
-	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
-	if calcErr != nil {
-		log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - failed to calculate next run time for job %s: %v", job.ID, calcErr)
-	} else if nextRunAt != nil {
-		finalJob = finalJob.WithNextRunAt(*nextRunAt)
-		log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - calculated next run time for job %s: %s", job.ID, nextRunAt.Format(time.RFC3339))
+	// Calculate next run time after execution (unless paused)
+	if finalStatus != domain.StatusPaused {
+		nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - failed to calculate next run time for job %s: %v", job.ID, calcErr)
+		} else if nextRunAt != nil {
+			finalJob = finalJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - calculated next run time for job %s: %s", job.ID, nextRunAt.Format(time.RFC3339))
+		}
 	}
 
 	return s.repo.Save(finalJob)

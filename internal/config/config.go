@@ -136,6 +136,7 @@ type SchedulerConfig struct {
 	DBToRedisSyncInterval   time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
 	EnablePeriodicSync      bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
 	JobRunRetentionCount    int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
+	MaxConsecutiveFailures  int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
@@ -279,6 +280,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.db_to_redis_sync_interval", 1*time.Hour)
 	v.SetDefault("scheduler.enable_periodic_sync", false)
 	v.SetDefault("scheduler.job_run_retention_count", 10)
+	v.SetDefault("scheduler.max_consecutive_failures", 3)
 
 	// 3scale
 	v.SetDefault("threescale.base_url", "http://3scale-service:8000")
@@ -370,6 +372,7 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("scheduler.db_to_redis_sync_interval", "SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL")
 	_ = v.BindEnv("scheduler.enable_periodic_sync", "ENABLE_PERIODIC_SYNC")
 	_ = v.BindEnv("scheduler.job_run_retention_count", "JOB_RUN_RETENTION_COUNT")
+	_ = v.BindEnv("scheduler.max_consecutive_failures", "MAX_CONSECUTIVE_FAILURES")
 
 	// 3scale
 	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")

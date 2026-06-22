@@ -312,7 +312,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	jobExecutor := executor.NewJobExecutor(executors, runRepo)
 
 	// Create functional core service
-	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor)
+	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
 	// Set job run repository on core service
@@ -431,7 +431,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
-	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor)
+	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor, cfg.Scheduler.MaxConsecutiveFailures)
 
 	// Set job run repository on core service
 	coreJobService.SetJobRunRepository(jobRunRepo)
