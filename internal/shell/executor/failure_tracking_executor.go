@@ -8,16 +8,22 @@ import (
 	"insights-scheduler/internal/core/usecases"
 )
 
-// FailureTrackingExecutor wraps a JobExecutor and adds automatic failure tracking
+// SchedulerExecutor is the interface used by schedulers to execute jobs
+type SchedulerExecutor interface {
+	Execute(job domain.Job) error
+	ExecuteWithJobRun(job domain.Job, jobRunID string) error
+}
+
+// FailureTrackingExecutor wraps a SchedulerExecutor and adds automatic failure tracking
 // and auto-pause logic after consecutive failures.
 type FailureTrackingExecutor struct {
-	inner                  JobExecutor
+	inner                  SchedulerExecutor
 	jobRepo                usecases.JobRepository
 	maxConsecutiveFailures int
 }
 
 // NewFailureTrackingExecutor creates an executor that tracks failures and auto-pauses jobs
-func NewFailureTrackingExecutor(inner JobExecutor, jobRepo usecases.JobRepository, maxConsecutiveFailures int) *FailureTrackingExecutor {
+func NewFailureTrackingExecutor(inner SchedulerExecutor, jobRepo usecases.JobRepository, maxConsecutiveFailures int) *FailureTrackingExecutor {
 	return &FailureTrackingExecutor{
 		inner:                  inner,
 		jobRepo:                jobRepo,
