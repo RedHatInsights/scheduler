@@ -59,12 +59,12 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("Expected default metrics port 8080, got %d", config.Metrics.Port)
 	}
 
-	if config.Database.Type != "sqlite" {
-		t.Errorf("Expected default database type 'sqlite', got %s", config.Database.Type)
+	if config.Database.Type != "postgres" {
+		t.Errorf("Expected default database type 'postgres', got %s", config.Database.Type)
 	}
 
-	if config.Database.Path != "./jobs.db" {
-		t.Errorf("Expected default database path './jobs.db', got %s", config.Database.Path)
+	if config.Database.Host != "localhost" {
+		t.Errorf("Expected default database host 'localhost', got %s", config.Database.Host)
 	}
 
 	if config.Kafka.Enabled {
@@ -281,8 +281,12 @@ func TestEnvVarsOverrideConfigFile(t *testing.T) {
 server:
   port: 9000
 database:
-  type: sqlite
-  path: ./test.db
+  type: postgres
+  host: localhost
+  port: 5432
+  name: scheduler
+  username: insights
+  password: insights
 `
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
@@ -352,13 +356,12 @@ func TestConfigValidation(t *testing.T) {
 			errorContains: "database type is required",
 		},
 		{
-			name: "sqlite without path",
+			name: "unsupported database type",
 			modifyConfig: func(c *Config) {
 				c.Database.Type = "sqlite"
-				c.Database.Path = ""
 			},
 			expectError:   true,
-			errorContains: "database path is required",
+			errorContains: "unsupported database type",
 		},
 		{
 			name: "postgres without host",
@@ -407,8 +410,13 @@ func TestConfigValidation(t *testing.T) {
 					Host:        "0.0.0.0",
 				},
 				Database: DatabaseConfig{
-					Type: "sqlite",
-					Path: "./test.db",
+					Type:     "postgres",
+					Host:     "localhost",
+					Port:     5432,
+					Name:     "scheduler",
+					Username: "insights",
+					Password: "insights",
+					SSLMode:  "disable",
 				},
 				Kafka: KafkaConfig{
 					Enabled: false,

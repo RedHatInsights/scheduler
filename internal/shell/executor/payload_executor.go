@@ -6,5 +6,5 @@ import (
 
 // JobExecutor defines the interface for executing different job payload types
 type JobExecutor interface {
-	Execute(job domain.Job) error
+	Execute(job domain.Job) (result interface{}, resultType domain.ResultType, err error)
 }

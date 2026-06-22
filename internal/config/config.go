@@ -45,7 +45,6 @@ type ServerConfig struct {
 // DatabaseConfig contains database connection settings
 type DatabaseConfig struct {
 	Type                  string        `mapstructure:"type" json:"type"`
-	Path                  string        `mapstructure:"path" json:"path"`
 	Host                  string        `mapstructure:"host" json:"host"`
 	Port                  int           `mapstructure:"port" json:"port"`
 	Name                  string        `mapstructure:"name" json:"name"`
@@ -210,8 +209,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.shutdown_timeout", 10*time.Second)
 
 	// Database
-	v.SetDefault("database.type", "sqlite")
-	v.SetDefault("database.path", "./jobs.db")
+	v.SetDefault("database.type", "postgres")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)
 	v.SetDefault("database.name", "scheduler")
@@ -305,7 +303,6 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Database
 	_ = v.BindEnv("database.type", "DB_TYPE")
-	_ = v.BindEnv("database.path", "DB_PATH")
 	_ = v.BindEnv("database.host", "DB_HOST")
 	_ = v.BindEnv("database.port", "DB_PORT")
 	_ = v.BindEnv("database.name", "DB_NAME")
@@ -544,11 +541,11 @@ func (c *Config) Validate() error {
 	if c.Database.Type == "" {
 		return fmt.Errorf("database type is required")
 	}
-	if c.Database.Type == "sqlite" && c.Database.Path == "" {
-		return fmt.Errorf("database path is required for SQLite")
+	if c.Database.Type != "postgres" && c.Database.Type != "postgresql" {
+		return fmt.Errorf("unsupported database type: %s (only 'postgres' is supported)", c.Database.Type)
 	}
-	if c.Database.Type != "sqlite" && c.Database.Host == "" {
-		return fmt.Errorf("database host is required for %s", c.Database.Type)
+	if c.Database.Host == "" {
+		return fmt.Errorf("database host is required")
 	}
 
 	// Validate Kafka configuration

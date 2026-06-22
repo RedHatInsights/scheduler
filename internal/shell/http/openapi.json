@@ -592,6 +592,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/JobRun"
+                },
+                "examples": {
+                  "exportJobRun": {
+                    "summary": "Completed export job run",
+                    "value": {
+                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                      "job_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "status": "completed",
+                      "start_time": "2025-11-07T10:00:00Z",
+                      "end_time": "2025-11-07T10:05:30Z",
+                      "result_type": "export",
+                      "result": {
+                        "export_id": "abc-123-def-456",
+                        "url": "https://console.redhat.com/api/export/v1/exports/abc-123-def-456"
+                      }
+                    }
+                  },
+                  "failedJobRun": {
+                    "summary": "Failed job run",
+                    "value": {
+                      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                      "job_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "status": "failed",
+                      "start_time": "2025-11-07T10:00:00Z",
+                      "end_time": "2025-11-07T10:00:15Z",
+                      "error_message": "Connection timeout"
+                    }
+                  }
                 }
               }
             }
@@ -829,11 +857,43 @@
             "description": "Error message if the run failed",
             "example": "Connection timeout"
           },
-          "result": {
+          "result_type": {
             "type": "string",
+            "description": "Type discriminator for the result object",
             "nullable": true,
-            "description": "Result or output from the job run",
-            "example": "Job completed successfully"
+            "enum": [
+              "export"
+            ],
+            "example": "export"
+          },
+          "result": {
+            "nullable": true,
+            "description": "Result object from the export job execution",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExportResult"
+              }
+            ]
+          }
+        }
+      },
+      "ExportResult": {
+        "type": "object",
+        "description": "Result from an export job execution. The result_type field at the JobRun level will be 'export'.",
+        "required": [
+          "export_id"
+        ],
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "description": "ID of the created export",
+            "example": "abc-123-def-456"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Download URL for the completed export",
+            "example": "https://console.redhat.com/api/export/v1/exports/abc-123-def-456"
           }
         }
       },

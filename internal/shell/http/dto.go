@@ -74,3 +74,44 @@ func ToJobResponseList(jobs []domain.Job) []JobResponse {
 	}
 	return responses
 }
+
+// JobRunResponse is the API response model for JobRun objects.
+type JobRunResponse struct {
+	ID           string      `json:"id"`
+	JobID        string      `json:"job_id"`
+	Status       string      `json:"status"`
+	StartTime    time.Time   `json:"start_time"`
+	EndTime      *time.Time  `json:"end_time,omitempty"`
+	ErrorMessage *string     `json:"error_message,omitempty"`
+	ResultType   *string     `json:"result_type,omitempty"`
+	Result       interface{} `json:"result,omitempty"`
+}
+
+// ToJobRunResponse converts a domain.JobRun to a JobRunResponse DTO
+func ToJobRunResponse(run domain.JobRun) JobRunResponse {
+	var resultType *string
+	if run.ResultType != nil {
+		rt := string(*run.ResultType)
+		resultType = &rt
+	}
+
+	return JobRunResponse{
+		ID:           run.ID,
+		JobID:        run.JobID,
+		Status:       string(run.Status),
+		StartTime:    run.StartTime,
+		EndTime:      run.EndTime,
+		ErrorMessage: run.ErrorMessage,
+		ResultType:   resultType,
+		Result:       run.Result,
+	}
+}
+
+// ToJobRunResponseList converts a slice of domain.JobRun to a slice of JobRunResponse DTOs
+func ToJobRunResponseList(runs []domain.JobRun) []JobRunResponse {
+	responses := make([]JobRunResponse, len(runs))
+	for i, run := range runs {
+		responses[i] = ToJobRunResponse(run)
+	}
+	return responses
+}

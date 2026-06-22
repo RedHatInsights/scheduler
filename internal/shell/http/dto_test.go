@@ -253,6 +253,212 @@ func TestJobResponseUTCTimezone(t *testing.T) {
 	}
 }
 
+func TestToJobRunResponse(t *testing.T) {
+	// Create a domain JobRun with export result
+	jobRun := domain.NewJobRun("job-123")
+
+	exportResult := domain.ExportResult{
+		ExportID: "export-abc-123",
+		URL:      "https://console.redhat.com/api/export/v1/exports/export-abc-123",
+	}
+
+	jobRun = jobRun.WithCompleted(domain.ResultTypeExport, exportResult)
+
+	// Convert to response DTO
+	response := ToJobRunResponse(jobRun)
+
+	// Verify that the response has the expected fields
+	if response.ID != jobRun.ID {
+		t.Errorf("Expected ID %s, got %s", jobRun.ID, response.ID)
+	}
+
+	if response.JobID != jobRun.JobID {
+		t.Errorf("Expected JobID %s, got %s", jobRun.JobID, response.JobID)
+	}
+
+	if response.Status != string(jobRun.Status) {
+		t.Errorf("Expected Status %s, got %s", jobRun.Status, response.Status)
+	}
+
+	if response.ResultType == nil {
+		t.Error("Expected ResultType to be set")
+	} else if *response.ResultType != string(domain.ResultTypeExport) {
+		t.Errorf("Expected ResultType %s, got %s", domain.ResultTypeExport, *response.ResultType)
+	}
+
+	// Marshal to JSON and verify result is a JSON object with type discriminator
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// Check that result_type field is present
+	if !contains(jsonString, "\"result_type\"") {
+		t.Error("JSON should contain 'result_type' field")
+	}
+
+	// Check that result contains export_id (no type field inside result)
+	if !contains(jsonString, "\"export_id\":\"export-abc-123\"") {
+		t.Error("Result should contain export_id")
+	}
+
+	// Check that result contains url
+	if !contains(jsonString, "\"url\":\"https://console.redhat.com/api/export/v1/exports/export-abc-123\"") {
+		t.Error("Result should contain url")
+	}
+}
+
+func TestToJobRunResponseWithCommandResult(t *testing.T) {
+	// Create a domain JobRun with command result
+	jobRun := domain.NewJobRun("job-456")
+
+	commandResult := domain.CommandResult{
+		Command:  "echo hello",
+		ExitCode: 0,
+		Duration: 123.45,
+	}
+
+	jobRun = jobRun.WithCompleted(domain.ResultTypeCommand, commandResult)
+
+	// Convert to response DTO
+	response := ToJobRunResponse(jobRun)
+
+	// Verify ResultType
+	if response.ResultType == nil {
+		t.Fatal("Expected ResultType to be set")
+	}
+
+	if *response.ResultType != string(domain.ResultTypeCommand) {
+		t.Errorf("Expected ResultType %s, got %s", domain.ResultTypeCommand, *response.ResultType)
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// Verify command details (no type field inside result)
+	if !contains(jsonString, "\"command\":\"echo hello\"") {
+		t.Error("Result should contain command")
+	}
+
+	if !contains(jsonString, "\"exit_code\":0") {
+		t.Error("Result should contain exit_code")
+	}
+}
+
+func TestToJobRunResponseWithFailedRun(t *testing.T) {
+	// Create a failed JobRun
+	jobRun := domain.NewJobRun("job-789")
+	jobRun = jobRun.WithFailed("Connection timeout")
+
+	// Convert to response DTO
+	response := ToJobRunResponse(jobRun)
+
+	// Verify status is failed
+	if response.Status != "failed" {
+		t.Errorf("Expected Status 'failed', got %s", response.Status)
+	}
+
+	// Verify error message is set
+	if response.ErrorMessage == nil {
+		t.Error("Expected ErrorMessage to be set")
+	} else if *response.ErrorMessage != "Connection timeout" {
+		t.Errorf("Expected ErrorMessage 'Connection timeout', got %s", *response.ErrorMessage)
+	}
+
+	// Verify ResultType is nil (no result on failure)
+	if response.ResultType != nil {
+		t.Error("Expected ResultType to be nil for failed run")
+	}
+
+	// Verify Result is nil
+	if response.Result != nil {
+		t.Error("Expected Result to be nil for failed run")
+	}
+}
+
+func TestToJobRunResponseList(t *testing.T) {
+	// Create multiple JobRuns
+	run1 := domain.NewJobRun("job-123")
+	exportResult := domain.ExportResult{
+		ExportID: "export-1",
+		URL:      "https://example.com/export-1",
+	}
+	run1 = run1.WithCompleted(domain.ResultTypeExport, exportResult)
+
+	run2 := domain.NewJobRun("job-456")
+	run2 = run2.WithFailed("Error occurred")
+
+	runs := []domain.JobRun{run1, run2}
+
+	// Convert to response DTOs
+	responses := ToJobRunResponseList(runs)
+
+	if len(responses) != 2 {
+		t.Errorf("Expected 2 responses, got %d", len(responses))
+	}
+
+	// Verify first run (completed)
+	if responses[0].ID != run1.ID {
+		t.Errorf("Expected first run ID %s, got %s", run1.ID, responses[0].ID)
+	}
+
+	if responses[0].Status != "completed" {
+		t.Errorf("Expected first run status 'completed', got %s", responses[0].Status)
+	}
+
+	// Verify second run (failed)
+	if responses[1].ID != run2.ID {
+		t.Errorf("Expected second run ID %s, got %s", run2.ID, responses[1].ID)
+	}
+
+	if responses[1].Status != "failed" {
+		t.Errorf("Expected second run status 'failed', got %s", responses[1].Status)
+	}
+}
+
+func TestToJobRunResponseWithStructResult(t *testing.T) {
+	// Create a JobRun with a proper struct result (normal case)
+	jobRun := domain.NewJobRun("job-struct")
+	jobRun.Status = domain.RunStatusCompleted
+
+	exportResult := domain.ExportResult{
+		ExportID: "struct-export-789",
+		URL:      "https://example.com/struct-export-789",
+	}
+	resultType := domain.ResultTypeExport
+	jobRun.ResultType = &resultType
+	jobRun.Result = exportResult
+
+	// Convert to response DTO
+	response := ToJobRunResponse(jobRun)
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+
+	jsonString := string(jsonBytes)
+
+	// Verify result is properly serialized as object
+	if !contains(jsonString, `"export_id":"struct-export-789"`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should contain export_id from struct")
+	}
+
+	if !contains(jsonString, `"url":"https://example.com/struct-export-789"`) {
+		t.Logf("JSON: %s", jsonString)
+		t.Error("Result should contain url from struct")
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || contains(s[1:], substr)))

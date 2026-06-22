@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -39,11 +40,12 @@ func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository,
 
 func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	query := `
-		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result_json, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status, end_time = excluded.end_time,
-			error_message = excluded.error_message, result = excluded.result`
+			error_message = excluded.error_message, result_type = excluded.result_type,
+			result_json = excluded.result_json`
 
 	var endTime *string
 	if run.EndTime != nil {
@@ -51,8 +53,25 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 		endTime = &s
 	}
 
+	// Marshal Result to JSON if present
+	var resultJSON *string
+	var resultType *string
+	if run.Result != nil {
+		data, err := json.Marshal(run.Result)
+		if err != nil {
+			return fmt.Errorf("failed to marshal result: %w", err)
+		}
+		str := string(data)
+		resultJSON = &str
+
+		if run.ResultType != nil {
+			rt := string(*run.ResultType)
+			resultType = &rt
+		}
+	}
+
 	_, err := r.db.Exec(query, run.ID, run.JobID, run.Status, run.StartTime.Format(time.RFC3339),
-		endTime, run.ErrorMessage, run.Result, time.Now().UTC().Format(time.RFC3339))
+		endTime, run.ErrorMessage, resultType, resultJSON, time.Now().UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("failed to save job run: %w", err)
 	}
@@ -60,7 +79,7 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 }
 
 func (r *PostgresJobRunRepository) FindByID(id string) (domain.JobRun, error) {
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result FROM job_runs WHERE id = $1`
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json FROM job_runs WHERE id = $1`
 	return r.scanRun(r.db.QueryRow(query, id))
 }
 
@@ -74,7 +93,7 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 	}
 
 	// Then get the paginated results
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json
 		FROM job_runs WHERE job_id = $1 ORDER BY start_time DESC LIMIT $2 OFFSET $3`
 	runs, err := r.queryRuns(query, jobID, limit, offset)
 	if err != nil {
@@ -85,22 +104,22 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 }
 
 func (r *PostgresJobRunRepository) FindByJobIDAndOrgID(jobID, orgID string) ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result
+	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result_json
 		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE jr.job_id = $1 AND j.org_id = $2 ORDER BY jr.start_time DESC`, jobID, orgID)
 }
 
 func (r *PostgresJobRunRepository) FindAll() ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result
+	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json
 		FROM job_runs ORDER BY start_time DESC`)
 }
 
 func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) {
 	var run domain.JobRun
 	var startTimeStr string
-	var endTimeStr, errorMessage, result *string
+	var endTimeStr, errorMessage, resultType, result *string
 
-	err := row.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &result)
+	err := row.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result)
 	if err == sql.ErrNoRows {
 		return domain.JobRun{}, domain.ErrJobRunNotFound
 	}
@@ -114,7 +133,23 @@ func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) 
 			run.EndTime = &t
 		}
 	}
-	run.ErrorMessage, run.Result = errorMessage, result
+	run.ErrorMessage = errorMessage
+
+	// Parse result_type
+	if resultType != nil {
+		rt := domain.ResultType(*resultType)
+		run.ResultType = &rt
+	}
+
+	// Unmarshal Result from JSON if present
+	if result != nil {
+		var resultData interface{}
+		if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+			return domain.JobRun{}, fmt.Errorf("failed to unmarshal result: %w", err)
+		}
+		run.Result = resultData
+	}
+
 	return run, nil
 }
 
@@ -129,9 +164,9 @@ func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) 
 	for rows.Next() {
 		var run domain.JobRun
 		var startTimeStr string
-		var endTimeStr, errorMessage, result *string
+		var endTimeStr, errorMessage, resultType, result *string
 
-		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &result); err != nil {
+		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result); err != nil {
 			return nil, fmt.Errorf("failed to scan job run: %w", err)
 		}
 		run.StartTime, _ = time.Parse(time.RFC3339, startTimeStr)
@@ -140,7 +175,23 @@ func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) 
 				run.EndTime = &t
 			}
 		}
-		run.ErrorMessage, run.Result = errorMessage, result
+		run.ErrorMessage = errorMessage
+
+		// Parse result_type
+		if resultType != nil {
+			rt := domain.ResultType(*resultType)
+			run.ResultType = &rt
+		}
+
+		// Unmarshal Result from JSON if present
+		if result != nil {
+			var resultData interface{}
+			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+			run.Result = resultData
+		}
+
 		runs = append(runs, run)
 	}
 	return runs, rows.Err()

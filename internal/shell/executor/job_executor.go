@@ -47,11 +47,13 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 
 	// Execute the job using the appropriate executor
 	var execErr error
+	var result interface{}
+	var resultType domain.ResultType
 	executor, ok := e.executors[job.Type]
 	if !ok {
 		execErr = fmt.Errorf("no executor found for payload type: %s", job.Type)
 	} else {
-		execErr = executor.Execute(job)
+		result, resultType, execErr = executor.Execute(job)
 	}
 
 	// Update the job run record
@@ -59,8 +61,7 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 		if execErr != nil {
 			jobRun = jobRun.WithFailed(execErr.Error())
 		} else {
-			result := fmt.Sprintf("Job %s completed successfully", job.Name)
-			jobRun = jobRun.WithCompleted(result)
+			jobRun = jobRun.WithCompleted(resultType, result)
 		}
 
 		if err := e.runRepo.Save(jobRun); err != nil {
@@ -104,11 +105,13 @@ func (e *DefaultJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) 
 
 	// Execute the job using the appropriate executor
 	var execErr error
+	var result interface{}
+	var resultType domain.ResultType
 	executor, ok := e.executors[job.Type]
 	if !ok {
 		execErr = fmt.Errorf("no executor found for payload type: %s", job.Type)
 	} else {
-		execErr = executor.Execute(job)
+		result, resultType, execErr = executor.Execute(job)
 	}
 
 	// Update the job run record
@@ -116,8 +119,7 @@ func (e *DefaultJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) 
 		if execErr != nil {
 			jobRun = jobRun.WithFailed(execErr.Error())
 		} else {
-			result := fmt.Sprintf("Job %s completed successfully", job.Name)
-			jobRun = jobRun.WithCompleted(result)
+			jobRun = jobRun.WithCompleted(resultType, result)
 		}
 
 		if err := e.runRepo.Save(jobRun); err != nil {

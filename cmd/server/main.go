@@ -8,7 +8,7 @@ package main
 //    ./scheduler  OR  ./scheduler server
 //    - Combines API server and job scheduler in one process
 //    - Suitable for local development, testing, small deployments
-//    - Supports SQLite or PostgreSQL
+//    - Uses PostgreSQL database
 //
 // 2. Multi-Pod Architecture (production):
 //    ./scheduler api     - API server only (handles REST, writes to Postgres + Redis)
@@ -36,7 +36,6 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
 	"insights-scheduler/internal/config"
@@ -190,12 +189,6 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 	}
 
 	switch cfg.Database.Type {
-	case "sqlite":
-		repo, err := storage.NewSQLiteJobRunRepository(cfg.Database.Path)
-		if err != nil {
-			return fmt.Errorf("failed to initialize SQLite job run repository: %w", err)
-		}
-		runRepo = repo
 	case "postgres", "postgresql":
 		repo, err := storage.NewPostgresJobRunRepository(cfg)
 		if err != nil {
@@ -203,7 +196,7 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 		}
 		runRepo = repo
 	default:
-		return fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
+		return fmt.Errorf("unsupported database type: %s (only 'postgres' is supported)", cfg.Database.Type)
 	}
 	defer runRepo.Close()
 
@@ -244,54 +237,33 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Create imperative shell components
 	var repo usecases.JobRepository
 	var runRepo usecases.JobRunRepository
-	switch cfg.Database.Type {
-	case "sqlite":
-		sqliteRepo, err := storage.NewSQLiteJobRepository(cfg.Database.Path)
-		if err != nil {
-			log.Fatalf("Failed to initialize SQLite database: %v", err)
-		}
-		repo = sqliteRepo
-		defer func() {
-			if closeErr := sqliteRepo.Close(); closeErr != nil {
-				log.Printf("Error closing database: %v", closeErr)
-			}
-		}()
 
-		sqliteRunRepo, err := storage.NewSQLiteJobRunRepository(cfg.Database.Path)
-		if err != nil {
-			log.Fatalf("Failed to initialize SQLite job run repository: %v", err)
-		}
-		runRepo = sqliteRunRepo
-		defer func() {
-			if closeErr := sqliteRunRepo.Close(); closeErr != nil {
-				log.Printf("Error closing job run repository: %v", closeErr)
-			}
-		}()
-	case "postgres", "postgresql":
-		postgresRepo, err := storage.NewPostgresJobRepository(cfg)
-		if err != nil {
-			log.Fatalf("Failed to initialize PostgreSQL database: %v", err)
-		}
-		repo = postgresRepo
-		defer func() {
-			if closeErr := postgresRepo.Close(); closeErr != nil {
-				log.Printf("Error closing database: %v", closeErr)
-			}
-		}()
-
-		postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
-		if err != nil {
-			log.Fatalf("Failed to initialize PostgreSQL job run repository: %v", err)
-		}
-		runRepo = postgresRunRepo
-		defer func() {
-			if closeErr := postgresRunRepo.Close(); closeErr != nil {
-				log.Printf("Error closing job run repository: %v", closeErr)
-			}
-		}()
-	default:
-		log.Fatalf("Unsupported database type: %s", cfg.Database.Type)
+	if cfg.Database.Type != "postgres" && cfg.Database.Type != "postgresql" {
+		log.Fatalf("Unsupported database type: %s (only 'postgres' is supported)", cfg.Database.Type)
 	}
+
+	postgresRepo, err := storage.NewPostgresJobRepository(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize PostgreSQL database: %v", err)
+	}
+	repo = postgresRepo
+	defer func() {
+		if closeErr := postgresRepo.Close(); closeErr != nil {
+			log.Printf("Error closing database: %v", closeErr)
+		}
+	}()
+
+	postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize PostgreSQL job run repository: %v", err)
+	}
+	runRepo = postgresRunRepo
+	defer func() {
+		if closeErr := postgresRunRepo.Close(); closeErr != nil {
+			log.Printf("Error closing job run repository: %v", closeErr)
+		}
+	}()
+
 	log.Printf("Database initialized successfully")
 
 	userValidator := createUserValidator(cfg)

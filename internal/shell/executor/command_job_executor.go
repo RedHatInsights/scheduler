@@ -15,12 +15,17 @@ func NewCommandJobExecutor() *CommandJobExecutor {
 }
 
 // Execute executes a command job
-func (e *CommandJobExecutor) Execute(job domain.Job) error {
+func (e *CommandJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {
 		log.Printf("Executing command: unknown (payload is not a map)")
-		return nil
+		result := domain.CommandResult{
+			Command:  "unknown",
+			ExitCode: 0,
+			Duration: 0,
+		}
+		return result, domain.ResultTypeCommand, nil
 	}
 
 	command, ok := payloadMap["command"].(string)
@@ -28,5 +33,11 @@ func (e *CommandJobExecutor) Execute(job domain.Job) error {
 		command = "unknown"
 	}
 	log.Printf("Executing command: %s", command)
-	return nil
+
+	result := domain.CommandResult{
+		Command:  command,
+		ExitCode: 0,
+		Duration: 0,
+	}
+	return result, domain.ResultTypeCommand, nil
 }
