@@ -1,0 +1,2 @@
+ALTER TABLE jobs ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN last_failed_at TIMESTAMP;

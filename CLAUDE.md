@@ -122,6 +122,13 @@ Jobs support four payload types:
 - Description: How often workers sync jobs from PostgreSQL to Redis (requires `ENABLE_PERIODIC_SYNC=true`)
 - Example: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=30m`
 
+**Auto-Pause on Consecutive Failures**:
+- Variable: `MAX_CONSECUTIVE_FAILURES`
+- Default: `3`
+- Description: Number of consecutive failures before a job is automatically paused. Set to `0` to disable auto-pause.
+- Example: `MAX_CONSECUTIVE_FAILURES=5`
+- Note: When a job fails N consecutive times, it will be automatically paused and will not run again until manually resumed via the `/jobs/{id}/resume` endpoint. The failure counter resets to 0 after any successful execution or when the job is manually resumed.
+
 ### Database Configuration
 
 - `DB_TYPE`: Database type (`sqlite`, `postgres`)
