@@ -75,7 +75,7 @@ func (e *ExportJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultT
 
 	log.Printf("Polling export with maxRetries=%d, pollInterval=%s", maxRetries, pollInterval)
 
-	finalStatus, err := export.WaitForExportCompletion(e.exportClient, ctx, createResult.ID, identityHeader, maxRetries, pollInterval)
+	finalStatus, err := e.exportClient.WaitForExportCompletion(ctx, createResult.ID, identityHeader, maxRetries, pollInterval)
 	if err != nil {
 		return nil, domain.ResultTypeExport, fmt.Errorf("export failed or timed out: %w", err)
 	}
