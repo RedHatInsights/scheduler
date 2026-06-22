@@ -19,3 +19,9 @@ func (n *NullJobCompletionNotifier) JobComplete(ctx context.Context, notificatio
 	log.Printf("No notifier configured - skipping completion notification for export: %s", notification.ExportID)
 	return nil
 }
+
+// JobAutoPaused does nothing - this is a no-op implementation
+func (n *NullJobCompletionNotifier) JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification) error {
+	log.Printf("No notifier configured - skipping auto-paused notification for job: %s", notification.JobID)
+	return nil
+}

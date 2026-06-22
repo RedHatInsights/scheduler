@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -20,14 +21,16 @@ type SchedulerExecutor interface {
 type FailureTrackingExecutor struct {
 	inner                  SchedulerExecutor
 	jobRepo                usecases.JobRepository
+	notifier               JobCompletionNotifier
 	maxConsecutiveFailures int
 }
 
 // NewFailureTrackingExecutor creates an executor that tracks failures and auto-pauses jobs
-func NewFailureTrackingExecutor(inner SchedulerExecutor, jobRepo usecases.JobRepository, maxConsecutiveFailures int) *FailureTrackingExecutor {
+func NewFailureTrackingExecutor(inner SchedulerExecutor, jobRepo usecases.JobRepository, notifier JobCompletionNotifier, maxConsecutiveFailures int) *FailureTrackingExecutor {
 	return &FailureTrackingExecutor{
 		inner:                  inner,
 		jobRepo:                jobRepo,
+		notifier:               notifier,
 		maxConsecutiveFailures: maxConsecutiveFailures,
 	}
 }
@@ -57,6 +60,7 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 	// Track failure/success and potentially auto-pause
 	if e.jobRepo != nil {
 		updatedJob := job
+		wasAutoPaused := false
 
 		if execErr != nil {
 			// Job failed - increment failure counter
@@ -67,6 +71,7 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 				log.Printf("[FailureTrackingExecutor] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
 					job.ID, e.maxConsecutiveFailures)
 				updatedJob = updatedJob.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
+				wasAutoPaused = true
 			} else {
 				updatedJob = updatedJob.WithStatus(domain.StatusFailed)
 			}
@@ -83,8 +88,40 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 		} else {
 			log.Printf("[FailureTrackingExecutor] Updated job %s: status=%s, consecutive_failures=%d",
 				job.ID, updatedJob.Status, updatedJob.ConsecutiveFailures)
+
+			// Send notification if the job was auto-paused
+			if wasAutoPaused && e.notifier != nil {
+				e.sendAutoPausedNotification(updatedJob, execErr)
+			}
 		}
 	}
 
 	return execErr
+}
+
+// sendAutoPausedNotification sends a notification when a job is auto-paused
+func (e *FailureTrackingExecutor) sendAutoPausedNotification(job domain.Job, lastError error) {
+	errorMsg := ""
+	if lastError != nil {
+		errorMsg = lastError.Error()
+	}
+
+	notification := &JobAutoPausedNotification{
+		JobID:               job.ID,
+		JobName:             job.Name,
+		OrgID:               job.OrgID,
+		UserID:              job.UserID,
+		ConsecutiveFailures: job.ConsecutiveFailures,
+		ErrorMsg:            errorMsg,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := e.notifier.JobAutoPaused(ctx, notification); err != nil {
+		log.Printf("[FailureTrackingExecutor] Warning: Failed to send auto-paused notification for job %s: %v", job.ID, err)
+		// Don't fail the execution because of a notification error
+	} else {
+		log.Printf("[FailureTrackingExecutor] Successfully sent auto-paused notification for job %s", job.ID)
+	}
 }

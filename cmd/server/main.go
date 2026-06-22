@@ -569,7 +569,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	baseExecutor := executor.NewJobExecutor(executors, jobRunRepo)
 
 	// Wrap the executor with failure tracking for auto-pause functionality
-	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, cfg.Scheduler.MaxConsecutiveFailures)
+	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures)
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {
