@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,6 +45,7 @@ import (
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
 	httpShell "insights-scheduler/internal/shell/http"
+	"insights-scheduler/internal/shell/logging"
 	"insights-scheduler/internal/shell/messaging"
 	"insights-scheduler/internal/shell/scheduler"
 	"insights-scheduler/internal/shell/storage"
@@ -228,11 +230,24 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	log.Printf("Starting Insights Scheduler with configuration:")
-	log.Printf("  Server: %s:%d (private: %d)", cfg.Server.Host, cfg.Server.Port, cfg.Server.PrivatePort)
-	log.Printf("  Database Type: %s", cfg.Database.Type)
-	log.Printf("  Kafka: enabled=%t, brokers=%v", cfg.Kafka.Enabled, cfg.Kafka.Brokers)
-	log.Printf("  Metrics: enabled=%t, port=%d", cfg.Metrics.Enabled, cfg.Metrics.Port)
+	// Initialize structured logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
+	baseLogger.Info("Starting Insights Scheduler",
+		slog.String("host", cfg.Server.Host),
+		slog.Int("port", cfg.Server.Port),
+		slog.Int("private_port", cfg.Server.PrivatePort),
+		slog.String("database_type", cfg.Database.Type),
+		slog.Bool("kafka_enabled", cfg.Kafka.Enabled),
+		slog.Bool("metrics_enabled", cfg.Metrics.Enabled),
+		slog.Bool("cloudwatch_enabled", cfg.CloudWatch.Enabled),
+		slog.String("log_level", cfg.LogLevel),
+	)
 
 	// Create imperative shell components
 	var repo usecases.JobRepository
@@ -329,7 +344,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	coreJobService.SetCronScheduler(cronScheduler)
 
 	// Setup HTTP routes with authorized service adapter
-	router := httpShell.SetupRoutes(httpJobService, jobRunService)
+	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger)
 
 	// Create HTTP server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -401,13 +416,21 @@ func runServer(cmd *cobra.Command, args []string) {
 // Writes to both Postgres (source of truth) and Redis (scheduling)
 // Scales horizontally without coordination
 func runAPI(cmd *cobra.Command, args []string) {
-	log.Println("[API] Starting Scheduler API server")
-
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("[API] Failed to load configuration: %v", err)
 	}
+
+	// Initialize structured logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		log.Fatalf("[API] Failed to initialize logger: %v", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
+	baseLogger.Info("Starting Scheduler API server")
 
 	// Initialize PostgreSQL repository (source of truth)
 	jobRepo, err := storage.NewPostgresJobRepository(cfg)
@@ -461,7 +484,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 	jobRunService := usecases.NewJobRunService(jobRunRepo, jobRepo)
 
 	// Setup HTTP routes with authorized service adapter
-	router := httpShell.SetupRoutes(httpJobService, jobRunService)
+	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -506,13 +529,21 @@ func runAPI(cmd *cobra.Command, args []string) {
 // Writes to Postgres (job run history)
 // Scales horizontally with distributed locking
 func runWorker(cmd *cobra.Command, args []string) {
-	log.Println("[WORKER] Starting Scheduler Worker")
-
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to load configuration: %v", err)
 	}
+
+	// Initialize structured logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to initialize logger: %v", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
+	baseLogger.Info("Starting Scheduler Worker")
 
 	// Initialize PostgreSQL repository for job run history
 	jobRepo, err := storage.NewPostgresJobRepository(cfg)

@@ -1,6 +1,8 @@
 package http
 
 import (
+	"log/slog"
+
 	"github.com/gorilla/mux"
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
 
@@ -8,13 +10,13 @@ import (
 	"insights-scheduler/internal/core/usecases"
 )
 
-func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.JobRunService) *mux.Router {
+func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.JobRunService, baseLogger *slog.Logger) *mux.Router {
 	router := mux.NewRouter()
 	handler := NewJobHandler(jobService)
 	runHandler := NewJobRunHandler(jobRunService)
 
 	// Apply logging middleware to all routes
-	router.Use(LoggingMiddleware)
+	router.Use(LoggingMiddleware(baseLogger))
 
 	// OpenAPI spec (no identity required)
 	router.HandleFunc("/api/scheduler/v1/openapi.json", OpenAPIHandler).Methods("GET")

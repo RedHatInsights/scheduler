@@ -2,7 +2,7 @@ package http
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -23,7 +23,8 @@ func NewJobHandler(jobService ports.AuthorizedJobService) *JobHandler {
 }
 
 func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[DEBUG] HTTP CreateJob called - method: %s, path: %s", r.Method, r.URL.Path)
+	logger := GetLogger(r)
+	logger.Debug("CreateJob called")
 
 	var req struct {
 		Name     string             `json:"name"`
@@ -34,7 +35,7 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[DEBUG] HTTP CreateJob failed - JSON decode error: %v", err)
+		logger.Warn("Invalid JSON in request body", slog.Any("error", err))
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidJSON(err)})
 		return
 	}
@@ -43,53 +44,56 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] CreateJob failed - invalid identity")
+		logger.Warn("Invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP CreateJob - parsed request: name=%s, org_id=%s, username=%s, user_id=%s, schedule=%s, timezone=%s, type=%s", req.Name, ident.Identity.OrgID, ident.Identity.User.Username, ident.Identity.User.UserID, req.Schedule, req.Timezone, req.Type)
+	logger.Debug("CreateJob request parsed",
+		slog.String("name", req.Name),
+		slog.String("schedule", req.Schedule),
+		slog.String("timezone", req.Timezone),
+		slog.String("type", string(req.Type)),
+	)
 
 	if req.Name == "" || req.Schedule == "" || req.Type == "" || req.Payload == nil {
-		log.Printf("[DEBUG] HTTP CreateJob failed - missing required fields")
+		logger.Warn("Missing required fields in request")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorMissingFields()})
 		return
 	}
-
-	log.Printf("[DEBUG] HTTP CreateJob - calling job service with validated request")
 
 	// Call service with identity - authorization is handled by the service
 	job, err := h.jobService.CreateJob(r.Context(), ident, req.Name, req.Schedule, req.Timezone, req.Type, req.Payload)
 	if err != nil {
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID || err == domain.ErrInvalidTimezone {
-			log.Printf("[DEBUG] HTTP CreateJob failed - validation error: %v", err)
+			logger.Warn("Validation error creating job", slog.Any("error", err))
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
 		}
-		log.Printf("[DEBUG] HTTP CreateJob failed - internal error: %v", err)
+		logger.Error("Internal error creating job", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP CreateJob success - job created with ID: %s", job.ID)
+	logger.Info("Job created successfully", slog.String("created_job_id", job.ID))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Location", "/api/scheduler/v1/jobs/"+job.ID)
 	w.WriteHeader(http.StatusCreated)
 
 	if err := json.NewEncoder(w).Encode(ToJobResponse(job)); err != nil {
-		log.Printf("[DEBUG] HTTP CreateJob - warning: failed to encode response: %v", err)
-	} else {
-		log.Printf("[DEBUG] HTTP CreateJob - response sent successfully")
+		logger.Error("Failed to encode response", slog.Any("error", err))
 	}
 }
 
 func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
+	logger := GetLogger(r)
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] GetAllJobs failed - invalid identity")
+		logger.Warn("GetAllJobs failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -101,10 +105,12 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 	// Service automatically filters by identity
 	jobs, total, err := h.jobService.ListJobs(r.Context(), ident, statusFilter, nameFilter, offset, limit)
 	if err != nil {
-		log.Printf("[DEBUG] GetAllJobs failed - unable to retrieve jobs")
+		logger.Error("Failed to retrieve jobs", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
+
+	logger.Info("Retrieved jobs", slog.Int("count", len(jobs)), slog.Int("total", total))
 
 	response := buildPaginatedResponse(r.URL, offset, limit, total, ToJobResponseList(jobs))
 
@@ -113,11 +119,13 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
+	logger := GetLogger(r)
 	vars := mux.Vars(r)
 	id := vars["id"]
 
 	// Validate UUID format
 	if !validateUUID(id) {
+		logger.Warn("Invalid job ID format", slog.String("id", id))
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidUUID("job ID", id)})
 		return
 	}
@@ -126,7 +134,7 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] GetJob failed - invalid identity")
+		logger.Warn("GetJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -135,9 +143,11 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	job, err := h.jobService.GetJob(r.Context(), ident, id)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
+			logger.Info("Job not found")
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
 			return
 		}
+		logger.Error("Failed to retrieve job", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
@@ -147,6 +157,7 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
+	logger := GetLogger(r)
 	vars := mux.Vars(r)
 	id := vars["id"]
 
@@ -160,7 +171,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] UpdateJob failed - invalid identity")
+		logger.Warn("UpdateJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -191,11 +202,11 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidStatusTransition || err == domain.ErrInvalidOrgID {
-			log.Printf("[DEBUG] HTTP UpdateJob failed - validation error: %v", err)
+			logger.Warn("UpdateJob validation error", slog.Any("error", err))
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
 		}
-		log.Printf("[DEBUG] HTTP UpdateJob failed - internal error: %v", err)
+		logger.Error("UpdateJob internal error", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
@@ -205,6 +216,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
+	logger := GetLogger(r)
 	vars := mux.Vars(r)
 	id := vars["id"]
 
@@ -218,7 +230,7 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] PatchJob failed - invalid identity")
+		logger.Warn("PatchJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -237,11 +249,11 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidStatusTransition || err == domain.ErrInvalidOrgID {
-			log.Printf("[DEBUG] HTTP PatchJob failed - validation error: %v", err)
+			logger.Warn("PatchJob validation error", slog.Any("error", err))
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
 			return
 		}
-		log.Printf("[DEBUG] HTTP PatchJob failed - internal error: %v", err)
+		logger.Error("PatchJob internal error", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
@@ -264,7 +276,8 @@ func (h *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] DeleteJob failed - invalid identity")
+		logger := GetLogger(r)
+		logger.Warn("DeleteJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -297,7 +310,8 @@ func (h *JobHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] RunJob failed - invalid identity")
+		logger := GetLogger(r)
+		logger.Warn("RunJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -337,7 +351,8 @@ func (h *JobHandler) PauseJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] PauseJob failed - invalid identity")
+		logger := GetLogger(r)
+		logger.Warn("PauseJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
@@ -375,7 +390,8 @@ func (h *JobHandler) ResumeJob(w http.ResponseWriter, r *http.Request) {
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] ResumeJob failed - invalid identity")
+		logger := GetLogger(r)
+		logger.Warn("ResumeJob failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
