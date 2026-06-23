@@ -155,3 +155,18 @@ func (s *JobRunService) UpdateJobRun(run domain.JobRun) error {
 	log.Printf("[DEBUG] JobRunService - updated job run: run_id=%s, status=%s", run.ID, run.Status)
 	return nil
 }
+
+// GetAllRunsForUser retrieves all job runs for a specific user
+func (s *JobRunService) GetAllRunsForUser(ident identity.XRHID, offset, limit int) ([]domain.JobRun, int, error) {
+	userID := ident.Identity.User.UserID
+
+	log.Printf("[DEBUG] JobRunService - getting all runs for user_id=%s, offset=%d, limit=%d", userID, offset, limit)
+
+	runs, total, err := s.runRepo.FindByUserID(userID, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	log.Printf("[DEBUG] JobRunService - found %d runs (total=%d) for user_id=%s", len(runs), total, userID)
+	return runs, total, nil
+}

@@ -39,6 +39,7 @@ func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.
 	// Job run operations
 	api.HandleFunc("/jobs/{id}/runs", runHandler.GetJobRuns).Methods("GET")
 	api.HandleFunc("/jobs/{id}/runs/{run_id}", runHandler.GetJobRun).Methods("GET")
+	api.HandleFunc("/runs", runHandler.GetAllRuns).Methods("GET")
 
 	return router
 }

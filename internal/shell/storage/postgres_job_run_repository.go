@@ -109,6 +109,32 @@ func (r *PostgresJobRunRepository) FindByJobIDAndOrgID(jobID, orgID string) ([]d
 		WHERE jr.job_id = $1 AND j.org_id = $2 ORDER BY jr.start_time DESC`, jobID, orgID)
 }
 
+func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error) {
+	// First get the total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM job_runs jr
+		INNER JOIN jobs j ON jr.job_id = j.id
+		WHERE j.user_id = $1`
+	err := r.db.QueryRow(countQuery, userID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count job runs for user: %w", err)
+	}
+
+	// Then get the paginated results
+	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result_json
+		FROM job_runs jr
+		INNER JOIN jobs j ON jr.job_id = j.id
+		WHERE j.user_id = $1
+		ORDER BY jr.start_time DESC
+		LIMIT $2 OFFSET $3`
+	runs, err := r.queryRuns(query, userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return runs, total, nil
+}
+
 func (r *PostgresJobRunRepository) FindAll() ([]domain.JobRun, error) {
 	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json
 		FROM job_runs ORDER BY start_time DESC`)
