@@ -683,49 +683,28 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, erro
 		execErr = s.executor.Execute(runningJob)
 	}
 
+	// For manual API-triggered runs, we don't track failures or trigger auto-pause
+	// Only scheduled runs (via FailureTrackingExecutor) count toward consecutive failures
+	// This allows admins to test/debug jobs without accidentally triggering auto-pause
 	var finalStatus domain.JobStatus
 	var finalJob domain.Job
 
 	if execErr != nil {
 		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
-
-		// Increment failure counter
-		finalJob = runningJob.WithFailureIncremented(time.Now().UTC())
-
-		// Check if we should auto-pause due to consecutive failures
-		if s.maxConsecutiveFailures > 0 && finalJob.ConsecutiveFailures >= s.maxConsecutiveFailures {
-			log.Printf("[JobService] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
-				job.ID, s.maxConsecutiveFailures)
-			finalStatus = domain.StatusPaused
-
-			// Unschedule from cron scheduler
-			if s.cronScheduler != nil {
-				s.cronScheduler.UnscheduleJob(job.ID)
-			}
-		} else {
-			finalStatus = domain.StatusFailed
-		}
-
-		finalJob = finalJob.WithStatus(finalStatus)
+		finalStatus = domain.StatusFailed
+		finalJob = runningJob.WithStatus(finalStatus)
 	} else {
-		// Success - reset failure counter
-		finalJob = runningJob.WithFailuresReset()
 		finalStatus = domain.StatusScheduled
-		finalJob = finalJob.WithStatus(finalStatus)
+		finalJob = runningJob.WithStatus(finalStatus)
 	}
 
-	// Calculate next run time after execution (unless paused)
-	if finalStatus != domain.StatusPaused {
-		nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
-		if calcErr != nil {
-			log.Printf("[DEBUG] RunJob - failed to calculate next run time for job %s: %v", id, calcErr)
-		} else if nextRunAt != nil {
-			finalJob = finalJob.WithNextRunAt(*nextRunAt)
-			log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
-		}
-	} else {
-		// Clear next_run_at when job is paused
-		finalJob = finalJob.WithNextRunAtCleared()
+	// Calculate next run time after execution
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] RunJob - failed to calculate next run time for job %s: %v", id, calcErr)
+	} else if nextRunAt != nil {
+		finalJob = finalJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
 	}
 
 	err = s.repo.Save(finalJob)

@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"insights-scheduler/internal/core/domain"
@@ -43,10 +44,10 @@ func TestJobFailureCounterIncrementsOnFailure(t *testing.T) {
 		t.Errorf("New job should have 0 consecutive failures, got %d", job.ConsecutiveFailures)
 	}
 
-	// Run the job - it should fail
-	_, err = service.RunJob(context.Background(), job.ID)
+	// Execute via scheduler (not manual API run) - it should fail
+	err = service.ExecuteScheduledJobWithJobRun(job, "run-1")
 	if err != nil {
-		t.Fatalf("RunJob() failed: %v", err)
+		t.Fatalf("ExecuteScheduledJobWithJobRun() failed: %v", err)
 	}
 
 	// Check the job's failure count increased
@@ -81,10 +82,10 @@ func TestJobFailureCounterResetsOnSuccess(t *testing.T) {
 		t.Fatalf("CreateJob() failed: %v", err)
 	}
 
-	// Fail the job once
-	_, err = service.RunJob(context.Background(), job.ID)
+	// Fail the job once via scheduler
+	err = service.ExecuteScheduledJobWithJobRun(job, "run-1")
 	if err != nil {
-		t.Fatalf("RunJob() failed: %v", err)
+		t.Fatalf("ExecuteScheduledJobWithJobRun() failed: %v", err)
 	}
 
 	updatedJob, _ := service.GetJob(context.Background(), job.ID)
@@ -94,9 +95,9 @@ func TestJobFailureCounterResetsOnSuccess(t *testing.T) {
 
 	// Now make it succeed
 	executor.shouldFail = false
-	_, err = service.RunJob(context.Background(), job.ID)
+	err = service.ExecuteScheduledJobWithJobRun(updatedJob, "run-2")
 	if err != nil {
-		t.Fatalf("RunJob() failed: %v", err)
+		t.Fatalf("ExecuteScheduledJobWithJobRun() failed: %v", err)
 	}
 
 	// Check the failure count reset
@@ -132,27 +133,28 @@ func TestJobAutoPausesAfterThresholdFailures(t *testing.T) {
 		t.Fatalf("CreateJob() failed: %v", err)
 	}
 
-	// Fail the job threshold-1 times - should NOT pause yet
+	// Fail the job threshold-1 times via scheduler - should NOT pause yet
+	currentJob := job
 	for i := 1; i < threshold; i++ {
-		_, err = service.RunJob(context.Background(), job.ID)
+		err = service.ExecuteScheduledJobWithJobRun(currentJob, fmt.Sprintf("run-%d", i))
 		if err != nil {
-			t.Fatalf("RunJob() iteration %d failed: %v", i, err)
+			t.Fatalf("ExecuteScheduledJobWithJobRun() iteration %d failed: %v", i, err)
 		}
 
-		updatedJob, _ := service.GetJob(context.Background(), job.ID)
-		if updatedJob.ConsecutiveFailures != i {
-			t.Errorf("After %d failures, expected consecutive_failures=%d, got %d", i, i, updatedJob.ConsecutiveFailures)
+		currentJob, _ = service.GetJob(context.Background(), job.ID)
+		if currentJob.ConsecutiveFailures != i {
+			t.Errorf("After %d failures, expected consecutive_failures=%d, got %d", i, i, currentJob.ConsecutiveFailures)
 		}
 
-		if updatedJob.Status == domain.StatusPaused {
+		if currentJob.Status == domain.StatusPaused {
 			t.Errorf("After %d failures (below threshold %d), job should not be paused yet", i, threshold)
 		}
 	}
 
 	// Fail one more time - should trigger auto-pause
-	_, err = service.RunJob(context.Background(), job.ID)
+	err = service.ExecuteScheduledJobWithJobRun(currentJob, fmt.Sprintf("run-%d", threshold))
 	if err != nil {
-		t.Fatalf("RunJob() final failure failed: %v", err)
+		t.Fatalf("ExecuteScheduledJobWithJobRun() final failure failed: %v", err)
 	}
 
 	finalJob, err := service.GetJob(context.Background(), job.ID)
@@ -182,19 +184,20 @@ func TestJobAutoPauseDisabledWhenThresholdIsZero(t *testing.T) {
 		t.Fatalf("CreateJob() failed: %v", err)
 	}
 
-	// Fail the job 10 times - should NEVER pause when threshold is 0
+	// Fail the job 10 times via scheduler - should NEVER pause when threshold is 0
+	currentJob := job
 	for i := 1; i <= 10; i++ {
-		_, err = service.RunJob(context.Background(), job.ID)
+		err = service.ExecuteScheduledJobWithJobRun(currentJob, fmt.Sprintf("run-%d", i))
 		if err != nil {
-			t.Fatalf("RunJob() iteration %d failed: %v", i, err)
+			t.Fatalf("ExecuteScheduledJobWithJobRun() iteration %d failed: %v", i, err)
 		}
 
-		updatedJob, _ := service.GetJob(context.Background(), job.ID)
-		if updatedJob.ConsecutiveFailures != i {
-			t.Errorf("After %d failures, expected consecutive_failures=%d, got %d", i, i, updatedJob.ConsecutiveFailures)
+		currentJob, _ = service.GetJob(context.Background(), job.ID)
+		if currentJob.ConsecutiveFailures != i {
+			t.Errorf("After %d failures, expected consecutive_failures=%d, got %d", i, i, currentJob.ConsecutiveFailures)
 		}
 
-		if updatedJob.Status == domain.StatusPaused {
+		if currentJob.Status == domain.StatusPaused {
 			t.Errorf("With threshold=0 (disabled), job should never auto-pause, but it did after %d failures", i)
 		}
 	}
@@ -213,9 +216,10 @@ func TestResumeJobResetsFailureCounter(t *testing.T) {
 		t.Fatalf("CreateJob() failed: %v", err)
 	}
 
-	// Fail it twice
-	service.RunJob(context.Background(), job.ID)
-	service.RunJob(context.Background(), job.ID)
+	// Fail it twice via scheduler
+	service.ExecuteScheduledJobWithJobRun(job, "run-1")
+	job, _ = service.GetJob(context.Background(), job.ID)
+	service.ExecuteScheduledJobWithJobRun(job, "run-2")
 
 	updatedJob, _ := service.GetJob(context.Background(), job.ID)
 	if updatedJob.ConsecutiveFailures != 2 {
@@ -310,9 +314,10 @@ func TestAutoPauseClearsNextRunAt(t *testing.T) {
 		t.Fatal("New job should have next_run_at set")
 	}
 
-	// Fail the job twice to trigger auto-pause
-	service.RunJob(context.Background(), job.ID)
-	service.RunJob(context.Background(), job.ID)
+	// Fail the job twice via scheduler to trigger auto-pause
+	service.ExecuteScheduledJobWithJobRun(job, "run-1")
+	job, _ = service.GetJob(context.Background(), job.ID)
+	service.ExecuteScheduledJobWithJobRun(job, "run-2")
 
 	pausedJob, _ := service.GetJob(context.Background(), job.ID)
 
@@ -350,5 +355,65 @@ func TestManualPauseClearsNextRunAt(t *testing.T) {
 
 	if pausedJob.NextRunAt != nil {
 		t.Errorf("Manually paused job should have next_run_at=nil, got %v", pausedJob.NextRunAt)
+	}
+}
+
+func TestManualAPIRunDoesNotTrackFailures(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &failingMockExecutor{shouldFail: true}
+
+	service := NewJobService(repo, scheduler, executor, 3)
+
+	// Create a job
+	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("CreateJob() failed: %v", err)
+	}
+
+	if job.ConsecutiveFailures != 0 {
+		t.Errorf("New job should have 0 consecutive failures, got %d", job.ConsecutiveFailures)
+	}
+
+	// Manually run via API (should NOT track failures)
+	_, err = service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() failed: %v", err)
+	}
+
+	// Verify failure was NOT tracked
+	updatedJob, err := service.GetJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("GetJob() failed: %v", err)
+	}
+
+	if updatedJob.ConsecutiveFailures != 0 {
+		t.Errorf("Manual API run should NOT track failures, expected consecutive_failures=0, got %d", updatedJob.ConsecutiveFailures)
+	}
+
+	if updatedJob.LastFailedAt != nil {
+		t.Error("Manual API run should NOT set last_failed_at, got non-nil")
+	}
+
+	// Status should still be failed (execution failed)
+	if updatedJob.Status != domain.StatusFailed {
+		t.Errorf("After manual run failure, expected status=failed, got %s", updatedJob.Status)
+	}
+
+	// Run it 10 more times manually - should NEVER increment consecutive_failures or auto-pause
+	for i := 0; i < 10; i++ {
+		_, err = service.RunJob(context.Background(), updatedJob.ID)
+		if err != nil {
+			t.Fatalf("RunJob() iteration %d failed: %v", i, err)
+		}
+
+		updatedJob, _ = service.GetJob(context.Background(), updatedJob.ID)
+		if updatedJob.ConsecutiveFailures != 0 {
+			t.Errorf("After %d manual runs, consecutive_failures should still be 0, got %d", i+2, updatedJob.ConsecutiveFailures)
+		}
+
+		if updatedJob.Status == domain.StatusPaused {
+			t.Errorf("Manual API runs should NEVER trigger auto-pause, but job was paused after %d manual runs", i+2)
+		}
 	}
 }
