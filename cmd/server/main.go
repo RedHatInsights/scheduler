@@ -300,16 +300,16 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
 	}
 
-	// Initialize payload-specific job executors
-	executors := map[domain.PayloadType]executor.JobExecutor{
+	// Initialize payload-specific job runners
+	runners := map[domain.PayloadType]executor.JobRunner{
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
 	}
 
-	// Initialize job executor with map of executors
-	jobExecutor := executor.NewJobExecutor(executors, runRepo)
+	// Initialize job executor with map of runners
+	jobExecutor := executor.NewJobExecutor(runners, runRepo)
 
 	// Create functional core service
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
@@ -420,14 +420,14 @@ func runAPI(cmd *cobra.Command, args []string) {
 		log.Fatalf("[API] Failed to initialize Postgres job run repository: %v", err)
 	}
 
-	// Initialize dummy executors (API doesn't actually execute jobs)
-	dummyExecutors := map[domain.PayloadType]executor.JobExecutor{
+	// Initialize dummy runners (API doesn't actually execute jobs)
+	dummyRunners := map[domain.PayloadType]executor.JobRunner{
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Use message executor as dummy
 	}
-	dummyExecutor := executor.NewJobExecutor(dummyExecutors, jobRunRepo)
+	dummyExecutor := executor.NewJobExecutor(dummyRunners, jobRunRepo)
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
@@ -559,14 +559,14 @@ func runWorker(cmd *cobra.Command, args []string) {
 		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
 	}
 
-	// Initialize job executors (worker actually executes jobs)
-	executors := map[domain.PayloadType]executor.JobExecutor{
+	// Initialize job runners (worker actually executes jobs)
+	runners := map[domain.PayloadType]executor.JobRunner{
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
 	}
-	baseExecutor := executor.NewJobExecutor(executors, jobRunRepo)
+	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo)
 
 	// Wrap the executor with failure tracking for auto-pause functionality
 	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures)

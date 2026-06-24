@@ -11,23 +11,18 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 )
 
 // RedisScheduler manages job scheduling using Redis for persistence
 type RedisScheduler struct {
 	client       *redis.Client
-	executor     JobExecutor
+	executor     ports.JobExecutor
 	jobRepo      JobRepository
 	parser       cron.Parser
 	ctx          context.Context
 	cancel       context.CancelFunc
 	pollInterval time.Duration
-}
-
-// JobExecutor executes jobs
-type JobExecutor interface {
-	Execute(job domain.Job) error
-	ExecuteWithJobRun(job domain.Job, jobRunID string) error
 }
 
 // JobRepository provides access to job storage
@@ -66,7 +61,7 @@ const (
 )
 
 // NewRedisScheduler creates a new Redis-based scheduler
-func NewRedisScheduler(redisAddr string, executor JobExecutor, jobRepo JobRepository, pollInterval time.Duration) (*RedisScheduler, error) {
+func NewRedisScheduler(redisAddr string, executor ports.JobExecutor, jobRepo JobRepository, pollInterval time.Duration) (*RedisScheduler, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: "", // no password set

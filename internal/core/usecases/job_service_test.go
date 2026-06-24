@@ -228,6 +228,10 @@ func (m *mockJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) err
 	return nil
 }
 
+func (m *mockJobExecutor) Wait() {
+	// No-op for tests
+}
+
 func TestCreateJobSetsNextRunAt(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}

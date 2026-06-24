@@ -34,11 +34,6 @@ type SchedulingService interface {
 	ShouldRun(job domain.Job, currentTime time.Time) bool
 }
 
-type JobExecutor interface {
-	Execute(job domain.Job) error
-	ExecuteWithJobRun(job domain.Job, jobRunID string) error
-}
-
 type CronScheduler interface {
 	ScheduleJob(job domain.Job) error
 	UnscheduleJob(jobID string)
@@ -50,7 +45,7 @@ type DefaultJobService struct {
 	repo                   JobRepository
 	runRepo                JobRunRepository
 	scheduler              SchedulingService
-	executor               JobExecutor
+	executor               ports.JobExecutor
 	cronScheduler          CronScheduler
 	maxConsecutiveFailures int
 }
@@ -58,7 +53,7 @@ type DefaultJobService struct {
 // Ensure DefaultJobService implements ports.JobService
 var _ ports.JobService = (*DefaultJobService)(nil)
 
-func NewJobService(repo JobRepository, scheduler SchedulingService, executor JobExecutor, maxConsecutiveFailures int) *DefaultJobService {
+func NewJobService(repo JobRepository, scheduler SchedulingService, executor ports.JobExecutor, maxConsecutiveFailures int) *DefaultJobService {
 	return &DefaultJobService{
 		repo:                   repo,
 		scheduler:              scheduler,

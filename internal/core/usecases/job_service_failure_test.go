@@ -27,6 +27,10 @@ func (e *failingMockExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string)
 	return e.Execute(job)
 }
 
+func (e *failingMockExecutor) Wait() {
+	// No-op for tests
+}
+
 func TestJobFailureCounterIncrementsOnFailure(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}

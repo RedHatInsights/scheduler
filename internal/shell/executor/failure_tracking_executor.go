@@ -6,27 +6,21 @@ import (
 	"time"
 
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/core/usecases"
 )
 
-// SchedulerExecutor is the interface used by schedulers to execute jobs
-type SchedulerExecutor interface {
-	Execute(job domain.Job) error
-	ExecuteWithJobRun(job domain.Job, jobRunID string) error
-	Wait() // Wait for all in-flight jobs to complete (used for graceful shutdown)
-}
-
-// FailureTrackingExecutor wraps a SchedulerExecutor and adds automatic failure tracking
-// and auto-pause logic after consecutive failures.
+// FailureTrackingExecutor wraps a ports.JobExecutor and adds automatic failure tracking
+// and auto-pause logic after consecutive failures. Implements ports.JobExecutor.
 type FailureTrackingExecutor struct {
-	inner                  SchedulerExecutor
+	inner                  ports.JobExecutor
 	jobRepo                usecases.JobRepository
 	notifier               JobCompletionNotifier
 	maxConsecutiveFailures int
 }
 
 // NewFailureTrackingExecutor creates an executor that tracks failures and auto-pauses jobs
-func NewFailureTrackingExecutor(inner SchedulerExecutor, jobRepo usecases.JobRepository, notifier JobCompletionNotifier, maxConsecutiveFailures int) *FailureTrackingExecutor {
+func NewFailureTrackingExecutor(inner ports.JobExecutor, jobRepo usecases.JobRepository, notifier JobCompletionNotifier, maxConsecutiveFailures int) *FailureTrackingExecutor {
 	return &FailureTrackingExecutor{
 		inner:                  inner,
 		jobRepo:                jobRepo,
