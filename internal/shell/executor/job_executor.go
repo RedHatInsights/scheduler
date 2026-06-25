@@ -9,16 +9,19 @@ import (
 	"insights-scheduler/internal/core/usecases"
 )
 
+// DefaultJobExecutor implements ports.JobExecutor by orchestrating JobRunners.
+// It handles job run record creation, dispatches to payload-specific runners,
+// and manages graceful shutdown.
 type DefaultJobExecutor struct {
-	executors map[domain.PayloadType]JobExecutor
-	runRepo   usecases.JobRunRepository
-	wg        sync.WaitGroup // Tracks in-flight jobs for graceful shutdown
+	runners map[domain.PayloadType]JobRunner
+	runRepo usecases.JobRunRepository
+	wg      sync.WaitGroup // Tracks in-flight jobs for graceful shutdown
 }
 
-func NewJobExecutor(executors map[domain.PayloadType]JobExecutor, runRepo usecases.JobRunRepository) *DefaultJobExecutor {
+func NewJobExecutor(runners map[domain.PayloadType]JobRunner, runRepo usecases.JobRunRepository) *DefaultJobExecutor {
 	return &DefaultJobExecutor{
-		executors: executors,
-		runRepo:   runRepo,
+		runners: runners,
+		runRepo: runRepo,
 	}
 }
 
@@ -45,15 +48,15 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 		}
 	}
 
-	// Execute the job using the appropriate executor
+	// Execute the job using the appropriate runner
 	var execErr error
 	var result interface{}
 	var resultType domain.ResultType
-	executor, ok := e.executors[job.Type]
+	runner, ok := e.runners[job.Type]
 	if !ok {
-		execErr = fmt.Errorf("no executor found for payload type: %s", job.Type)
+		execErr = fmt.Errorf("no runner found for payload type: %s", job.Type)
 	} else {
-		result, resultType, execErr = executor.Execute(job)
+		result, resultType, execErr = runner.Execute(job)
 	}
 
 	// Update the job run record
@@ -103,15 +106,15 @@ func (e *DefaultJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) 
 		}
 	}
 
-	// Execute the job using the appropriate executor
+	// Execute the job using the appropriate runner
 	var execErr error
 	var result interface{}
 	var resultType domain.ResultType
-	executor, ok := e.executors[job.Type]
+	runner, ok := e.runners[job.Type]
 	if !ok {
-		execErr = fmt.Errorf("no executor found for payload type: %s", job.Type)
+		execErr = fmt.Errorf("no runner found for payload type: %s", job.Type)
 	} else {
-		result, resultType, execErr = executor.Execute(job)
+		result, resultType, execErr = runner.Execute(job)
 	}
 
 	// Update the job run record

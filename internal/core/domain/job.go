@@ -36,17 +36,19 @@ const (
 )
 
 type Job struct {
-	ID        string      `json:"id"`
-	Name      string      `json:"name"`
-	OrgID     string      `json:"org_id"`
-	UserID    string      `json:"user_id"`
-	Schedule  Schedule    `json:"schedule"`
-	Timezone  string      `json:"timezone"`
-	Type      PayloadType `json:"type"`
-	Payload   interface{} `json:"payload,omitempty"`
-	Status    JobStatus   `json:"status"`
-	LastRunAt *time.Time  `json:"last_run_at,omitempty"`
-	NextRunAt *time.Time  `json:"next_run_at,omitempty"`
+	ID                  string      `json:"id"`
+	Name                string      `json:"name"`
+	OrgID               string      `json:"org_id"`
+	UserID              string      `json:"user_id"`
+	Schedule            Schedule    `json:"schedule"`
+	Timezone            string      `json:"timezone"`
+	Type                PayloadType `json:"type"`
+	Payload             interface{} `json:"payload,omitempty"`
+	Status              JobStatus   `json:"status"`
+	LastRunAt           *time.Time  `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time  `json:"next_run_at,omitempty"`
+	ConsecutiveFailures int         `json:"consecutive_failures"`
+	LastFailedAt        *time.Time  `json:"last_failed_at,omitempty"`
 }
 
 func NewJob(name string, orgID string, userID string, schedule Schedule, timezone string, payloadType PayloadType, payload interface{}) Job {
@@ -56,65 +58,127 @@ func NewJob(name string, orgID string, userID string, schedule Schedule, timezon
 	}
 
 	return Job{
-		ID:        uuid.New().String(),
-		Name:      name,
-		OrgID:     orgID,
-		UserID:    userID,
-		Schedule:  schedule,
-		Timezone:  timezone,
-		Type:      payloadType,
-		Payload:   payload,
-		Status:    StatusScheduled,
-		LastRunAt: nil,
-		NextRunAt: nil,
+		ID:                  uuid.New().String(),
+		Name:                name,
+		OrgID:               orgID,
+		UserID:              userID,
+		Schedule:            schedule,
+		Timezone:            timezone,
+		Type:                payloadType,
+		Payload:             payload,
+		Status:              StatusScheduled,
+		LastRunAt:           nil,
+		NextRunAt:           nil,
+		ConsecutiveFailures: 0,
+		LastFailedAt:        nil,
 	}
 }
 
 func (j Job) WithStatus(status JobStatus) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    status,
-		LastRunAt: j.LastRunAt,
-		NextRunAt: j.NextRunAt,
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              status,
+		LastRunAt:           j.LastRunAt,
+		NextRunAt:           j.NextRunAt,
+		ConsecutiveFailures: j.ConsecutiveFailures,
+		LastFailedAt:        j.LastFailedAt,
 	}
 }
 
 func (j Job) WithLastRunAt(lastRunAt time.Time) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    j.Status,
-		LastRunAt: &lastRunAt,
-		NextRunAt: j.NextRunAt,
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              j.Status,
+		LastRunAt:           &lastRunAt,
+		NextRunAt:           j.NextRunAt,
+		ConsecutiveFailures: j.ConsecutiveFailures,
+		LastFailedAt:        j.LastFailedAt,
 	}
 }
 
 func (j Job) WithNextRunAt(nextRunAt time.Time) Job {
 	return Job{
-		ID:        j.ID,
-		Name:      j.Name,
-		OrgID:     j.OrgID,
-		UserID:    j.UserID,
-		Schedule:  j.Schedule,
-		Timezone:  j.Timezone,
-		Type:      j.Type,
-		Payload:   j.Payload,
-		Status:    j.Status,
-		LastRunAt: j.LastRunAt,
-		NextRunAt: &nextRunAt,
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              j.Status,
+		LastRunAt:           j.LastRunAt,
+		NextRunAt:           &nextRunAt,
+		ConsecutiveFailures: j.ConsecutiveFailures,
+		LastFailedAt:        j.LastFailedAt,
+	}
+}
+
+func (j Job) WithNextRunAtCleared() Job {
+	return Job{
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              j.Status,
+		LastRunAt:           j.LastRunAt,
+		NextRunAt:           nil,
+		ConsecutiveFailures: j.ConsecutiveFailures,
+		LastFailedAt:        j.LastFailedAt,
+	}
+}
+
+func (j Job) WithFailuresIncremented(now time.Time) Job {
+	return Job{
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              j.Status,
+		LastRunAt:           j.LastRunAt,
+		NextRunAt:           j.NextRunAt,
+		ConsecutiveFailures: j.ConsecutiveFailures + 1,
+		LastFailedAt:        &now,
+	}
+}
+
+func (j Job) WithFailuresReset() Job {
+	return Job{
+		ID:                  j.ID,
+		Name:                j.Name,
+		OrgID:               j.OrgID,
+		UserID:              j.UserID,
+		Schedule:            j.Schedule,
+		Timezone:            j.Timezone,
+		Type:                j.Type,
+		Payload:             j.Payload,
+		Status:              j.Status,
+		LastRunAt:           j.LastRunAt,
+		NextRunAt:           j.NextRunAt,
+		ConsecutiveFailures: 0,
+		LastFailedAt:        nil,
 	}
 }
 

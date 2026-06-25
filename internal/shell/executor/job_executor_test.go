@@ -22,8 +22,8 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	// Create null notifier (test null object pattern)
 	notifier := NewNullJobCompletionNotifier()
 
-	// Create payload-specific executors
-	executors := map[domain.PayloadType]JobExecutor{
+	// Create payload-specific runners
+	runners := map[domain.PayloadType]JobRunner{
 		domain.PayloadMessage:     NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: NewHTTPJobExecutor(),
 		domain.PayloadCommand:     NewCommandJobExecutor(),
@@ -31,7 +31,7 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	}
 
 	// Create executor with map of executors
-	executor := NewJobExecutor(executors, nil)
+	executor := NewJobExecutor(runners, nil)
 
 	// Create a test job
 	payload := map[string]interface{}{

@@ -14,8 +14,21 @@ type ExportCompletionNotification struct {
 	ErrorMsg    string
 }
 
+// JobAutoPausedNotification contains the data for a job auto-pause notification
+type JobAutoPausedNotification struct {
+	JobID               string
+	JobName             string
+	OrgID               string
+	UserID              string
+	ConsecutiveFailures int
+	ErrorMsg            string
+}
+
 // JobCompletionNotifier defines the interface for sending job completion notifications
 type JobCompletionNotifier interface {
 	// JobComplete sends a notification when a job completes
 	JobComplete(ctx context.Context, notification *ExportCompletionNotification) error
+
+	// JobAutoPaused sends a notification when a job is automatically paused due to consecutive failures
+	JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification) error
 }

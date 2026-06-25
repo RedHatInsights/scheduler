@@ -40,6 +40,10 @@ func (m *mockJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) err
 	return nil
 }
 
+func (m *mockJobExecutor) Wait() {
+	// No-op for tests
+}
+
 // Mock JobRepository for testing
 type mockJobRepository struct {
 	jobs map[string]domain.Job

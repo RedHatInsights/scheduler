@@ -80,6 +80,41 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 	return nil
 }
 
+// JobAutoPaused sends a notification when a job is automatically paused due to consecutive failures
+func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification) error {
+	// Generate request ID for tracking
+	messageID := uuid.New().String()
+	log.Printf("Sending job auto-paused notification via Kafka for job: %s (message_id: %s)", notification.JobID, messageID)
+
+	// Build the platform notification message
+	platformNotification := n.buildAutoPausedPlatformNotification(notification, messageID)
+
+	// Marshal to JSON
+	messageBytes, err := json.Marshal(platformNotification)
+	if err != nil {
+		log.Printf("Failed to marshal auto-paused notification for job %s (message_id: %s): %v", notification.JobID, messageID, err)
+		return fmt.Errorf("failed to marshal notification: %w", err)
+	}
+
+	// Build headers for Kafka message
+	headers := map[string]string{
+		"bundle":      platformNotification.Bundle,
+		"application": platformNotification.Application,
+		"event-type":  platformNotification.EventType,
+		"org-id":      platformNotification.OrgID,
+		"version":     platformNotification.Version,
+	}
+
+	// Send via generic Kafka producer
+	if err := n.producer.SendMessage(platformNotification.OrgID, messageBytes, headers); err != nil {
+		log.Printf("Failed to send auto-paused notification for job %s (message_id: %s): %v", notification.JobID, messageID, err)
+		return err
+	}
+
+	log.Printf("Job auto-paused notification sent successfully for job %s (message_id: %s)", notification.JobID, messageID)
+	return nil
+}
+
 // buildPlatformNotification creates a platform notification message from an export completion notification
 func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification, messageID string) *NotificationMessage {
 	context := map[string]interface{}{
@@ -110,6 +145,35 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		AccountID:   notification.AccountID,
+		OrgID:       notification.OrgID,
+		Context:     context,
+		Events:      []interface{}{},
+		Recipients:  []interface{}{},
+	}
+}
+
+// buildAutoPausedPlatformNotification creates a platform notification message for auto-paused jobs
+func (n *NotificationsBasedJobCompletionNotifier) buildAutoPausedPlatformNotification(notification *JobAutoPausedNotification, messageID string) *NotificationMessage {
+	context := map[string]interface{}{
+		"job_id":               notification.JobID,
+		"job_name":             notification.JobName,
+		"consecutive_failures": notification.ConsecutiveFailures,
+		"user_id":              notification.UserID,
+	}
+
+	// Add error message if present
+	if notification.ErrorMsg != "" {
+		context["error_message"] = notification.ErrorMsg
+	}
+
+	return &NotificationMessage{
+		ID:          messageID,
+		Version:     "v1.0.0",
+		Bundle:      NOTIFICATIONS_BUNDLE,
+		Application: NOTIFICATIONS_APP,
+		EventType:   "job-auto-paused",
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		AccountID:   "", // Not used for auto-pause notifications
 		OrgID:       notification.OrgID,
 		Context:     context,
 		Events:      []interface{}{},

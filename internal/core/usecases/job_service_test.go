@@ -228,12 +228,16 @@ func (m *mockJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) err
 	return nil
 }
 
+func (m *mockJobExecutor) Wait() {
+	// No-op for tests
+}
+
 func TestCreateJobSetsNextRunAt(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	schedule := "0 * * * *" // Every hour
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", schedule, "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -272,7 +276,7 @@ func TestRunJobUpdatesLastRunAndNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "*/10 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -319,7 +323,7 @@ func TestUpdateJobRecalculatesNextRunAtWhenScheduleChanges(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a job with hourly schedule
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -355,7 +359,7 @@ func TestResumeJobRecalculatesNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a paused job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -393,7 +397,7 @@ func TestCreateJobWithInvalidScheduleDoesNotSetNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Try to create a job with invalid schedule
 	_, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "invalid", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -408,7 +412,7 @@ func TestUpdateJob_CannotSetStatusToRunning(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -427,7 +431,7 @@ func TestUpdateJob_CannotSetStatusToFailed(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -446,7 +450,7 @@ func TestUpdateJob_CanSetStatusToScheduled(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a paused job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -470,7 +474,7 @@ func TestUpdateJob_CanSetStatusToPaused(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a scheduled job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -493,7 +497,7 @@ func TestPatchJobWithUserCheck_CannotSetStatusToRunning(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -516,7 +520,7 @@ func TestPatchJobWithUserCheck_CannotSetStatusToFailed(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -539,7 +543,7 @@ func TestPatchJobWithUserCheck_CanSetStatusToScheduled(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, scheduler, executor)
+	service := NewJobService(repo, scheduler, executor, 3)
 
 	// Create a paused job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -614,7 +618,7 @@ func TestRunJob_WithScheduler_CallsScheduleJobImmediately(t *testing.T) {
 	executor := &mockJobExecutor{}
 	cronScheduler := newMockCronScheduler()
 
-	service := NewJobService(repo, schedulingSvc, executor)
+	service := NewJobService(repo, schedulingSvc, executor, 3)
 	service.SetCronScheduler(cronScheduler)
 	// Note: Not setting runRepo, so job run ID will be empty but that's OK for this test
 
@@ -649,7 +653,7 @@ func TestRunJob_WithoutScheduler_ExecutesDirectly(t *testing.T) {
 
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, schedulingSvc, executor)
+	service := NewJobService(repo, schedulingSvc, executor, 3)
 	// Don't set a cron scheduler
 
 	// Create a job
@@ -691,7 +695,7 @@ func TestRunJob_WithScheduler_DoesNotExecuteDirectly(t *testing.T) {
 	}
 	cronScheduler := newMockCronScheduler()
 
-	service := NewJobService(repo, schedulingSvc, executor)
+	service := NewJobService(repo, schedulingSvc, executor, 3)
 	service.SetCronScheduler(cronScheduler)
 
 	// Create a job
@@ -720,7 +724,7 @@ func TestRunJob_JobNotFound_ReturnsError(t *testing.T) {
 	schedulingSvc := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
 
-	service := NewJobService(repo, schedulingSvc, executor)
+	service := NewJobService(repo, schedulingSvc, executor, 3)
 
 	// Try to run a non-existent job
 	_, err := service.RunJob(context.Background(), "non-existent-id")
