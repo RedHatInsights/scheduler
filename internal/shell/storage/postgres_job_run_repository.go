@@ -44,12 +44,12 @@ func NewPostgresJobRunRepository(cfg *config.Config, logger *slog.Logger) (*Post
 
 func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	query := `
-		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result_json, created_at)
+		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status, end_time = excluded.end_time,
 			error_message = excluded.error_message, result_type = excluded.result_type,
-			result_json = excluded.result_json`
+			result = excluded.result`
 
 	var endTime *string
 	if run.EndTime != nil {
@@ -83,7 +83,7 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 }
 
 func (r *PostgresJobRunRepository) FindByID(id string) (domain.JobRun, error) {
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json FROM job_runs WHERE id = $1`
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result FROM job_runs WHERE id = $1`
 	return r.scanRun(r.db.QueryRow(query, id))
 }
 
@@ -97,7 +97,7 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 	}
 
 	// Then get the paginated results
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result
 		FROM job_runs WHERE job_id = $1 ORDER BY start_time DESC LIMIT $2 OFFSET $3`
 	runs, err := r.queryRuns(query, jobID, limit, offset)
 	if err != nil {
@@ -108,7 +108,7 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 }
 
 func (r *PostgresJobRunRepository) FindByJobIDAndOrgID(jobID, orgID string) ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result_json
+	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result
 		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE jr.job_id = $1 AND j.org_id = $2 ORDER BY jr.start_time DESC`, jobID, orgID)
 }
@@ -125,7 +125,7 @@ func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int
 	}
 
 	// Then get the paginated results
-	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result_json
+	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result
 		FROM job_runs jr
 		INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE j.user_id = $1
@@ -140,7 +140,7 @@ func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int
 }
 
 func (r *PostgresJobRunRepository) FindAll() ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result_json
+	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result
 		FROM job_runs ORDER BY start_time DESC`)
 }
 
