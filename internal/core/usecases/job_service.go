@@ -330,7 +330,9 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 		nextRunAt, calcErr := calculateNextRunAt(schedule, updatedJob.Timezone)
 		if calcErr != nil {
 			log.Printf("[DEBUG] UpdateJob - failed to calculate next run time: %v", calcErr)
-		} else if nextRunAt != nil {
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
 			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
 			log.Printf("[DEBUG] UpdateJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 		}
@@ -442,7 +444,9 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 		nextRunAt, calcErr := calculateNextRunAt(string(*schedule), updatedJob.Timezone)
 		if calcErr != nil {
 			log.Printf("[DEBUG] PatchJobWithOrgCheck - failed to calculate next run time: %v", calcErr)
-		} else if nextRunAt != nil {
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
 			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
 			log.Printf("[DEBUG] PatchJobWithOrgCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 		}
@@ -557,7 +561,9 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 		nextRunAt, calcErr := calculateNextRunAt(string(*schedule), updatedJob.Timezone)
 		if calcErr != nil {
 			log.Printf("[DEBUG] PatchJobWithUserCheck - failed to calculate next run time: %v", calcErr)
-		} else if nextRunAt != nil {
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
 			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
 			log.Printf("[DEBUG] PatchJobWithUserCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 		}
@@ -809,7 +815,9 @@ func (s *DefaultJobService) ResumeJob(ctx context.Context, id string) (domain.Jo
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
 	if calcErr != nil {
 		log.Printf("[DEBUG] ResumeJob - failed to calculate next run time: %v", calcErr)
-	} else if nextRunAt != nil {
+		return domain.Job{}, calcErr
+	}
+	if nextRunAt != nil {
 		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
 		log.Printf("[DEBUG] ResumeJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 	}
@@ -851,7 +859,9 @@ func (s *DefaultJobService) ResumeJobWithOrgCheck(ctx context.Context, id string
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
 	if calcErr != nil {
 		log.Printf("[DEBUG] ResumeJobWithOrgCheck - failed to calculate next run time: %v", calcErr)
-	} else if nextRunAt != nil {
+		return domain.Job{}, calcErr
+	}
+	if nextRunAt != nil {
 		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
 		log.Printf("[DEBUG] ResumeJobWithOrgCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 	}
@@ -893,7 +903,9 @@ func (s *DefaultJobService) ResumeJobWithUserCheck(ctx context.Context, id strin
 	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
 	if calcErr != nil {
 		log.Printf("[DEBUG] ResumeJobWithUserCheck - failed to calculate next run time: %v", calcErr)
-	} else if nextRunAt != nil {
+		return domain.Job{}, calcErr
+	}
+	if nextRunAt != nil {
 		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
 		log.Printf("[DEBUG] ResumeJobWithUserCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 	}
