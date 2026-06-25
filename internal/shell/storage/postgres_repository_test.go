@@ -1085,3 +1085,167 @@ func TestPostgresJobRunRepository_CleanupOldRuns_EmptyTable(t *testing.T) {
 	}
 	_ = deleted
 }
+
+func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create jobs for different users
+	job1 := domain.NewJob("User1 Job A", "org-123", "user-001", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{"test": "data"})
+	job1.ID = "00000000-0000-0000-0001-000000000001"
+
+	job2 := domain.NewJob("User1 Job B", "org-123", "user-001", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{"test": "data"})
+	job2.ID = "00000000-0000-0000-0001-000000000002"
+
+	job3 := domain.NewJob("User2 Job A", "org-123", "user-002", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{"test": "data"})
+	job3.ID = "00000000-0000-0000-0002-000000000001"
+
+	// Save jobs
+	if err := jobRepo.Save(job1); err != nil {
+		t.Fatalf("Failed to save job1: %v", err)
+	}
+	if err := jobRepo.Save(job2); err != nil {
+		t.Fatalf("Failed to save job2: %v", err)
+	}
+	if err := jobRepo.Save(job3); err != nil {
+		t.Fatalf("Failed to save job3: %v", err)
+	}
+
+	// Create runs for user-001's jobs
+	run1 := domain.NewJobRun(job1.ID)
+	run1.ID = "00000000-0000-0000-0001-100000000001"
+	run1.Status = domain.RunStatusCompleted
+
+	run2 := domain.NewJobRun(job1.ID)
+	run2.ID = "00000000-0000-0000-0001-100000000002"
+	run2.Status = domain.RunStatusFailed
+
+	run3 := domain.NewJobRun(job2.ID)
+	run3.ID = "00000000-0000-0000-0001-100000000003"
+	run3.Status = domain.RunStatusCompleted
+
+	// Create run for user-002's job
+	run4 := domain.NewJobRun(job3.ID)
+	run4.ID = "00000000-0000-0000-0002-100000000001"
+	run4.Status = domain.RunStatusCompleted
+
+	// Save all runs
+	if err := runRepo.Save(run1); err != nil {
+		t.Fatalf("Failed to save run1: %v", err)
+	}
+	if err := runRepo.Save(run2); err != nil {
+		t.Fatalf("Failed to save run2: %v", err)
+	}
+	if err := runRepo.Save(run3); err != nil {
+		t.Fatalf("Failed to save run3: %v", err)
+	}
+	if err := runRepo.Save(run4); err != nil {
+		t.Fatalf("Failed to save run4: %v", err)
+	}
+
+	// Test: Get all runs for user-001 (should return 3 runs)
+	user1Runs, total1, err := runRepo.FindByUserID("user-001", 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for user-001: %v", err)
+	}
+
+	if total1 != 3 {
+		t.Errorf("Expected 3 total runs for user-001, got %d", total1)
+	}
+
+	if len(user1Runs) != 3 {
+		t.Errorf("Expected 3 runs for user-001, got %d", len(user1Runs))
+	}
+
+	// Verify all runs belong to user-001's jobs
+	expectedJobIDs := map[string]bool{job1.ID: true, job2.ID: true}
+	for _, run := range user1Runs {
+		if !expectedJobIDs[run.JobID] {
+			t.Errorf("Run %s has unexpected job_id %s for user-001", run.ID, run.JobID)
+		}
+	}
+
+	// Test: Get all runs for user-002 (should return 1 run)
+	user2Runs, total2, err := runRepo.FindByUserID("user-002", 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for user-002: %v", err)
+	}
+
+	if total2 != 1 {
+		t.Errorf("Expected 1 total run for user-002, got %d", total2)
+	}
+
+	if len(user2Runs) != 1 {
+		t.Errorf("Expected 1 run for user-002, got %d", len(user2Runs))
+	}
+
+	if user2Runs[0].JobID != job3.ID {
+		t.Errorf("Expected run to have job_id %s, got %s", job3.ID, user2Runs[0].JobID)
+	}
+
+	// Test: Pagination - get first page (limit 2)
+	page1Runs, total, err := runRepo.FindByUserID("user-001", 0, 2)
+	if err != nil {
+		t.Fatalf("FindByUserID pagination failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total 3 for pagination, got %d", total)
+	}
+
+	if len(page1Runs) != 2 {
+		t.Errorf("Expected 2 runs in first page, got %d", len(page1Runs))
+	}
+
+	// Test: Pagination - get second page (offset 2, limit 2)
+	page2Runs, total, err := runRepo.FindByUserID("user-001", 2, 2)
+	if err != nil {
+		t.Fatalf("FindByUserID pagination page 2 failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total 3 for pagination page 2, got %d", total)
+	}
+
+	if len(page2Runs) != 1 {
+		t.Errorf("Expected 1 run in second page, got %d", len(page2Runs))
+	}
+
+	// Test: User with no runs
+	noRunsUsers, total, err := runRepo.FindByUserID("user-999", 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for user with no runs: %v", err)
+	}
+
+	if total != 0 {
+		t.Errorf("Expected 0 total runs for user-999, got %d", total)
+	}
+
+	if len(noRunsUsers) != 0 {
+		t.Errorf("Expected 0 runs for user-999, got %d", len(noRunsUsers))
+	}
+
+	// Test: Runs are ordered by start_time DESC (most recent first)
+	// The runs should be in reverse order of creation
+	allRuns, _, err := runRepo.FindByUserID("user-001", 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for ordering test: %v", err)
+	}
+
+	if len(allRuns) >= 2 {
+		// Verify runs are ordered by start_time descending
+		for i := 0; i < len(allRuns)-1; i++ {
+			if allRuns[i].StartTime.Before(allRuns[i+1].StartTime) {
+				t.Errorf("Runs not ordered by start_time DESC: run[%d] %s is before run[%d] %s",
+					i, allRuns[i].StartTime, i+1, allRuns[i+1].StartTime)
+			}
+		}
+	}
+
+	// Cleanup
+	jobRepo.db.Exec("DELETE FROM job_runs WHERE id::text LIKE '00000000-0000-0000-%'")
+	jobRepo.db.Exec("DELETE FROM jobs WHERE id::text LIKE '00000000-0000-0000-%'")
+}
