@@ -332,7 +332,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize job executor with map of runners
-	jobExecutor := executor.NewJobExecutor(runners, runRepo)
+	jobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
 
 	// Create functional core service
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
@@ -458,7 +458,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Use message executor as dummy
 	}
-	dummyExecutor := executor.NewJobExecutor(dummyRunners, jobRunRepo)
+	dummyExecutor := executor.NewJobExecutor(dummyRunners, jobRunRepo, baseLogger)
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
@@ -605,10 +605,10 @@ func runWorker(cmd *cobra.Command, args []string) {
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
 	}
-	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo)
+	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 
 	// Wrap the executor with failure tracking for auto-pause functionality
-	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures)
+	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {

@@ -1,6 +1,8 @@
 package executor
 
 import (
+	"log/slog"
+
 	"insights-scheduler/internal/core/domain"
 )
 
@@ -11,5 +13,5 @@ import (
 //   - JobRunner: Runs the job and returns typed results (the athlete)
 //   - JobExecutor: Orchestrates execution with cross-cutting concerns (the coach)
 type JobRunner interface {
-	Execute(job domain.Job) (result interface{}, resultType domain.ResultType, err error)
+	Execute(job domain.Job, logger *slog.Logger) (result interface{}, resultType domain.ResultType, err error)
 }

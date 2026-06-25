@@ -3,6 +3,8 @@ package executor
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"testing"
 
 	"insights-scheduler/internal/core/domain"
@@ -14,12 +16,12 @@ type mockNotifier struct {
 	jobAutoPausedCalls []*JobAutoPausedNotification
 }
 
-func (m *mockNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification) error {
+func (m *mockNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification, logger *slog.Logger) error {
 	m.jobCompleteCalls = append(m.jobCompleteCalls, notification)
 	return nil
 }
 
-func (m *mockNotifier) JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification) error {
+func (m *mockNotifier) JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification, logger *slog.Logger) error {
 	m.jobAutoPausedCalls = append(m.jobAutoPausedCalls, notification)
 	return nil
 }
@@ -92,12 +94,13 @@ func (e *mockSchedulerExecutor) Wait() {
 }
 
 func TestFailureTrackingExecutor_SendsNotificationOnAutoPause(t *testing.T) {
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	repo := newMockJobRepo()
 	notifier := &mockNotifier{}
 	innerExecutor := &mockSchedulerExecutor{shouldFail: true}
 
 	// Set threshold to 2 for quick testing
-	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 2)
+	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 2, testLogger)
 
 	// Create a job
 	job := domain.NewJob("Test Job", "org-123", "user-456", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -150,11 +153,12 @@ func TestFailureTrackingExecutor_SendsNotificationOnAutoPause(t *testing.T) {
 }
 
 func TestFailureTrackingExecutor_NoNotificationWhenBelowThreshold(t *testing.T) {
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	repo := newMockJobRepo()
 	notifier := &mockNotifier{}
 	innerExecutor := &mockSchedulerExecutor{shouldFail: true}
 
-	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 5)
+	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 5, testLogger)
 
 	job := domain.NewJob("Test Job", "org-123", "user-456", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)
@@ -176,11 +180,12 @@ func TestFailureTrackingExecutor_NoNotificationWhenBelowThreshold(t *testing.T) 
 }
 
 func TestFailureTrackingExecutor_NoNotificationOnSuccess(t *testing.T) {
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	repo := newMockJobRepo()
 	notifier := &mockNotifier{}
 	innerExecutor := &mockSchedulerExecutor{shouldFail: false}
 
-	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 2)
+	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 2, testLogger)
 
 	job := domain.NewJob("Test Job", "org-123", "user-456", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)
@@ -202,12 +207,13 @@ func TestFailureTrackingExecutor_NoNotificationOnSuccess(t *testing.T) {
 }
 
 func TestFailureTrackingExecutor_NoNotificationWhenThresholdDisabled(t *testing.T) {
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	repo := newMockJobRepo()
 	notifier := &mockNotifier{}
 	innerExecutor := &mockSchedulerExecutor{shouldFail: true}
 
 	// Threshold 0 = disabled
-	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 0)
+	executor := NewFailureTrackingExecutor(innerExecutor, repo, notifier, 0, testLogger)
 
 	job := domain.NewJob("Test Job", "org-123", "user-456", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)

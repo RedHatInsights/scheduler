@@ -1,7 +1,7 @@
 package executor
 
 import (
-	"log"
+	"log/slog"
 
 	"insights-scheduler/internal/core/domain"
 )
@@ -15,11 +15,11 @@ func NewMessageJobExecutor() *MessageJobExecutor {
 }
 
 // Execute executes a message job
-func (e *MessageJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultType, error) {
+func (e *MessageJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {
-		log.Printf("Processing message: unknown (payload is not a map)")
+		logger.Warn("Processing message with unknown payload (not a map)")
 		result := domain.MessageResult{
 			Message:        "unknown",
 			DeliveryStatus: "sent",
@@ -31,7 +31,7 @@ func (e *MessageJobExecutor) Execute(job domain.Job) (interface{}, domain.Result
 	if !ok {
 		message = "unknown"
 	}
-	log.Printf("Processing message: %s", message)
+	logger.Info("Processing message", slog.String("message", message))
 
 	result := domain.MessageResult{
 		Message:        message,

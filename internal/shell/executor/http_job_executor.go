@@ -1,7 +1,7 @@
 package executor
 
 import (
-	"log"
+	"log/slog"
 
 	"insights-scheduler/internal/core/domain"
 )
@@ -15,11 +15,11 @@ func NewHTTPJobExecutor() *HTTPJobExecutor {
 }
 
 // Execute executes an HTTP request job
-func (e *HTTPJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultType, error) {
+func (e *HTTPJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {
-		log.Printf("Executing HTTP request: unknown (payload is not a map)")
+		logger.Warn("Executing HTTP request with unknown payload (not a map)")
 		result := domain.HTTPResult{
 			URL:        "unknown",
 			Method:     "GET",
@@ -37,7 +37,9 @@ func (e *HTTPJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultTyp
 	if url == "" {
 		url = "unknown"
 	}
-	log.Printf("Executing HTTP %s request to %s", method, url)
+	logger.Info("Executing HTTP request",
+		slog.String("method", method),
+		slog.String("url", url))
 
 	result := domain.HTTPResult{
 		URL:        url,

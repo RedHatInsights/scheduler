@@ -1,7 +1,7 @@
 package executor
 
 import (
-	"log"
+	"log/slog"
 
 	"insights-scheduler/internal/core/domain"
 )
@@ -15,11 +15,11 @@ func NewCommandJobExecutor() *CommandJobExecutor {
 }
 
 // Execute executes a command job
-func (e *CommandJobExecutor) Execute(job domain.Job) (interface{}, domain.ResultType, error) {
+func (e *CommandJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {
-		log.Printf("Executing command: unknown (payload is not a map)")
+		logger.Warn("Executing command with unknown payload (not a map)")
 		result := domain.CommandResult{
 			Command:  "unknown",
 			ExitCode: 0,
@@ -32,7 +32,7 @@ func (e *CommandJobExecutor) Execute(job domain.Job) (interface{}, domain.Result
 	if !ok {
 		command = "unknown"
 	}
-	log.Printf("Executing command: %s", command)
+	logger.Info("Executing command", slog.String("command", command))
 
 	result := domain.CommandResult{
 		Command:  command,

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,10 +45,12 @@ func NewNotificationsBasedJobCompletionNotifier(producer *messaging.KafkaProduce
 }
 
 // JobComplete sends a job completion notification to Kafka
-func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification) error {
+func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Context, notification *ExportCompletionNotification, logger *slog.Logger) error {
 	// Generate request ID for tracking
 	messageID := uuid.New().String()
-	log.Printf("Sending platform notification via Kafka for export: %s (message_id: %s)", notification.ExportID, messageID)
+	logger.Info("Sending platform notification via Kafka",
+		slog.String("export_id", notification.ExportID),
+		slog.String("message_id", messageID))
 
 	// Build the platform notification message
 	platformNotification := n.buildPlatformNotification(notification, messageID)
@@ -56,7 +58,10 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 	// Marshal to JSON
 	messageBytes, err := json.Marshal(platformNotification)
 	if err != nil {
-		log.Printf("Failed to marshal platform notification for export %s (message_id: %s): %v", notification.ExportID, messageID, err)
+		logger.Error("Failed to marshal platform notification",
+			slog.String("export_id", notification.ExportID),
+			slog.String("message_id", messageID),
+			slog.Any("error", err))
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
@@ -72,19 +77,25 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 
 	// Send via generic Kafka producer
 	if err := n.producer.SendMessage(platformNotification.OrgID, messageBytes, headers); err != nil {
-		log.Printf("Failed to send platform notification for export %s (message_id: %s): %v", notification.ExportID, messageID, err)
+		logger.Error("Failed to send platform notification",
+			slog.String("export_id", notification.ExportID),
+			slog.String("message_id", messageID),
+			slog.Any("error", err))
 		return err
 	}
 
-	log.Printf("Platform notification sent successfully for export %s (message_id: %s)", notification.ExportID, messageID)
+	logger.Info("Platform notification sent successfully",
+		slog.String("export_id", notification.ExportID),
+		slog.String("message_id", messageID))
 	return nil
 }
 
 // JobAutoPaused sends a notification when a job is automatically paused due to consecutive failures
-func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification) error {
+func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Context, notification *JobAutoPausedNotification, logger *slog.Logger) error {
 	// Generate request ID for tracking
 	messageID := uuid.New().String()
-	log.Printf("Sending job auto-paused notification via Kafka for job: %s (message_id: %s)", notification.JobID, messageID)
+	logger.Info("Sending job auto-paused notification via Kafka",
+		slog.String("message_id", messageID))
 
 	// Build the platform notification message
 	platformNotification := n.buildAutoPausedPlatformNotification(notification, messageID)
@@ -92,7 +103,9 @@ func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Cont
 	// Marshal to JSON
 	messageBytes, err := json.Marshal(platformNotification)
 	if err != nil {
-		log.Printf("Failed to marshal auto-paused notification for job %s (message_id: %s): %v", notification.JobID, messageID, err)
+		logger.Error("Failed to marshal auto-paused notification",
+			slog.String("message_id", messageID),
+			slog.Any("error", err))
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
 
@@ -107,11 +120,14 @@ func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Cont
 
 	// Send via generic Kafka producer
 	if err := n.producer.SendMessage(platformNotification.OrgID, messageBytes, headers); err != nil {
-		log.Printf("Failed to send auto-paused notification for job %s (message_id: %s): %v", notification.JobID, messageID, err)
+		logger.Error("Failed to send auto-paused notification",
+			slog.String("message_id", messageID),
+			slog.Any("error", err))
 		return err
 	}
 
-	log.Printf("Job auto-paused notification sent successfully for job %s (message_id: %s)", notification.JobID, messageID)
+	logger.Info("Job auto-paused notification sent successfully",
+		slog.String("message_id", messageID))
 	return nil
 }
 
