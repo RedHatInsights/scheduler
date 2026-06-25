@@ -146,7 +146,7 @@ func (j Job) WithNextRunAtCleared() Job {
 	}
 }
 
-func (j Job) WithFailureIncremented(now time.Time) Job {
+func (j Job) WithFailuresIncremented(now time.Time) Job {
 	return Job{
 		ID:                  j.ID,
 		Name:                j.Name,

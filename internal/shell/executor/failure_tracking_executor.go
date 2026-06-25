@@ -58,7 +58,7 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 
 		if execErr != nil {
 			// Job failed - increment failure counter
-			updatedJob = updatedJob.WithFailureIncremented(time.Now().UTC())
+			updatedJob = updatedJob.WithFailuresIncremented(time.Now().UTC())
 
 			// Record failure count metric
 			JobsConsecutiveFailures.Observe(float64(updatedJob.ConsecutiveFailures))

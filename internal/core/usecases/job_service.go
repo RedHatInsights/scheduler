@@ -990,7 +990,7 @@ func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRun
 		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
 
 		// Increment failure counter
-		finalJob = runningJob.WithFailureIncremented(time.Now().UTC())
+		finalJob = runningJob.WithFailuresIncremented(time.Now().UTC())
 
 		// Check if we should auto-pause due to consecutive failures
 		if s.maxConsecutiveFailures > 0 && finalJob.ConsecutiveFailures >= s.maxConsecutiveFailures {
