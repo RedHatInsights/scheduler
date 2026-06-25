@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -14,10 +14,11 @@ import (
 )
 
 type PostgresJobRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	logger *slog.Logger
 }
 
-func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error) {
+func NewPostgresJobRepository(cfg *config.Config, logger *slog.Logger) (*PostgresJobRepository, error) {
 
 	connStr, err := buildConnectionString(cfg)
 	if err != nil {
@@ -32,9 +33,12 @@ func NewPostgresJobRepository(cfg *config.Config) (*PostgresJobRepository, error
 		return nil, err
 	}
 
-	repo := &PostgresJobRepository{db: db}
+	repo := &PostgresJobRepository{
+		db:     db,
+		logger: logger,
+	}
 
-	log.Printf("[DEBUG] PostgresJobRepository - database initialized successfully")
+	logger.Info("PostgreSQL job repository initialized")
 	return repo, nil
 }
 
@@ -161,7 +165,9 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
-			log.Printf("ERROR: Failed to unmarshal payload for job %s: %v", job.ID, err)
+			r.logger.Error("Failed to unmarshal job payload",
+				slog.String("job_id", job.ID),
+				slog.Any("error", err))
 			job.Payload = nil // Include job with nil payload rather than silently dropping it
 		}
 		if lastRunAtStr.Valid {

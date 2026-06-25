@@ -178,12 +178,20 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Initialize logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
 	keepCount := cfg.Scheduler.JobRunRetentionCount
 	if keepCount < 1 {
 		return fmt.Errorf("JOB_RUN_RETENTION_COUNT must be at least 1, got %d", keepCount)
 	}
 
-	log.Printf("[PRUNE] Starting job run pruning (retaining %d runs per job)", keepCount)
+	baseLogger.Info("Starting job run pruning", slog.Int("retention_count", keepCount))
 
 	var runRepo interface {
 		CleanupOldRuns(keepPerJob int) (int64, error)
@@ -192,7 +200,7 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 
 	switch cfg.Database.Type {
 	case "postgres", "postgresql":
-		repo, err := storage.NewPostgresJobRunRepository(cfg)
+		repo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 		if err != nil {
 			return fmt.Errorf("failed to initialize PostgreSQL job run repository: %w", err)
 		}
@@ -208,9 +216,9 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 	}
 
 	if deleted == 0 {
-		log.Println("[PRUNE] No old job runs to remove")
+		baseLogger.Info("No old job runs to remove")
 	} else {
-		log.Printf("[PRUNE] Successfully removed %d old job run(s)", deleted)
+		baseLogger.Info("Successfully removed old job runs", slog.Int64("deleted", deleted))
 	}
 
 	return nil
@@ -257,7 +265,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Unsupported database type: %s (only 'postgres' is supported)", cfg.Database.Type)
 	}
 
-	postgresRepo, err := storage.NewPostgresJobRepository(cfg)
+	postgresRepo, err := storage.NewPostgresJobRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("Failed to initialize PostgreSQL database: %v", err)
 	}
@@ -268,7 +276,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("Failed to initialize PostgreSQL job run repository: %v", err)
 	}
@@ -338,7 +346,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	schedulerJobService := usecases.NewSchedulerJobService(coreJobService)
 
 	// Create cron scheduler with scheduler service adapter
-	cronScheduler := scheduler.NewCronScheduler(schedulerJobService)
+	cronScheduler := scheduler.NewCronScheduler(schedulerJobService, baseLogger)
 
 	// Connect core job service to cron scheduler
 	coreJobService.SetCronScheduler(cronScheduler)
@@ -433,12 +441,12 @@ func runAPI(cmd *cobra.Command, args []string) {
 	baseLogger.Info("Starting Scheduler API server")
 
 	// Initialize PostgreSQL repository (source of truth)
-	jobRepo, err := storage.NewPostgresJobRepository(cfg)
+	jobRepo, err := storage.NewPostgresJobRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[API] Failed to initialize Postgres repository: %v", err)
 	}
 
-	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[API] Failed to initialize Postgres job run repository: %v", err)
 	}
@@ -546,12 +554,12 @@ func runWorker(cmd *cobra.Command, args []string) {
 	baseLogger.Info("Starting Scheduler Worker")
 
 	// Initialize PostgreSQL repository for job run history
-	jobRepo, err := storage.NewPostgresJobRepository(cfg)
+	jobRepo, err := storage.NewPostgresJobRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to initialize Postgres job repository: %v", err)
 	}
 
-	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to initialize Postgres job run repository: %v", err)
 	}

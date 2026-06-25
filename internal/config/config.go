@@ -523,6 +523,30 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 	// Metrics
 	config.Metrics.Port = clowderConfig.MetricsPort
 	config.Metrics.Path = clowderConfig.MetricsPath
+
+	// CloudWatch Logging
+	// Clowder provides CloudWatch configuration through the Logging section
+	if clowderConfig.Logging.Cloudwatch != nil {
+		config.CloudWatch.Enabled = true
+		config.CloudWatch.Region = clowderConfig.Logging.Cloudwatch.Region
+		config.CloudWatch.LogGroupName = clowderConfig.Logging.Cloudwatch.LogGroup
+
+		// Use hostname or pod name for log stream name if available
+		if hostname, err := os.Hostname(); err == nil {
+			config.CloudWatch.LogStreamName = hostname
+		}
+
+		// Access key can be provided via Clowder or fall back to environment/IAM
+		if clowderConfig.Logging.Cloudwatch.AccessKeyId != "" {
+			os.Setenv("AWS_ACCESS_KEY_ID", clowderConfig.Logging.Cloudwatch.AccessKeyId)
+		}
+		if clowderConfig.Logging.Cloudwatch.SecretAccessKey != "" {
+			os.Setenv("AWS_SECRET_ACCESS_KEY", clowderConfig.Logging.Cloudwatch.SecretAccessKey)
+		}
+
+		fmt.Printf("CloudWatch logging enabled via Clowder: group=%s, region=%s\n",
+			config.CloudWatch.LogGroupName, config.CloudWatch.Region)
+	}
 }
 
 // applyDerivedValues computes values that depend on other config fields.

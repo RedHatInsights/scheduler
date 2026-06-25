@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -13,10 +13,11 @@ import (
 )
 
 type PostgresJobRunRepository struct {
-	db *sql.DB
+	db     *sql.DB
+	logger *slog.Logger
 }
 
-func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository, error) {
+func NewPostgresJobRunRepository(cfg *config.Config, logger *slog.Logger) (*PostgresJobRunRepository, error) {
 
 	connStr, err := buildConnectionString(cfg)
 	if err != nil {
@@ -31,9 +32,12 @@ func NewPostgresJobRunRepository(cfg *config.Config) (*PostgresJobRunRepository,
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	repo := &PostgresJobRunRepository{db: db}
+	repo := &PostgresJobRunRepository{
+		db:     db,
+		logger: logger,
+	}
 
-	log.Printf("[DEBUG] PostgresJobRunRepository - database initialized successfully")
+	logger.Info("PostgreSQL job run repository initialized")
 
 	return repo, nil
 }
