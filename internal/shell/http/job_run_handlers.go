@@ -114,28 +114,30 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 
 // GetAllRuns retrieves all job runs for the authenticated user
 func (h *JobRunHandler) GetAllRuns(w http.ResponseWriter, r *http.Request) {
+	logger := GetLogger(r)
+
 	// Extract identity from middleware context
 	ident := identity.Get(r.Context())
 
 	if !isValidIdentity(ident) {
-		log.Printf("[DEBUG] GetAllRuns failed - invalid identity")
+		logger.Warn("GetAllRuns failed - invalid identity")
 		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP GetAllRuns called - user_id=%s", ident.Identity.User.UserID)
+	logger.Debug("GetAllRuns called")
 
 	offset, limit := parsePaginationParams(r.URL)
 
 	// Get all runs for the authenticated user
 	runs, total, err := h.jobRunService.GetAllRunsForUser(ident, offset, limit)
 	if err != nil {
-		log.Printf("[DEBUG] HTTP GetAllRuns failed - error: %v", err)
+		logger.Error("Failed to retrieve all runs for user", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
 		return
 	}
 
-	log.Printf("[DEBUG] HTTP GetAllRuns success - found %d runs for user %s", len(runs), ident.Identity.User.UserID)
+	logger.Info("All runs retrieved for user", slog.Int("count", len(runs)), slog.Int("total", total))
 
 	response := buildPaginatedResponse(r.URL, offset, limit, total, ToJobRunResponseList(runs))
 
