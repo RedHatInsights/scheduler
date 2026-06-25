@@ -60,12 +60,18 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 			// Job failed - increment failure counter
 			updatedJob = updatedJob.WithFailureIncremented(time.Now().UTC())
 
+			// Record failure count metric
+			JobsConsecutiveFailures.Observe(float64(updatedJob.ConsecutiveFailures))
+
 			// Check if we should auto-pause
 			if e.maxConsecutiveFailures > 0 && updatedJob.ConsecutiveFailures >= e.maxConsecutiveFailures {
 				log.Printf("[FailureTrackingExecutor] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
 					job.ID, e.maxConsecutiveFailures)
 				updatedJob = updatedJob.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
 				wasAutoPaused = true
+
+				// Record auto-pause metric
+				JobsAutoPausedTotal.Inc()
 			} else {
 				updatedJob = updatedJob.WithStatus(domain.StatusFailed)
 			}
