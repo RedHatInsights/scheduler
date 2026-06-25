@@ -105,3 +105,34 @@ func (h *JobRunHandler) GetJobRun(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ToJobRunResponse(run))
 }
+
+// GetAllRuns retrieves all job runs for the authenticated user
+func (h *JobRunHandler) GetAllRuns(w http.ResponseWriter, r *http.Request) {
+	// Extract identity from middleware context
+	ident := identity.Get(r.Context())
+
+	if !isValidIdentity(ident) {
+		log.Printf("[DEBUG] GetAllRuns failed - invalid identity")
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidIdentity()})
+		return
+	}
+
+	log.Printf("[DEBUG] HTTP GetAllRuns called - user_id=%s", ident.Identity.User.UserID)
+
+	offset, limit := parsePaginationParams(r.URL)
+
+	// Get all runs for the authenticated user
+	runs, total, err := h.jobRunService.GetAllRunsForUser(ident, offset, limit)
+	if err != nil {
+		log.Printf("[DEBUG] HTTP GetAllRuns failed - error: %v", err)
+		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})
+		return
+	}
+
+	log.Printf("[DEBUG] HTTP GetAllRuns success - found %d runs for user %s", len(runs), ident.Identity.User.UserID)
+
+	response := buildPaginatedResponse(r.URL, offset, limit, total, ToJobRunResponseList(runs))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

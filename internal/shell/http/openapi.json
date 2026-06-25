@@ -555,6 +555,61 @@
         }
       }
     },
+    "/runs": {
+      "get": {
+        "tags": [
+          "Job Runs"
+        ],
+        "summary": "List all runs for the authenticated user",
+        "description": "Retrieve all job execution runs for jobs owned by the authenticated user. Returns runs in reverse chronological order (most recent first), with pagination support.",
+        "operationId": "listAllRuns",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip (for pagination)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return (max 100)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of job runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedJobRunsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/jobs/{id}/runs/{run_id}": {
       "parameters": [
         {
