@@ -963,6 +963,13 @@ func (s *DefaultJobService) ExecuteScheduledJob(job domain.Job) error {
 	return err
 }
 
+// ExecuteScheduledJobWithJobRun executes a job with a pre-created job run ID.
+// This method is only used by CronScheduler (server mode).
+//
+// TODO: Server mode is deprecated (marked "legacy" in CLI help). When server mode is removed,
+// this method can be deleted entirely. This will also resolve the inconsistency where server
+// mode tracks failures for manual API runs (via RunJob → ScheduleJobImmediately → this method),
+// while API+Worker mode correctly does not track failures for manual runs.
 func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRunID string) error {
 	// Execute job directly with pre-created job run ID
 	log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - job: %s, job run: %s", job.ID, jobRunID)
