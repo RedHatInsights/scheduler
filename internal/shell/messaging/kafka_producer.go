@@ -2,7 +2,7 @@ package messaging
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -13,15 +13,17 @@ import (
 type KafkaProducer struct {
 	producer *kafka.Producer
 	topic    string
+	logger   *slog.Logger
 }
 
 // NewKafkaProducer creates a new generic Kafka producer using confluent-kafka-go
-func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
-	log.Printf("[INFO] KafkaProducer - initializing connection")
-	log.Printf("[INFO] KafkaProducer - brokers: %v", cfg.Brokers)
-	log.Printf("[INFO] KafkaProducer - topic: %s", cfg.Topic)
-	log.Printf("[INFO] KafkaProducer - SASL enabled: %t", cfg.SASL.Enabled)
-	log.Printf("[INFO] KafkaProducer - TLS enabled: %t", cfg.TLS.Enabled)
+func NewKafkaProducer(cfg *config.KafkaConfig, logger *slog.Logger) (*KafkaProducer, error) {
+	logger.Info("Initializing Kafka producer connection")
+	logger.Info("Kafka configuration",
+		slog.Any("brokers", cfg.Brokers),
+		slog.String("topic", cfg.Topic),
+		slog.Bool("sasl_enabled", cfg.SASL.Enabled),
+		slog.Bool("tls_enabled", cfg.TLS.Enabled))
 
 	// Build ConfigMap for confluent-kafka-go
 	configMap := kafka.ConfigMap{
@@ -33,70 +35,53 @@ func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
 		"linger.ms":          10,
 		"batch.size":         16384,
 		"enable.idempotence": true,
-		// Enhanced logging
-		"log_level":              5,                                    // LOG_NOTICE
-		"debug":                  "broker,topic,msg,protocol,security", // Enable debug contexts
-		"statistics.interval.ms": 60000,                                // Statistics every 60 seconds
+		// Kafka client library logging - only errors
+		"log_level": 3, // LOG_ERR - only log errors from librdkafka
 	}
-
-	// Determine security protocol
-	/*
-		securityProtocol := "plaintext"
-		if cfg.SASL.Enabled && cfg.TLS.Enabled {
-			securityProtocol = "sasl_ssl"
-		} else if cfg.SASL.Enabled {
-			securityProtocol = "sasl_plaintext"
-		} else if cfg.TLS.Enabled {
-			securityProtocol = "ssl"
-		}
-	*/
 
 	securityProtocol := cfg.SecurityProtocol
 
-	log.Printf("[INFO] KafkaProducer - security protocol: %s", securityProtocol)
+	logger.Info("Kafka security protocol", slog.String("protocol", securityProtocol))
 	if strings.TrimSpace(securityProtocol) != "" {
 		configMap["security.protocol"] = securityProtocol
 	}
 
 	// Configure SASL if enabled
 	if cfg.SASL.Enabled {
-		if err := configureSASL(&configMap, cfg.SASL); err != nil {
-			log.Printf("[ERROR] KafkaProducer - SASL configuration failed: %v", err)
+		if err := configureSASL(&configMap, cfg.SASL, logger); err != nil {
+			logger.Error("SASL configuration failed", slog.Any("error", err))
 			return nil, err
 		}
 	}
 
 	// Configure TLS if enabled
 	if cfg.TLS.Enabled {
-		if err := configureTLS(&configMap, cfg.TLS); err != nil {
-			log.Printf("[ERROR] KafkaProducer - TLS configuration failed: %v", err)
+		if err := configureTLS(&configMap, cfg.TLS, logger); err != nil {
+			logger.Error("TLS configuration failed", slog.Any("error", err))
 			return nil, err
 		}
 	}
 
 	// Create producer
-	log.Printf("[INFO] KafkaProducer - attempting to connect to Kafka brokers...")
+	logger.Info("Attempting to connect to Kafka brokers")
 	producer, err := kafka.NewProducer(&configMap)
 	if err != nil {
-		log.Printf("[ERROR] KafkaProducer - failed to create producer: %v", err)
-		log.Printf("[ERROR] KafkaProducer - connection troubleshooting:")
-		log.Printf("[ERROR]   - Verify brokers are reachable: %v", cfg.Brokers)
-		if cfg.SASL.Enabled {
-			log.Printf("[ERROR]   - Verify SASL credentials (mechanism: %s, username: %s)", cfg.SASL.Mechanism, cfg.SASL.Username)
-		}
-		if cfg.TLS.Enabled {
-			log.Printf("[ERROR]   - Verify TLS certificates are valid and trusted")
-		}
+		logger.Error("Failed to create Kafka producer", slog.Any("error", err))
+		logger.Error("Connection troubleshooting",
+			slog.Any("brokers", cfg.Brokers),
+			slog.String("sasl_mechanism", cfg.SASL.Mechanism),
+			slog.Bool("tls_enabled", cfg.TLS.Enabled))
 		return nil, fmt.Errorf("failed to create Kafka producer: %w", err)
 	}
 
-	log.Printf("[INFO] KafkaProducer - successfully connected to Kafka cluster")
-	log.Printf("[INFO] KafkaProducer - producer ready to send messages to topic: %s", cfg.Topic)
+	logger.Info("Successfully connected to Kafka cluster")
+	logger.Info("Kafka producer ready", slog.String("topic", cfg.Topic))
 
 	// Start delivery report handler in background
 	kp := &KafkaProducer{
 		producer: producer,
 		topic:    cfg.Topic,
+		logger:   logger,
 	}
 	go kp.deliveryReportHandler()
 
@@ -105,11 +90,11 @@ func NewKafkaProducer(cfg *config.KafkaConfig) (*KafkaProducer, error) {
 
 // SendMessage sends a generic message to Kafka with the specified key, value, and headers
 func (k *KafkaProducer) SendMessage(key string, value []byte, headers map[string]string) error {
-	log.Printf("[DEBUG] KafkaProducer - preparing to send message")
-	log.Printf("[DEBUG] KafkaProducer - topic: %s", k.topic)
-	log.Printf("[DEBUG] KafkaProducer - message key: %s", key)
-	log.Printf("[DEBUG] KafkaProducer - message size: %d bytes", len(value))
-	log.Printf("[DEBUG] KafkaProducer - headers count: %d", len(headers))
+	k.logger.Debug("Preparing to send Kafka message",
+		slog.String("topic", k.topic),
+		slog.String("key", key),
+		slog.Int("message_size_bytes", len(value)),
+		slog.Int("headers_count", len(headers)))
 
 	// Build Kafka headers
 	kafkaHeaders := make([]kafka.Header, 0, len(headers))
@@ -118,7 +103,7 @@ func (k *KafkaProducer) SendMessage(key string, value []byte, headers map[string
 			Key:   hKey,
 			Value: []byte(hVal),
 		})
-		log.Printf("[DEBUG] KafkaProducer - header: %s=%s", hKey, hVal)
+		k.logger.Debug("Kafka header", slog.String("key", hKey), slog.String("value", hVal))
 	}
 
 	// Create message
@@ -133,11 +118,11 @@ func (k *KafkaProducer) SendMessage(key string, value []byte, headers map[string
 	}
 
 	// Send message (async with delivery channel)
-	log.Printf("[INFO] KafkaProducer - sending message to topic: %s", k.topic)
+	k.logger.Info("Sending message to Kafka", slog.String("topic", k.topic))
 	deliveryChan := make(chan kafka.Event, 1)
 	err := k.producer.Produce(msg, deliveryChan)
 	if err != nil {
-		log.Printf("[ERROR] KafkaProducer - failed to produce message: %v", err)
+		k.logger.Error("Failed to produce message", slog.Any("error", err))
 		return fmt.Errorf("failed to produce message: %w", err)
 	}
 
@@ -146,34 +131,37 @@ func (k *KafkaProducer) SendMessage(key string, value []byte, headers map[string
 	m := e.(*kafka.Message)
 
 	if m.TopicPartition.Error != nil {
-		log.Printf("[ERROR] KafkaProducer - delivery failed for topic %s: %v", k.topic, m.TopicPartition.Error)
-		log.Printf("[ERROR] KafkaProducer - troubleshooting:")
-		log.Printf("[ERROR]   - Check broker connectivity and authentication")
-		log.Printf("[ERROR]   - Verify topic '%s' exists and is writable", k.topic)
-		log.Printf("[ERROR]   - Check ACLs if using SASL authentication")
+		k.logger.Error("Kafka message delivery failed",
+			slog.String("topic", k.topic),
+			slog.Any("error", m.TopicPartition.Error))
+		k.logger.Error("Kafka troubleshooting suggestions",
+			slog.String("suggestion_1", "Check broker connectivity and authentication"),
+			slog.String("suggestion_2", "Verify topic exists and is writable"),
+			slog.String("suggestion_3", "Check ACLs if using SASL authentication"))
 		return fmt.Errorf("delivery failed: %w", m.TopicPartition.Error)
 	}
 
-	log.Printf("[INFO] KafkaProducer - message sent successfully")
-	log.Printf("[INFO] KafkaProducer - partition: %d, offset: %d", m.TopicPartition.Partition, m.TopicPartition.Offset)
+	k.logger.Info("Message sent successfully",
+		slog.Int("partition", int(m.TopicPartition.Partition)),
+		slog.Int64("offset", int64(m.TopicPartition.Offset)))
 	close(deliveryChan)
 	return nil
 }
 
 // Close closes the Kafka producer
 func (k *KafkaProducer) Close() error {
-	log.Printf("[INFO] KafkaProducer - closing producer connection")
+	k.logger.Info("Closing Kafka producer connection")
 	if k.producer != nil {
 		// Flush any pending messages (wait up to 10 seconds)
 		remaining := k.producer.Flush(10000)
 		if remaining > 0 {
-			log.Printf("[WARN] KafkaProducer - %d messages were not delivered before close", remaining)
+			k.logger.Warn("Messages not delivered before close", slog.Int("remaining", remaining))
 		}
 		k.producer.Close()
-		log.Printf("[INFO] KafkaProducer - producer closed successfully")
+		k.logger.Info("Kafka producer closed successfully")
 		return nil
 	}
-	log.Printf("[DEBUG] KafkaProducer - producer already closed")
+	k.logger.Debug("Kafka producer already closed")
 	return nil
 }
 
@@ -183,25 +171,27 @@ func (k *KafkaProducer) deliveryReportHandler() {
 		switch ev := e.(type) {
 		case *kafka.Message:
 			if ev.TopicPartition.Error != nil {
-				log.Printf("[ERROR] KafkaProducer - delivery failed: %v", ev.TopicPartition.Error)
+				k.logger.Error("Kafka delivery failed", slog.Any("error", ev.TopicPartition.Error))
 			} else {
-				log.Printf("[DEBUG] KafkaProducer - delivered message to topic %s [%d] at offset %v",
-					*ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+				k.logger.Debug("Kafka message delivered",
+					slog.String("topic", *ev.TopicPartition.Topic),
+					slog.Int("partition", int(ev.TopicPartition.Partition)),
+					slog.Int64("offset", int64(ev.TopicPartition.Offset)))
 			}
 		case kafka.Error:
-			log.Printf("[ERROR] KafkaProducer - error: %v", ev)
+			k.logger.Error("Kafka error", slog.Any("error", ev))
 		default:
-			log.Printf("[DEBUG] KafkaProducer - event: %v", ev)
+			//k.logger.Trace("Kafka event", slog.Any("event", ev))
 		}
 	}
 }
 
 // configureSASL configures SASL authentication for the Kafka producer
-func configureSASL(configMap *kafka.ConfigMap, saslCfg config.SASLConfig) error {
-	log.Printf("[INFO] KafkaProducer - configuring SASL authentication")
-	log.Printf("[INFO] KafkaProducer - SASL mechanism: %s", saslCfg.Mechanism)
-	log.Printf("[INFO] KafkaProducer - SASL username: %s", saslCfg.Username)
-	log.Printf("[DEBUG] KafkaProducer - SASL password length: %d characters", len(saslCfg.Password))
+func configureSASL(configMap *kafka.ConfigMap, saslCfg config.SASLConfig, logger *slog.Logger) error {
+	logger.Info("Configuring SASL authentication",
+		slog.String("mechanism", saslCfg.Mechanism),
+		slog.String("username", saslCfg.Username))
+	logger.Debug("SASL password length", slog.Int("length", len(saslCfg.Password)))
 
 	// Set SASL mechanism
 	mechanism := saslCfg.Mechanism
@@ -220,40 +210,41 @@ func configureSASL(configMap *kafka.ConfigMap, saslCfg config.SASLConfig) error 
 	(*configMap)["sasl.username"] = saslCfg.Username
 	(*configMap)["sasl.password"] = saslCfg.Password
 
-	log.Printf("[INFO] KafkaProducer - SASL authentication configured successfully")
+	logger.Info("SASL authentication configured successfully")
 	return nil
 }
 
 // configureTLS configures TLS encryption for the Kafka producer
-func configureTLS(configMap *kafka.ConfigMap, tlsCfg config.TLSConfig) error {
-	log.Printf("[INFO] KafkaProducer - configuring TLS encryption")
-	log.Printf("[DEBUG] KafkaProducer - TLS InsecureSkipVerify: %t", tlsCfg.InsecureSkipVerify)
+func configureTLS(configMap *kafka.ConfigMap, tlsCfg config.TLSConfig, logger *slog.Logger) error {
+	logger.Info("Configuring TLS encryption")
+	logger.Debug("TLS configuration", slog.Bool("insecure_skip_verify", tlsCfg.InsecureSkipVerify))
 
 	if tlsCfg.InsecureSkipVerify {
-		log.Printf("[WARN] KafkaProducer - TLS certificate verification is DISABLED - not recommended for production")
+		logger.Warn("TLS certificate verification is DISABLED - not recommended for production")
 		(*configMap)["enable.ssl.certificate.verification"] = false
 	}
 
 	// Configure CA certificate
 	if tlsCfg.CAFile != "" {
-		log.Printf("[INFO] KafkaProducer - loading CA certificate from: %s", tlsCfg.CAFile)
+		logger.Info("Loading CA certificate", slog.String("ca_file", tlsCfg.CAFile))
 		(*configMap)["ssl.ca.location"] = tlsCfg.CAFile
-		log.Printf("[INFO] KafkaProducer - CA certificate configured")
+		logger.Info("CA certificate configured")
 	} else {
-		log.Printf("[DEBUG] KafkaProducer - no custom CA certificate configured (using system trust store)")
+		logger.Debug("No custom CA certificate configured (using system trust store)")
 	}
 
 	// Configure client certificate
 	if tlsCfg.CertFile != "" && tlsCfg.KeyFile != "" {
-		log.Printf("[INFO] KafkaProducer - loading client certificate from: %s", tlsCfg.CertFile)
-		log.Printf("[INFO] KafkaProducer - loading client key from: %s", tlsCfg.KeyFile)
+		logger.Info("Loading client certificate",
+			slog.String("cert_file", tlsCfg.CertFile),
+			slog.String("key_file", tlsCfg.KeyFile))
 		(*configMap)["ssl.certificate.location"] = tlsCfg.CertFile
 		(*configMap)["ssl.key.location"] = tlsCfg.KeyFile
-		log.Printf("[INFO] KafkaProducer - client certificate configured")
+		logger.Info("Client certificate configured")
 	} else {
-		log.Printf("[DEBUG] KafkaProducer - no client certificate configured (using CA trust only)")
+		logger.Debug("No client certificate configured (using CA trust only)")
 	}
 
-	log.Printf("[INFO] KafkaProducer - TLS encryption configured successfully")
+	logger.Info("TLS encryption configured successfully")
 	return nil
 }

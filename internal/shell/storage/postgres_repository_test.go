@@ -5,6 +5,8 @@ package storage
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -21,7 +23,10 @@ func setupPostgresJobRepo(t *testing.T) *PostgresJobRepository {
 		t.Fatalf("PostgreSQL test: configuration error: %v", err)
 	}
 
-	repo, err := NewPostgresJobRepository(cfg)
+	// Create test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	repo, err := NewPostgresJobRepository(cfg, testLogger)
 	if err != nil {
 		t.Fatalf("PostgreSQL test: database not available: %v", err)
 	}
@@ -39,7 +44,10 @@ func setupPostgresJobRunRepo(t *testing.T) *PostgresJobRunRepository {
 		t.Fatalf("PostgreSQL test: configuration error: %v", err)
 	}
 
-	repo, err := NewPostgresJobRunRepository(cfg)
+	// Create test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	repo, err := NewPostgresJobRunRepository(cfg, testLogger)
 	if err != nil {
 		t.Fatalf("PostgreSQL test: database not available: %v", err)
 	}

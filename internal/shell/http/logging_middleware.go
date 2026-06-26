@@ -1,11 +1,23 @@
 package http
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
+	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
+
+	"insights-scheduler/internal/shell/logging"
 )
+
+// contextKey is the type for context keys to avoid collisions
+type contextKey string
+
+const loggerContextKey contextKey = "logger"
 
 // responseWriter wraps http.ResponseWriter to capture the status code
 type responseWriter struct {
@@ -36,29 +48,76 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-// LoggingMiddleware logs HTTP requests and records Prometheus metrics
-func LoggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+// GetLogger retrieves the request-scoped logger from the request context.
+func GetLogger(r *http.Request) *slog.Logger {
+	logger, ok := r.Context().Value(loggerContextKey).(*slog.Logger)
+	if !ok {
+		return slog.Default()
+	}
+	return logger
+}
 
-		// Wrap response writer to capture status code
-		wrapped := newResponseWriter(w)
+// LoggingMiddleware logs HTTP requests using structured logging and records Prometheus metrics.
+// It creates a request-scoped logger with request_id, job_id, org_id, and user_id fields.
+func LoggingMiddleware(baseLogger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
 
-		// Call next handler
-		next.ServeHTTP(wrapped, r)
+			// Generate unique request ID
+			requestID := uuid.New().String()
 
-		// Calculate duration
-		duration := time.Since(start)
+			// Extract job ID from URL path vars (if present)
+			vars := mux.Vars(r)
+			jobID := vars["id"]
 
-		// Get status code
-		status := wrapped.statusCode
-		statusStr := strconv.Itoa(status)
+			// Extract identity from context (set by identity middleware)
+			orgID := ""
+			userID := ""
+			ident := identity.Get(r.Context())
+			if ident.Identity.OrgID != "" {
+				orgID = ident.Identity.OrgID
+				userID = ident.Identity.User.UserID
+			}
 
-		// Log completed request
-		log.Printf("Request completed %s %s with %d in %v", r.Method, r.RequestURI, status, duration)
+			// Create request-scoped logger
+			logger := logging.NewRequestLogger(baseLogger, requestID, jobID, orgID, userID)
 
-		// Record metrics
-		HTTPRequestDuration.WithLabelValues(r.Method, statusStr).Observe(duration.Seconds())
-		HTTPRequestsTotal.WithLabelValues(r.Method, statusStr).Inc()
-	})
+			// Store logger in request context
+			ctx := context.WithValue(r.Context(), loggerContextKey, logger)
+			r = r.WithContext(ctx)
+
+			// Log request start
+			logger.Debug("HTTP request received",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("remote_addr", r.RemoteAddr),
+			)
+
+			// Wrap response writer to capture status code
+			wrapped := newResponseWriter(w)
+
+			// Call next handler
+			next.ServeHTTP(wrapped, r)
+
+			// Calculate duration
+			duration := time.Since(start)
+
+			// Get status code
+			status := wrapped.statusCode
+			statusStr := strconv.Itoa(status)
+
+			// Log completed request
+			logger.Info("HTTP request completed",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", status),
+				slog.Duration("duration", duration),
+			)
+
+			// Record metrics
+			HTTPRequestDuration.WithLabelValues(r.Method, statusStr).Observe(duration.Seconds())
+			HTTPRequestsTotal.WithLabelValues(r.Method, statusStr).Inc()
+		})
+	}
 }

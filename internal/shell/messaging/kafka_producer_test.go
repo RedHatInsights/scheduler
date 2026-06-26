@@ -1,6 +1,8 @@
 package messaging
 
 import (
+	"log/slog"
+	"os"
 	"testing"
 
 	"insights-scheduler/internal/config"
@@ -18,7 +20,8 @@ func TestKafkaProducer_Configuration(t *testing.T) {
 		Topic:   "test-topic",
 	}
 
-	producer, err := NewKafkaProducer(cfg)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	producer, err := NewKafkaProducer(cfg, testLogger)
 	if err != nil {
 		t.Logf("Expected error when Kafka is not available: %v", err)
 		return

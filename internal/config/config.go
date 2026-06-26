@@ -28,8 +28,10 @@ type Config struct {
 	Scheduler     SchedulerConfig     `mapstructure:"scheduler" json:"scheduler"`
 	ThreeScale    ThreeScaleConfig    `mapstructure:"threescale" json:"threescale"`
 
-	UserValidatorImpl         string `mapstructure:"user_validator_impl" json:"user_validator_impl"`
-	JobCompletionNotifierImpl string `mapstructure:"job_completion_notifier_impl" json:"job_completion_notifier_impl"`
+	UserValidatorImpl         string           `mapstructure:"user_validator_impl" json:"user_validator_impl"`
+	JobCompletionNotifierImpl string           `mapstructure:"job_completion_notifier_impl" json:"job_completion_notifier_impl"`
+	CloudWatch                CloudWatchConfig `mapstructure:"cloudwatch" json:"cloudwatch"`
+	LogLevel                  string           `mapstructure:"log_level" json:"log_level"`
 }
 
 // ServerConfig contains HTTP server settings
@@ -144,6 +146,17 @@ type ThreeScaleConfig struct {
 	BaseURL string        `mapstructure:"base_url" json:"base_url"`
 	Timeout time.Duration `mapstructure:"timeout" json:"timeout"`
 	Enabled bool          `mapstructure:"enabled" json:"enabled"`
+}
+
+// CloudWatchConfig contains CloudWatch Logs settings
+type CloudWatchConfig struct {
+	Enabled       bool          `mapstructure:"enabled" json:"enabled"`
+	LogGroupName  string        `mapstructure:"log_group_name" json:"log_group_name"`
+	LogStreamName string        `mapstructure:"log_stream_name" json:"log_stream_name"`
+	Region        string        `mapstructure:"region" json:"region"`
+	BufferSize    int           `mapstructure:"buffer_size" json:"buffer_size"`
+	FlushInterval time.Duration `mapstructure:"flush_interval" json:"flush_interval"`
+	ConsoleOutput bool          `mapstructure:"console_output" json:"console_output"`
 }
 
 // LoadConfig loads configuration using Viper with support for config files,
@@ -287,6 +300,18 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("threescale.timeout", 5*time.Second)
 	v.SetDefault("threescale.enabled", true)
 
+	// CloudWatch
+	v.SetDefault("cloudwatch.enabled", false)
+	v.SetDefault("cloudwatch.log_group_name", "/aws/insights-scheduler")
+	v.SetDefault("cloudwatch.log_stream_name", "default")
+	v.SetDefault("cloudwatch.region", "us-east-1")
+	v.SetDefault("cloudwatch.buffer_size", 100)
+	v.SetDefault("cloudwatch.flush_interval", 5*time.Second)
+	v.SetDefault("cloudwatch.console_output", true)
+
+	// Logging
+	v.SetDefault("log_level", "info")
+
 	// Feature flags
 	v.SetDefault("user_validator_impl", "bop")
 	v.SetDefault("job_completion_notifier_impl", "notifications")
@@ -378,6 +403,18 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")
 	_ = v.BindEnv("threescale.timeout", "THREESCALE_TIMEOUT")
 	_ = v.BindEnv("threescale.enabled", "THREESCALE_ENABLED")
+
+	// CloudWatch
+	_ = v.BindEnv("cloudwatch.enabled", "CLOUDWATCH_ENABLED")
+	_ = v.BindEnv("cloudwatch.log_group_name", "CLOUDWATCH_LOG_GROUP_NAME")
+	_ = v.BindEnv("cloudwatch.log_stream_name", "CLOUDWATCH_LOG_STREAM_NAME")
+	_ = v.BindEnv("cloudwatch.region", "CLOUDWATCH_REGION")
+	_ = v.BindEnv("cloudwatch.buffer_size", "CLOUDWATCH_BUFFER_SIZE")
+	_ = v.BindEnv("cloudwatch.flush_interval", "CLOUDWATCH_FLUSH_INTERVAL")
+	_ = v.BindEnv("cloudwatch.console_output", "CLOUDWATCH_CONSOLE_OUTPUT")
+
+	// Logging
+	_ = v.BindEnv("log_level", "LOG_LEVEL")
 
 	// Feature flags
 	_ = v.BindEnv("user_validator_impl", "USER_VALIDATOR_IMPL")
@@ -486,6 +523,30 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 	// Metrics
 	config.Metrics.Port = clowderConfig.MetricsPort
 	config.Metrics.Path = clowderConfig.MetricsPath
+
+	// CloudWatch Logging
+	// Clowder provides CloudWatch configuration through the Logging section
+	if clowderConfig.Logging.Cloudwatch != nil && clowderConfig.Logging.Cloudwatch.AccessKeyId != "" {
+		config.CloudWatch.Enabled = true
+		config.CloudWatch.Region = clowderConfig.Logging.Cloudwatch.Region
+		config.CloudWatch.LogGroupName = clowderConfig.Logging.Cloudwatch.LogGroup
+
+		// Use hostname or pod name for log stream name if available
+		if hostname, err := os.Hostname(); err == nil {
+			config.CloudWatch.LogStreamName = hostname
+		}
+
+		// Access key can be provided via Clowder or fall back to environment/IAM
+		if clowderConfig.Logging.Cloudwatch.AccessKeyId != "" {
+			os.Setenv("AWS_ACCESS_KEY_ID", clowderConfig.Logging.Cloudwatch.AccessKeyId)
+		}
+		if clowderConfig.Logging.Cloudwatch.SecretAccessKey != "" {
+			os.Setenv("AWS_SECRET_ACCESS_KEY", clowderConfig.Logging.Cloudwatch.SecretAccessKey)
+		}
+
+		fmt.Printf("CloudWatch logging enabled via Clowder: group=%s, stream=%s, region=%s\n",
+			config.CloudWatch.LogGroupName, config.CloudWatch.LogStreamName, config.CloudWatch.Region)
+	}
 }
 
 // applyDerivedValues computes values that depend on other config fields.

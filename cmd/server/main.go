@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,6 +45,7 @@ import (
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
 	httpShell "insights-scheduler/internal/shell/http"
+	"insights-scheduler/internal/shell/logging"
 	"insights-scheduler/internal/shell/messaging"
 	"insights-scheduler/internal/shell/scheduler"
 	"insights-scheduler/internal/shell/storage"
@@ -176,12 +178,20 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Initialize logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
 	keepCount := cfg.Scheduler.JobRunRetentionCount
 	if keepCount < 1 {
 		return fmt.Errorf("JOB_RUN_RETENTION_COUNT must be at least 1, got %d", keepCount)
 	}
 
-	log.Printf("[PRUNE] Starting job run pruning (retaining %d runs per job)", keepCount)
+	baseLogger.Info("Starting job run pruning", slog.Int("retention_count", keepCount))
 
 	var runRepo interface {
 		CleanupOldRuns(keepPerJob int) (int64, error)
@@ -190,7 +200,7 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 
 	switch cfg.Database.Type {
 	case "postgres", "postgresql":
-		repo, err := storage.NewPostgresJobRunRepository(cfg)
+		repo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 		if err != nil {
 			return fmt.Errorf("failed to initialize PostgreSQL job run repository: %w", err)
 		}
@@ -206,9 +216,9 @@ func runPruneJobRuns(cmd *cobra.Command, args []string) error {
 	}
 
 	if deleted == 0 {
-		log.Println("[PRUNE] No old job runs to remove")
+		baseLogger.Info("No old job runs to remove")
 	} else {
-		log.Printf("[PRUNE] Successfully removed %d old job run(s)", deleted)
+		baseLogger.Info("Successfully removed old job runs", slog.Int64("deleted", deleted))
 	}
 
 	return nil
@@ -228,11 +238,24 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	log.Printf("Starting Insights Scheduler with configuration:")
-	log.Printf("  Server: %s:%d (private: %d)", cfg.Server.Host, cfg.Server.Port, cfg.Server.PrivatePort)
-	log.Printf("  Database Type: %s", cfg.Database.Type)
-	log.Printf("  Kafka: enabled=%t, brokers=%v", cfg.Kafka.Enabled, cfg.Kafka.Brokers)
-	log.Printf("  Metrics: enabled=%t, port=%d", cfg.Metrics.Enabled, cfg.Metrics.Port)
+	// Initialize structured logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
+	baseLogger.Info("Starting Insights Scheduler",
+		slog.String("host", cfg.Server.Host),
+		slog.Int("port", cfg.Server.Port),
+		slog.Int("private_port", cfg.Server.PrivatePort),
+		slog.String("database_type", cfg.Database.Type),
+		slog.Bool("kafka_enabled", cfg.Kafka.Enabled),
+		slog.Bool("metrics_enabled", cfg.Metrics.Enabled),
+		slog.Bool("cloudwatch_enabled", cfg.CloudWatch.Enabled),
+		slog.String("log_level", cfg.LogLevel),
+	)
 
 	// Create imperative shell components
 	var repo usecases.JobRepository
@@ -242,7 +265,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Unsupported database type: %s (only 'postgres' is supported)", cfg.Database.Type)
 	}
 
-	postgresRepo, err := storage.NewPostgresJobRepository(cfg)
+	postgresRepo, err := storage.NewPostgresJobRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("Failed to initialize PostgreSQL database: %v", err)
 	}
@@ -253,7 +276,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	postgresRunRepo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("Failed to initialize PostgreSQL job run repository: %v", err)
 	}
@@ -277,7 +300,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Printf("Initializing platform notifications job completion notifier")
 		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
-		kafkaProducer, err := messaging.NewKafkaProducer(&cfg.Kafka)
+		kafkaProducer, err := messaging.NewKafkaProducer(&cfg.Kafka, baseLogger)
 		if err != nil {
 			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
@@ -309,7 +332,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize job executor with map of runners
-	jobExecutor := executor.NewJobExecutor(runners, runRepo)
+	jobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
 
 	// Create functional core service
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
@@ -323,13 +346,13 @@ func runServer(cmd *cobra.Command, args []string) {
 	schedulerJobService := usecases.NewSchedulerJobService(coreJobService)
 
 	// Create cron scheduler with scheduler service adapter
-	cronScheduler := scheduler.NewCronScheduler(schedulerJobService)
+	cronScheduler := scheduler.NewCronScheduler(schedulerJobService, baseLogger)
 
 	// Connect core job service to cron scheduler
 	coreJobService.SetCronScheduler(cronScheduler)
 
 	// Setup HTTP routes with authorized service adapter
-	router := httpShell.SetupRoutes(httpJobService, jobRunService)
+	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger)
 
 	// Create HTTP server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -401,21 +424,29 @@ func runServer(cmd *cobra.Command, args []string) {
 // Writes to both Postgres (source of truth) and Redis (scheduling)
 // Scales horizontally without coordination
 func runAPI(cmd *cobra.Command, args []string) {
-	log.Println("[API] Starting Scheduler API server")
-
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("[API] Failed to load configuration: %v", err)
 	}
 
+	// Initialize structured logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		log.Fatalf("[API] Failed to initialize logger: %v", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
+	baseLogger.Info("Starting Scheduler API server")
+
 	// Initialize PostgreSQL repository (source of truth)
-	jobRepo, err := storage.NewPostgresJobRepository(cfg)
+	jobRepo, err := storage.NewPostgresJobRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[API] Failed to initialize Postgres repository: %v", err)
 	}
 
-	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[API] Failed to initialize Postgres job run repository: %v", err)
 	}
@@ -427,7 +458,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewMessageJobExecutor(), // Use message executor as dummy
 	}
-	dummyExecutor := executor.NewJobExecutor(dummyRunners, jobRunRepo)
+	dummyExecutor := executor.NewJobExecutor(dummyRunners, jobRunRepo, baseLogger)
 
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
@@ -461,7 +492,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 	jobRunService := usecases.NewJobRunService(jobRunRepo, jobRepo)
 
 	// Setup HTTP routes with authorized service adapter
-	router := httpShell.SetupRoutes(httpJobService, jobRunService)
+	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger)
 
 	// Create HTTP server
 	server := &http.Server{
@@ -506,21 +537,29 @@ func runAPI(cmd *cobra.Command, args []string) {
 // Writes to Postgres (job run history)
 // Scales horizontally with distributed locking
 func runWorker(cmd *cobra.Command, args []string) {
-	log.Println("[WORKER] Starting Scheduler Worker")
-
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to load configuration: %v", err)
 	}
 
+	// Initialize structured logger
+	baseLogger, cleanupLogger, err := logging.InitializeLogger(cfg)
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to initialize logger: %v", err)
+	}
+	defer cleanupLogger()
+	slog.SetDefault(baseLogger)
+
+	baseLogger.Info("Starting Scheduler Worker")
+
 	// Initialize PostgreSQL repository for job run history
-	jobRepo, err := storage.NewPostgresJobRepository(cfg)
+	jobRepo, err := storage.NewPostgresJobRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to initialize Postgres job repository: %v", err)
 	}
 
-	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg)
+	jobRunRepo, err := storage.NewPostgresJobRunRepository(cfg, baseLogger)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to initialize Postgres job run repository: %v", err)
 	}
@@ -536,7 +575,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 		log.Printf("Initializing platform notifications job completion notifier")
 		log.Printf("Kafka producer config - brokers: %v, topic: %s", cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
-		kafkaProducer, err := messaging.NewKafkaProducer(&cfg.Kafka)
+		kafkaProducer, err := messaging.NewKafkaProducer(&cfg.Kafka, baseLogger)
 		if err != nil {
 			log.Fatalf("Failed to initialize Kafka producer: %v", err)
 		}
@@ -566,10 +605,10 @@ func runWorker(cmd *cobra.Command, args []string) {
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
 		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier),
 	}
-	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo)
+	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 
 	// Wrap the executor with failure tracking for auto-pause functionality
-	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures)
+	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {

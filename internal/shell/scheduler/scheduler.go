@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/robfig/cron/v3"
@@ -15,18 +15,20 @@ type CronScheduler struct {
 	cron       *cron.Cron
 	jobEntries map[string]cron.EntryID // jobID -> cronEntryID mapping
 	mu         sync.RWMutex
+	logger     *slog.Logger
 }
 
-func NewCronScheduler(jobService ports.SchedulerJobService) *CronScheduler {
+func NewCronScheduler(jobService ports.SchedulerJobService, logger *slog.Logger) *CronScheduler {
 	return &CronScheduler{
 		jobService: jobService,
 		cron:       cron.New(), // Standard 5-field format (minute hour dom month dow)
 		jobEntries: make(map[string]cron.EntryID),
+		logger:     logger,
 	}
 }
 
 func (s *CronScheduler) Start(ctx context.Context) {
-	log.Println("Starting cron scheduler")
+	s.logger.Info("Starting cron scheduler")
 
 	// Load existing jobs and schedule them
 	s.loadAndScheduleAllJobs()
@@ -36,74 +38,88 @@ func (s *CronScheduler) Start(ctx context.Context) {
 
 	// Wait for context cancellation
 	<-ctx.Done()
-	log.Println("Scheduler context cancelled, stopping")
+	s.logger.Info("Scheduler context cancelled, stopping")
 }
 
 func (s *CronScheduler) Stop() {
-	log.Println("Stopping cron scheduler")
+	s.logger.Info("Stopping cron scheduler")
 	s.mu.Lock()
 	ctx := s.cron.Stop()
 	s.mu.Unlock()
 	<-ctx.Done()
-	log.Println("Cron scheduler stopped")
+	s.logger.Info("Cron scheduler stopped")
 }
 
 // ScheduleJob adds or updates a job in the cron scheduler
 func (s *CronScheduler) ScheduleJob(job domain.Job) error {
-	log.Printf("[DEBUG] CronScheduler.ScheduleJob called - job ID: %s, name: %s, schedule: %s, status: %s", job.ID, job.Name, job.Schedule, job.Status)
+	s.logger.Debug("ScheduleJob called",
+		slog.String("job_id", job.ID),
+		slog.String("name", job.Name),
+		slog.String("schedule", string(job.Schedule)),
+		slog.String("status", string(job.Status)))
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Remove existing entry if it exists
 	if entryID, exists := s.jobEntries[job.ID]; exists {
-		log.Printf("[DEBUG] CronScheduler.ScheduleJob - removing existing entry for job: %s", job.ID)
+		s.logger.Debug("Removing existing cron entry", slog.String("job_id", job.ID))
 		s.cron.Remove(entryID)
 		delete(s.jobEntries, job.ID)
 	}
 
 	// Only schedule jobs that are in scheduled status
 	if job.Status != domain.StatusScheduled && job.Status != domain.StatusFailed {
-		log.Printf("[DEBUG] CronScheduler.ScheduleJob - job not in scheduled/failed status, skipping: %s (status: %s)", job.ID, job.Status)
+		s.logger.Debug("Job not in scheduled/failed status, skipping",
+			slog.String("job_id", job.ID),
+			slog.String("status", string(job.Status)))
 		return nil
 	}
 
-	log.Printf("[DEBUG] CronScheduler.ScheduleJob - creating job execution function for: %s", job.ID)
-
 	// Create job execution function
 	jobFunc := func() {
-		log.Printf("Executing cron job: %s (%s)", job.Name, job.ID)
+		s.logger.Info("Executing cron job",
+			slog.String("job_id", job.ID),
+			slog.String("name", job.Name))
 
 		// Get the latest job state from repository
 		currentJob, err := s.jobService.GetJob(context.Background(), job.ID)
 		if err != nil {
-			log.Printf("Error getting job %s for execution: %v", job.ID, err)
+			s.logger.Error("Error getting job for execution",
+				slog.String("job_id", job.ID),
+				slog.Any("error", err))
 			return
 		}
 
 		// Only execute if job is still scheduled
 		if currentJob.Status != domain.StatusScheduled {
-			log.Printf("Job %s is no longer scheduled, skipping execution", job.ID)
+			s.logger.Debug("Job no longer scheduled, skipping execution",
+				slog.String("job_id", job.ID))
 			return
 		}
 
 		if err := s.jobService.ExecuteScheduledJob(currentJob); err != nil {
-			log.Printf("Error executing job %s: %v", job.ID, err)
+			s.logger.Error("Error executing job",
+				slog.String("job_id", job.ID),
+				slog.Any("error", err))
 		}
 	}
-
-	log.Printf("[DEBUG] CronScheduler.ScheduleJob - adding job to cron with expression: %s", job.Schedule)
 
 	// Schedule the job
 	entryID, err := s.cron.AddFunc(string(job.Schedule), jobFunc)
 	if err != nil {
-		log.Printf("[DEBUG] CronScheduler.ScheduleJob failed - cron.AddFunc error: %v", err)
+		s.logger.Error("Failed to add job to cron",
+			slog.String("job_id", job.ID),
+			slog.Any("error", err))
 		return err
 	}
 
 	s.jobEntries[job.ID] = entryID
-	log.Printf("[DEBUG] CronScheduler.ScheduleJob - job successfully added to cron scheduler: %s (entry ID: %d)", job.ID, entryID)
-	log.Printf("Scheduled job %s (%s) with cron expression: %s", job.Name, job.ID, job.Schedule)
+	s.logger.Info("Job scheduled",
+		slog.String("job_id", job.ID),
+		slog.String("name", job.Name),
+		slog.String("schedule", string(job.Schedule)),
+		slog.Int("entry_id", int(entryID)))
 
 	return nil
 }
@@ -116,29 +132,38 @@ func (s *CronScheduler) UnscheduleJob(jobID string) {
 	if entryID, exists := s.jobEntries[jobID]; exists {
 		s.cron.Remove(entryID)
 		delete(s.jobEntries, jobID)
-		log.Printf("Unscheduled job: %s", jobID)
+		s.logger.Info("Job unscheduled", slog.String("job_id", jobID))
 	}
 }
 
 // ScheduleJobImmediately executes a job immediately in the cron scheduler
 // For the in-memory cron scheduler, we execute directly since there's no distributed system
 func (s *CronScheduler) ScheduleJobImmediately(job domain.Job, jobRunID string) error {
-	log.Printf("[CronScheduler] Executing job %s immediately (job run: %s)", job.ID, jobRunID)
+	s.logger.Info("Executing job immediately",
+		slog.String("job_id", job.ID),
+		slog.String("run_id", jobRunID))
 
 	// Get the latest job state from repository
 	currentJob, err := s.jobService.GetJob(context.Background(), job.ID)
 	if err != nil {
-		log.Printf("[CronScheduler] Error getting job %s for immediate execution: %v", job.ID, err)
+		s.logger.Error("Error getting job for immediate execution",
+			slog.String("job_id", job.ID),
+			slog.Any("error", err))
 		return err
 	}
 
 	// Execute the job immediately with the pre-created job run
 	if err := s.jobService.ExecuteScheduledJobWithJobRun(currentJob, jobRunID); err != nil {
-		log.Printf("[CronScheduler] Error executing job %s immediately: %v", job.ID, err)
+		s.logger.Error("Error executing job immediately",
+			slog.String("job_id", job.ID),
+			slog.String("run_id", jobRunID),
+			slog.Any("error", err))
 		return err
 	}
 
-	log.Printf("[CronScheduler] Job %s executed immediately (job run: %s)", job.ID, jobRunID)
+	s.logger.Info("Job executed immediately",
+		slog.String("job_id", job.ID),
+		slog.String("run_id", jobRunID))
 	return nil
 }
 
@@ -146,17 +171,19 @@ func (s *CronScheduler) ScheduleJobImmediately(job domain.Job, jobRunID string) 
 func (s *CronScheduler) loadAndScheduleAllJobs() {
 	jobs, err := s.jobService.ListJobs()
 	if err != nil {
-		log.Printf("Error loading jobs: %v", err)
+		s.logger.Error("Error loading jobs", slog.Any("error", err))
 		return
 	}
 
-	log.Printf("Loading %d jobs for scheduling", len(jobs))
+	s.logger.Info("Loading jobs for scheduling", slog.Int("count", len(jobs)))
 
 	for _, job := range jobs {
 		// Only schedule jobs that are scheduled or failed
 		if job.Status == domain.StatusScheduled || job.Status == domain.StatusFailed {
 			if err := s.ScheduleJob(job); err != nil {
-				log.Printf("Error scheduling job %s: %v", job.ID, err)
+				s.logger.Error("Error scheduling job",
+					slog.String("job_id", job.ID),
+					slog.Any("error", err))
 			}
 		}
 	}

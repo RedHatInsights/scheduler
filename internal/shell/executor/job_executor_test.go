@@ -1,6 +1,8 @@
 package executor
 
 import (
+	"log/slog"
+	"os"
 	"testing"
 
 	"insights-scheduler/internal/config"
@@ -9,6 +11,9 @@ import (
 )
 
 func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
+	// Create test logger
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
 	// Create test config
 	cfg := &config.Config{
 		ExportService: config.ExportServiceConfig{
@@ -31,7 +36,7 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	}
 
 	// Create executor with map of executors
-	executor := NewJobExecutor(runners, nil)
+	executor := NewJobExecutor(runners, nil, testLogger)
 
 	// Create a test job
 	payload := map[string]interface{}{

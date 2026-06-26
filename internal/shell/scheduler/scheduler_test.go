@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 
 	"insights-scheduler/internal/core/domain"
@@ -67,7 +69,10 @@ func TestCronScheduler_ScheduleJobImmediately(t *testing.T) {
 		},
 	}
 
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	testJobRunID := "test-job-run-123"
 
@@ -98,7 +103,10 @@ func TestCronScheduler_ScheduleJobImmediately_JobNotFound(t *testing.T) {
 		},
 	}
 
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	// Create a test job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -122,7 +130,10 @@ func TestCronScheduler_ScheduleJobImmediately_ExecutionError(t *testing.T) {
 		},
 	}
 
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 
@@ -135,7 +146,10 @@ func TestCronScheduler_ScheduleJobImmediately_ExecutionError(t *testing.T) {
 
 func TestCronScheduler_ScheduleJob(t *testing.T) {
 	jobService := &mockSchedulerJobService{}
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	// Create a scheduled job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "*/5 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -158,7 +172,10 @@ func TestCronScheduler_ScheduleJob(t *testing.T) {
 
 func TestCronScheduler_ScheduleJob_SkipsPausedJobs(t *testing.T) {
 	jobService := &mockSchedulerJobService{}
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	// Create a paused job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "*/5 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -182,7 +199,10 @@ func TestCronScheduler_ScheduleJob_SkipsPausedJobs(t *testing.T) {
 
 func TestCronScheduler_UnscheduleJob(t *testing.T) {
 	jobService := &mockSchedulerJobService{}
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	// Create and schedule a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "*/5 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -214,7 +234,10 @@ func TestCronScheduler_UnscheduleJob(t *testing.T) {
 
 func TestCronScheduler_ScheduleJob_UpdatesExistingJob(t *testing.T) {
 	jobService := &mockSchedulerJobService{}
-	scheduler := NewCronScheduler(jobService)
+	// Create a test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	scheduler := NewCronScheduler(jobService, testLogger)
 
 	// Create and schedule a job
 	job := domain.NewJob("Test Job", "org-123", "user-123", "*/5 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
