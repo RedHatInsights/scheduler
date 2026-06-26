@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     last_run_at TIMESTAMP WITH TIME ZONE,
     next_run_at TIMESTAMP WITH TIME ZONE,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_failed_at TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -23,15 +25,6 @@ CREATE INDEX IF NOT EXISTS idx_jobs_last_run_at ON jobs(last_run_at) WHERE last_
 CREATE INDEX IF NOT EXISTS idx_jobs_next_run_at ON jobs(next_run_at) WHERE next_run_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_jobs_scheduled_next_run ON jobs(next_run_at) WHERE status = 'scheduled';
 
---CREATE OR REPLACE FUNCTION update_updated_at_column()
---RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = CURRENT_TIMESTAMP; RETURN NEW; END; $$ language 'plpgsql';
-
---DROP TRIGGER IF EXISTS update_jobs_updated_at ON jobs;
---CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-
-
-
 CREATE TABLE IF NOT EXISTS job_runs (
 	id UUID PRIMARY KEY,
 	job_id UUID NOT NULL,
@@ -39,7 +32,8 @@ CREATE TABLE IF NOT EXISTS job_runs (
 	start_time TIMESTAMP WITH TIME ZONE NOT NULL,
 	end_time TIMESTAMP WITH TIME ZONE,
 	error_message TEXT,
-	result TEXT,
+	result_type TEXT,
+	result JSONB,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
@@ -47,4 +41,4 @@ CREATE TABLE IF NOT EXISTS job_runs (
 CREATE INDEX IF NOT EXISTS idx_job_runs_job_id ON job_runs(job_id);
 CREATE INDEX IF NOT EXISTS idx_job_runs_status ON job_runs(status);
 CREATE INDEX IF NOT EXISTS idx_job_runs_start_time ON job_runs(start_time);
-
+CREATE INDEX IF NOT EXISTS idx_job_runs_result_gin ON job_runs USING gin(result);
