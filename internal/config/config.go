@@ -526,7 +526,7 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 
 	// CloudWatch Logging
 	// Clowder provides CloudWatch configuration through the Logging section
-	if clowderConfig.Logging.Cloudwatch != nil {
+	if clowderConfig.Logging.Cloudwatch != nil && clowderConfig.Logging.Cloudwatch.AccessKeyId != "" {
 		config.CloudWatch.Enabled = true
 		config.CloudWatch.Region = clowderConfig.Logging.Cloudwatch.Region
 		config.CloudWatch.LogGroupName = clowderConfig.Logging.Cloudwatch.LogGroup
@@ -544,8 +544,8 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 			os.Setenv("AWS_SECRET_ACCESS_KEY", clowderConfig.Logging.Cloudwatch.SecretAccessKey)
 		}
 
-		fmt.Printf("CloudWatch logging enabled via Clowder: group=%s, region=%s\n",
-			config.CloudWatch.LogGroupName, config.CloudWatch.Region)
+		fmt.Printf("CloudWatch logging enabled via Clowder: group=%s, stream=%s, region=%s\n",
+			config.CloudWatch.LogGroupName, config.CloudWatch.LogStreamName, config.CloudWatch.Region)
 	}
 }
 
