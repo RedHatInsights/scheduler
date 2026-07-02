@@ -164,16 +164,19 @@ Represents a scheduled task with cron-based execution.
 
 ```go
 type Job struct {
-    ID       string      // UUID
-    Name     string      // User-friendly name
-    OrgID    string      // Organization (multi-tenancy)
-    Username string      // Creator username
-    UserID   string      // Creator user ID
-    Schedule Schedule    // Cron expression (5-field)
-    Type     PayloadType // Job execution type
-    Payload  interface{} // Type-specific configuration
-    Status   JobStatus   // Current state
-    LastRun  *time.Time  // Last execution timestamp
+    ID                  string      // UUID
+    Name                string      // User-friendly name
+    OrgID               string      // Organization (multi-tenancy, required)
+    UserID              string      // Creator user ID (required, used for authorization)
+    Schedule            Schedule    // Cron expression (5-field)
+    Timezone            string      // Timezone for schedule interpretation (default: UTC)
+    Type                PayloadType // Job execution type
+    Payload             interface{} // Type-specific configuration
+    Status              JobStatus   // Current state
+    LastRunAt           *time.Time  // Last execution timestamp (UTC)
+    NextRunAt           *time.Time  // Next scheduled run (UTC)
+    ConsecutiveFailures int         // Counter for auto-pause feature
+    LastFailedAt        *time.Time  // Timestamp of last failure
 }
 ```
 
@@ -193,16 +196,25 @@ type Job struct {
 
 5-field cron expression: `minute hour day-of-month month day-of-week`
 
+Schedules are interpreted in the job's specified timezone, but all timestamps are stored in UTC.
+
 Predefined schedules:
 - `*/10 * * * *` - Every 10 minutes
 - `0 * * * *` - Every hour
-- `0 0 * * *` - Daily at midnight
-- `0 0 1 * *` - Monthly on the 1st
+- `0 0 * * *` - Daily at midnight (in job's timezone)
+- `0 0 1 * *` - Monthly on the 1st at midnight (in job's timezone)
+
+**Timezone Support:**
+- Jobs can specify any valid IANA timezone (e.g., "America/New_York", "Europe/London")
+- Defaults to "UTC" if not specified
+- Cron schedules are interpreted in the specified timezone
+- Next run times are calculated in the job's timezone, then converted to UTC for storage
+- Example: A job with schedule `0 9 * * *` and timezone `America/New_York` runs at 9am ET daily
 
 **Design Principles:**
 - Immutable value objects
-- Pure transformation methods: `WithStatus()`, `WithLastRun()`, `UpdateFields()`
-- Pure validation: `IsValidSchedule()`, `IsValidPayloadType()`, `IsValidStatus()`
+- Pure transformation methods: `WithStatus()`, `WithLastRunAt()`, `WithNextRunAt()`, `WithConsecutiveFailures()`, `UpdateFields()`
+- Pure validation: `IsValidSchedule()`, `IsValidPayloadType()`, `IsValidStatus()`, `IsValidTimezone()`
 
 ### JobRun
 
@@ -210,13 +222,18 @@ Records execution history for audit and debugging.
 
 ```go
 type JobRun struct {
-    ID           string       // UUID
-    JobID        string       // Reference to Job
-    Status       JobRunStatus // Execution state
-    StartTime    time.Time    // Execution start
-    EndTime      *time.Time   // Execution end (nullable)
-    ErrorMessage *string      // Failure reason (nullable)
-    Result       *string      // Execution result (nullable)
+    ID           string              // UUID
+    JobID        string              // Reference to Job
+    Status       JobRunStatus        // Execution state
+    StartTime    time.Time           // Execution start (UTC)
+    EndTime      *time.Time          // Execution end (UTC, nullable)
+    ErrorMessage *string             // Failure reason (nullable)
+    Result       *domain.JobResult   // Structured execution result (nullable)
+}
+
+type JobResult struct {
+    Type ResultType  // export, http_response, message, command, etc.
+    Data interface{} // Type-specific result data
 }
 ```
 
@@ -225,9 +242,15 @@ type JobRun struct {
 - `completed` - Successful execution
 - `failed` - Execution error
 
+**Result Types:**
+- `export` - Export service results (export ID, download URL, format, status)
+- `http_response` - HTTP response (status code, headers, body snippet)
+- `message` - Message processing result
+- `command` - Command execution result
+
 **Immutable Updates:**
-- `WithCompleted(result)` - Mark as completed
-- `WithFailed(error)` - Mark as failed
+- `WithCompleted(resultType, data)` - Mark as completed with structured result
+- `WithFailed(error)` - Mark as failed with error message
 
 ---
 
@@ -326,13 +349,16 @@ CREATE TABLE jobs (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     org_id TEXT NOT NULL,
-    username TEXT NOT NULL,
     user_id TEXT NOT NULL,
     schedule TEXT NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
     payload_type TEXT NOT NULL,
     payload_details TEXT NOT NULL,  -- JSON
     status TEXT NOT NULL,
-    last_run DATETIME,
+    last_run_at TIMESTAMP,
+    next_run_at TIMESTAMP,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_failed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -340,7 +366,17 @@ CREATE TABLE jobs (
 CREATE INDEX idx_jobs_org_id ON jobs(org_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_user_id ON jobs(user_id);
+CREATE INDEX idx_jobs_next_run_at ON jobs(next_run_at);
 ```
+
+**Schema Changes:**
+- Removed `username` field (redundant, user_id is authoritative)
+- Added `timezone` field for schedule interpretation
+- Renamed `last_run` to `last_run_at` for clarity
+- Added `next_run_at` for efficient scheduling queries
+- Added `consecutive_failures` for auto-pause feature
+- Added `last_failed_at` for failure tracking
+- Added index on `next_run_at` for scheduler performance
 
 **job_runs table:**
 ```sql
@@ -348,11 +384,11 @@ CREATE TABLE job_runs (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,
     status TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
     error_message TEXT,
-    result TEXT,
-    created_at TEXT NOT NULL,
+    result JSONB,  -- PostgreSQL: JSONB, SQLite: TEXT (JSON string)
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
 
@@ -360,6 +396,12 @@ CREATE INDEX idx_job_runs_job_id ON job_runs(job_id);
 CREATE INDEX idx_job_runs_status ON job_runs(status);
 CREATE INDEX idx_job_runs_start_time ON job_runs(start_time);
 ```
+
+**Schema Changes:**
+- Changed `result` from TEXT to JSONB (PostgreSQL) for structured results
+- Result contains: `{"type": "export", "data": {"export_id": "...", "download_url": "..."}}`
+- Timestamps use TIMESTAMP type instead of TEXT
+- Added `DEFAULT CURRENT_TIMESTAMP` for `created_at`
 
 ### Repository Pattern
 
@@ -390,14 +432,83 @@ type JobRepository interface {
 
 ## Job Scheduler
 
-### CronScheduler Architecture
+The service supports two scheduler implementations:
 
-The scheduler uses `robfig/cron/v3` for cron-based job execution.
+### 1. RedisScheduler (Production - Distributed)
+
+**Location:** `internal/shell/scheduler/redis_scheduler.go`
+
+Uses Redis for distributed scheduling across multiple worker pods.
+
+**Architecture:**
+
+```
+Redis Data Structures:
+├─ scheduler:jobs:scheduled (Sorted Set)
+│  └─ Score: next_run_timestamp, Value: job_id
+├─ scheduler:job:{id} (String - JSON)
+│  └─ ScheduledJob{Job, NextRun, Schedule, LastUpdate, JobRunID}
+├─ scheduler:lock:{id} (String)
+│  └─ Distributed lock (TTL: 5 minutes)
+└─ scheduler:sync:leader (String)
+   └─ Leader election for DB→Redis sync (TTL: 5 minutes)
+```
+
+**Execution Flow:**
+
+1. **Polling Loop** (every 10 seconds, configurable)
+   ```
+   Worker polls Redis → ZRANGEBYSCORE scheduler:jobs:scheduled -inf {now}
+                     → Get up to 100 overdue jobs
+                     → For each job:
+                         → Acquire lock: SET scheduler:lock:{id} 1 NX EX 300
+                         → If lock acquired:
+                             → Fetch job data from scheduler:job:{id}
+                             → Execute job via JobExecutor
+                             → Update job.LastRunAt, job.NextRunAt
+                             → Save to PostgreSQL
+                             → Update Redis with new next_run
+                             → Delete lock
+   ```
+
+2. **Distributed Locking:**
+   - Prevents duplicate execution across workers
+   - Lock TTL: 5 minutes (prevents stuck locks if worker crashes)
+   - Atomic `SET NX` operation ensures only one worker acquires lock
+
+3. **Startup Sync:**
+   - Worker checks if Redis has jobs: `ZCARD scheduler:jobs:scheduled`
+   - If empty: attempt leader election via `SETNX scheduler:sync:leader`
+   - Leader loads all scheduled jobs from PostgreSQL → Redis
+   - Non-leaders skip sync (leader already populated Redis)
+
+4. **Periodic Sync** (optional, hourly)
+   - Environment: `ENABLE_PERIODIC_SYNC=true`
+   - Interval: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` (default: 1h)
+   - Syncs PostgreSQL → Redis to catch missed updates
+   - Safety mechanism for Redis failures or race conditions
+
+**Benefits:**
+- Horizontal scaling (multiple workers)
+- High availability (survives worker crashes)
+- No duplicate execution (distributed locks)
+- Fast lookups (Redis sorted set)
+
+**Graceful Shutdown:**
+- Context cancellation stops polling loop
+- In-flight jobs complete before shutdown
+- Timeout: `SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT` (default: 30s)
+
+### 2. CronScheduler (Legacy - Single Process)
+
+**Location:** `internal/shell/scheduler/scheduler.go`
+
+Uses in-memory `robfig/cron/v3` scheduler. Only for local development or single-process deployments.
 
 **Lifecycle:**
 
 1. **Startup** (`Start(ctx)`)
-   - Loads all jobs with status `scheduled` or `failed`
+   - Loads all jobs with status `scheduled`
    - Adds each job to in-memory cron scheduler
    - Starts background goroutine for job execution
 
@@ -418,14 +529,19 @@ The scheduler uses `robfig/cron/v3` for cron-based job execution.
 
 **Thread Safety:**
 - Uses `sync.RWMutex` for concurrent access to job entry map
-- Safe for multi-goroutine execution
 
-**Cron Expression Support:**
+**Limitations:**
+- Single process only (no horizontal scaling)
+- No high availability (if process dies, scheduling stops)
+- Not suitable for production at scale
+
+**Cron Expression Support (Both Schedulers):**
 - Standard 5-field format: `minute hour day month weekday`
+- Timezone-aware: schedules interpreted in job's timezone
 - Examples:
   - `*/10 * * * *` - Every 10 minutes
-  - `0 9-17 * * MON-FRI` - Weekdays 9am-5pm
-  - `30 14 * * MON-FRI` - Weekdays at 2:30 PM
+  - `0 9 * * MON-FRI` - Weekdays at 9am (in job's timezone)
+  - `30 14 * * *` - Daily at 2:30 PM (in job's timezone)
 
 ---
 
@@ -435,18 +551,34 @@ The scheduler uses `robfig/cron/v3` for cron-based job execution.
 
 ```
 DefaultJobExecutor
-  ├─ Execute(job)
+  ├─ Execute(job) / ExecuteWithJobRun(job, jobRunID)
   │   ├─ Create JobRun record (status: running)
-  │   ├─ Dispatch to type-specific executor via map
-  │   ├─ Update JobRun with result (status: completed/failed)
-  │   └─ Update Job.LastRun timestamp
+  │   ├─ Track in-flight job for graceful shutdown (sync.WaitGroup)
+  │   ├─ Increment JobsCurrentlyRunning metric
+  │   ├─ Dispatch to type-specific runner via map
+  │   ├─ Update JobRun with structured result (status: completed/failed)
+  │   ├─ Decrement JobsCurrentlyRunning metric
+  │   └─ Return execution error (if any)
   │
-  └─ executors map[PayloadType]PayloadExecutor
-      ├─ PayloadMessage → MessageJobExecutor
-      ├─ PayloadHTTPRequest → HTTPJobExecutor
-      ├─ PayloadCommand → CommandJobExecutor
-      └─ PayloadExport → ExportJobExecutor
+  └─ runners map[PayloadType]JobRunner
+      ├─ PayloadMessage → MessageJobRunner (simulated)
+      ├─ PayloadHTTPRequest → HTTPJobRunner (simulated)
+      ├─ PayloadCommand → CommandJobRunner (simulated)
+      └─ PayloadExport → ExportJobRunner (production)
 ```
+
+**JobRunner Interface:**
+```go
+type JobRunner interface {
+    Execute(job domain.Job, logger *slog.Logger) (result interface{}, resultType domain.ResultType, err error)
+}
+```
+
+**Graceful Shutdown:**
+- Executor tracks in-flight jobs using `sync.WaitGroup`
+- On shutdown, waits for all running jobs to complete
+- Timeout controlled by `SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT` (default: 30s)
+- Long-running export jobs can run up to 10 minutes before forced termination
 
 ### Payload Executors
 
@@ -465,20 +597,32 @@ DefaultJobExecutor
 - Extracts `command` field from payload
 - Logs command (not actually executed)
 
-#### 4. ExportJobExecutor (Production Integration)
+#### 4. ExportJobRunner (Production Integration)
 
 **Execution Flow:**
 
-1. Generate identity header via `UserValidator`
+1. Generate identity header via `UserValidator` (BOP or 3scale)
 2. Marshal payload to `ExportRequest` struct
 3. Call `export.Client.CreateExport()` to initiate export
 4. Poll `export.Client.GetExportStatus()` until complete
-   - Max retries: configurable (default: 120)
-   - Poll interval: configurable (default: 5s)
+   - Max retries: `EXPORT_SERVICE_POLL_MAX_RETRIES` (default: 60)
+   - Poll interval: `EXPORT_SERVICE_POLL_INTERVAL` (default: 5s)
+   - Total max duration: ~5 minutes
 5. Send completion notification via `JobCompletionNotifier`
-   - Success: include download URL
+   - Success: include export ID, download URL, format
    - Failure: include error message
-6. Return result to executor
+6. Return structured result with `domain.ResultType = "export"`
+
+**Result Structure:**
+```go
+ExportResult{
+    ExportID:    "export-uuid",
+    Status:      "complete",
+    DownloadURL: "https://console.redhat.com/api/export/v1/exports/export-uuid/download",
+    Format:      "csv",
+    CreatedAt:   "2026-07-01T10:00:00Z",
+}
+```
 
 **Export Payload Structure:**
 ```json
@@ -517,21 +661,43 @@ type JobCompletionNotifier interface {
 2. **NullJobCompletionNotifier**
    - No-op for testing/disabled notifications
 
-**Platform Notification Format:**
+**Platform Notification Formats:**
+
+1. **Export Completion:**
 ```json
 {
   "version": "v1.2.0",
   "bundle": "rhel",
   "application": "insights-scheduler",
   "event_type": "export-completed",
-  "timestamp": "2026-01-26T10:30:00Z",
+  "timestamp": "2026-07-01T10:30:00Z",
   "account_id": "000202",
   "org_id": "000101",
   "context": {
     "export_id": "export-123",
     "job_id": "job-456",
     "status": "complete",
-    "download_url": "http://export-service/exports/export-123"
+    "download_url": "https://console.redhat.com/api/export/v1/exports/export-123/download",
+    "format": "csv"
+  }
+}
+```
+
+2. **Job Auto-Paused:**
+```json
+{
+  "version": "v1.2.0",
+  "bundle": "rhel",
+  "application": "insights-scheduler",
+  "event_type": "job-auto-paused",
+  "timestamp": "2026-07-01T10:35:00Z",
+  "account_id": "",
+  "org_id": "000101",
+  "context": {
+    "job_id": "job-456",
+    "job_name": "Daily Export",
+    "consecutive_failures": 3,
+    "last_error": "export service unavailable"
   }
 }
 ```
@@ -563,19 +729,25 @@ DeleteExport(ctx, exportID, identityHeader) → error
 
 ### Identity Validation
 
-**Two Implementations:**
+**Three Implementations:**
 
 1. **FakeUserValidator** (Development)
    - Generates identity header locally
-   - Hard-coded account number
+   - Hard-coded account number and org ID
    - No external service calls
    - Used when `USER_VALIDATOR_IMPL=fake`
 
-2. **BopUserValidator** (Production)
+2. **BopUserValidator** (Production - Back Office Portal)
    - Calls Back Office Portal (BOP) service
    - Validates users via `/v1/users` endpoint
    - Includes API token and client ID headers
+   - Environment: `BOP_URL`, `BOP_API_TOKEN`, `BOP_CLIENT_ID`, `BOP_INSIGHTS_ENV`
    - Used when `USER_VALIDATOR_IMPL=bop`
+
+3. **3ScaleUserValidator** (Production - API Gateway)
+   - Calls 3scale API gateway for user validation
+   - Environment: `THREESCALE_URL`
+   - Used when `USER_VALIDATOR_IMPL=3scale`
 
 **Identity Header Structure:**
 ```json
@@ -642,13 +814,21 @@ PRIVATE_PORT=8080           # Metrics port
 
 **Database Configuration:**
 ```bash
-DB_TYPE=sqlite              # Database type (sqlite|postgres)
-DB_PATH=./jobs.db          # SQLite path
-DB_HOST=localhost          # PostgreSQL host
-DB_PORT=5432               # PostgreSQL port
-DB_NAME=scheduler          # PostgreSQL database
-DB_USER=postgres           # PostgreSQL user
-DB_PASSWORD=password       # PostgreSQL password
+DB_TYPE=postgres            # Database type (postgres|sqlite)
+DB_HOST=localhost           # PostgreSQL host
+DB_PORT=5432                # PostgreSQL port
+DB_NAME=scheduler           # PostgreSQL database
+DB_USERNAME=postgres        # PostgreSQL user
+DB_PASSWORD=password        # PostgreSQL password
+DB_PATH=./jobs.db           # SQLite path (only if DB_TYPE=sqlite)
+```
+
+**Redis Configuration:**
+```bash
+REDIS_ENABLED=true          # Enable Redis-based distributed scheduling
+REDIS_HOST=localhost        # Redis server host
+REDIS_PORT=6379             # Redis server port
+REDIS_PASSWORD=             # Redis password (optional)
 ```
 
 **Kafka Configuration:**
@@ -663,24 +843,37 @@ KAFKA_TLS_ENABLED=true
 
 **Export Service Configuration:**
 ```bash
-EXPORT_SERVICE_URL=http://export-service:8000
-EXPORT_SERVICE_TIMEOUT=300s
+EXPORT_SERVICE_URL=http://export-service-service:8000/api/export/v1
+EXPORT_SERVICE_PUBLIC_URL=https://console.redhat.com/api/export/v1  # Public URL for download links
+EXPORT_SERVICE_TIMEOUT=5m
 EXPORT_SERVICE_POLL_INTERVAL=5s
-EXPORT_SERVICE_POLL_MAX_RETRIES=120
+EXPORT_SERVICE_POLL_MAX_RETRIES=60  # Max ~5 minutes of polling
+EXPORT_SERVICE_MAX_RETRIES=3         # API request retries
 ```
 
 **Identity Configuration:**
 ```bash
-USER_VALIDATOR_IMPL=bop     # bop|fake
-BOP_URL=http://bop-service:8000
+USER_VALIDATOR_IMPL=bop     # bop|3scale|fake
+BOP_URL=http://bop-service:8000/v1
 BOP_API_TOKEN=secret
 BOP_CLIENT_ID=insights-scheduler
 BOP_INSIGHTS_ENV=prod
+THREESCALE_URL=http://3scale-service:8000
 ```
 
-**Notification Configuration:**
+**Scheduler Configuration:**
 ```bash
-JOB_COMPLETION_NOTIFIER_IMPL=notifications  # notifications|null
+SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT=30s
+SCHEDULER_REDIS_POLL_INTERVAL=10s
+SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=1h
+MAX_CONSECUTIVE_FAILURES=3  # Set to 0 to disable auto-pause
+ENABLE_PERIODIC_SYNC=true   # Enable hourly DB→Redis sync
+```
+
+**Logging Configuration:**
+```bash
+LOG_LEVEL=info              # debug|info|warn|error
+LOG_FORMAT=json             # json|text
 ```
 
 ### Config Structure
@@ -702,34 +895,78 @@ type Config struct {
 
 ## Security and Multi-Tenancy
 
-### Organization Isolation
+### Authentication
 
-- **org_id** required for all job operations
-- API endpoints enforce org_id verification
-- Jobs filtered by authenticated user's org_id
-- Prevents cross-organization information leakage
+All API requests require the `X-Rh-Identity` header containing base64-encoded identity information:
 
-### User Identity Tracking
+```json
+{
+  "identity": {
+    "account_number": "000202",
+    "org_id": "000101",
+    "user": {
+      "username": "jdoe",
+      "user_id": "user-123",
+      "email": "jdoe@example.com"
+    },
+    "type": "User"
+  }
+}
+```
 
-- **username**: Who created/updated the job
-- **user_id**: Unique user identifier
-- Extracted from Red Hat identity headers
-- Used for permission checks and audit trails
-
-### Identity Middleware
-
-- From `platform-go-middlewares/v2/identity`
-- Validates Red Hat identity headers on all API endpoints
-- Extracts: org_id, user_id, username, email
-- Returns 400 Bad Request if missing
-- Injects identity context into request
+**Identity Middleware:**
+- Package: `github.com/redhatinsights/platform-go-middlewares/v2/identity`
+- Applied to all `/api/scheduler/v1/*` routes via `identity.EnforceIdentity`
+- Validates header format and extracts identity into request context
+- Returns 400 Bad Request if header is missing or invalid
+- Extracts: `org_id`, `user_id`, `username`, `email`, `account_number`
 
 ### Authorization Model
 
-- Job creation: Requires valid org_id and user_id
-- Job listing: Returns only jobs for authenticated org
-- Job updates: Verifies job belongs to authenticated org
-- Job deletion: Verifies job ownership
+The service implements **user-scoped authorization** with a two-layer approach:
+
+**Layer 1: AuthorizedJobServiceAdapter** (`internal/core/usecases/authorized_adapter.go`)
+- Adapts identity-aware interface to core service interface
+- Extracts `org_id` and `user_id` from identity context
+- Prevents users from spoofing identity fields via request payloads
+- All HTTP handlers use this adapter exclusively
+
+**Layer 2: Core Service Authorization** (`internal/core/usecases/job_service.go`)
+- `GetJobWithUserCheck(id, userID)` - Verifies job belongs to user
+- `GetJobsByUserID(userID)` - Returns only user's jobs
+- `DeleteJobWithUserCheck(id, userID)` - Requires ownership
+- `PauseJobWithUserCheck(id, userID)` - Requires ownership
+- `ResumeJobWithUserCheck(id, userID)` - Requires ownership
+- `PatchJobWithUserCheck(id, userID, updates)` - Requires ownership
+- `RunJobWithUserCheck(id, userID)` - Requires ownership
+
+**User Isolation:**
+- Jobs are scoped to `user_id` (not just `org_id`)
+- Users can only access their own jobs
+- Cross-user access attempts return `domain.ErrJobNotFound` (404)
+- 404 responses prevent information leakage (instead of 403 Forbidden)
+
+**Database Layer:**
+- Repository method: `FindByUserID(userID string, offset, limit int)`
+- Database indexes on `user_id` column for performance
+- All job queries filtered by authenticated user's ID
+
+**Identity Extraction:**
+- `org_id`: `ident.Identity.OrgID`
+- `user_id`: `ident.Identity.User.UserID`
+- These values are immutable once extracted from the identity header
+- Jobs store both for audit purposes, but authorization uses `user_id`
+
+**Authorization Flow:**
+```
+1. HTTP Request with X-Rh-Identity header
+2. Identity middleware validates and extracts identity → request context
+3. HTTP handler calls AuthorizedJobService with identity
+4. AuthorizedJobServiceAdapter extracts user_id from identity
+5. Core JobService enforces user_id-based authorization
+6. Repository filters/validates against user_id
+7. Response returns only user's data or 404 if not found
+```
 
 ---
 
@@ -764,25 +1001,61 @@ make docker-compose-up     # Start test environment
 - OpenShift templates in `openshift/` directory
 - Clowder integration for platform deployment
 
-### Dependency Injection (main.go)
+### Deployment Commands
+
+**Production Deployment:**
+
+The service supports three deployment modes via subcommands:
+
+1. **API Server** (`./scheduler api`)
+   - Runs HTTP API on port 5000
+   - Handles job CRUD operations
+   - Writes to PostgreSQL and Redis
+   - Stateless, horizontally scalable
+
+2. **Worker** (`./scheduler worker`)
+   - Polls Redis for due jobs
+   - Executes jobs via JobExecutor
+   - Writes job runs to PostgreSQL
+   - Updates Redis with next run times
+   - Stateless, horizontally scalable
+
+3. **Server** (`./scheduler` or `./scheduler server`)
+   - Runs both API and Worker in single process
+   - For local development or small deployments
+   - Not recommended for production at scale
+
+**Kubernetes Deployment:**
+```bash
+# Build container images
+docker build -f Dockerfile.api -t scheduler-api:latest .
+docker build -f Dockerfile.worker -t scheduler-worker:latest .
+
+# Deploy via Clowder (Red Hat App-SRE)
+bonfire deploy scheduler --ref-env insights-production
+```
+
+### Dependency Injection (cmd/server/main.go)
 
 **Initialization Order:**
 
-1. Load configuration (Clowder or environment)
-2. Initialize storage (SQLite or PostgreSQL)
-3. Initialize user validator (BOP or fake)
-4. Initialize scheduling service
+1. Load configuration (Clowder or environment variables)
+2. Initialize logger (structured JSON logger)
+3. Initialize storage (PostgreSQL or SQLite)
+4. Initialize user validator (BOP, 3scale, or fake)
 5. Initialize Kafka producer
 6. Initialize job completion notifier
-7. Initialize payload executors
-8. Initialize job executor with executor map
+7. Initialize job runners (export, http, message, command)
+8. Initialize job executor with runner map
 9. Initialize core services (JobService, JobRunService)
-10. Initialize cron scheduler
-11. Wire services together
-12. Setup HTTP routes
-13. Start HTTP server and metrics server
-14. Start background scheduler
-15. Setup graceful shutdown
+10. Initialize scheduler (RedisScheduler or CronScheduler)
+11. Create authorized job service adapter
+12. Wire services together
+13. Setup HTTP routes with identity middleware
+14. Start metrics server (private port 8080)
+15. Start HTTP server (public port 5000)
+16. Start background scheduler (worker mode only)
+17. Setup graceful shutdown handlers
 
 **Graceful Shutdown:**
 - Captures SIGINT/SIGTERM signals
@@ -794,16 +1067,57 @@ make docker-compose-up     # Start test environment
 ### Metrics and Observability
 
 **Prometheus Metrics:**
-- Endpoint: `/metrics` (configurable port)
-- Namespace: `insights`
-- Subsystem: `scheduler`
-- Standard Go runtime metrics
+- Endpoint: `/metrics` on private port (default: 8080)
+- Namespace: `scheduler`
 
-**Logging:**
-- Standard Go `log` package
-- Debug logs: Prefixed with `[DEBUG]`
-- Context: Function name, operation, status
-- No structured logging framework (simple text logs)
+**Executor Metrics:**
+- `scheduler_jobs_executed_total{status="success|failure"}` - Counter of job executions
+- `scheduler_jobs_currently_running` - Gauge of in-flight jobs
+- `scheduler_jobs_auto_paused_total` - Counter of auto-paused jobs
+- `scheduler_jobs_consecutive_failures` - Gauge per job
+
+**Identity Validation Metrics:**
+- `scheduler_identity_validation_total{validator="bop|3scale|fake", status="success|failure"}` - Counter
+- `scheduler_identity_validation_duration_seconds{validator}` - Histogram
+
+**HTTP Metrics:**
+- Standard Go HTTP server metrics via Prometheus
+
+**Structured Logging:**
+- Package: `log/slog` (Go standard library)
+- Format: JSON (CloudWatch-compatible)
+- Handler: `slog.NewJSONHandler` with configurable level
+
+**Log Context Fields:**
+- `job_id` - Job UUID
+- `job_run_id` - Job run UUID
+- `org_id` - Organization ID
+- `user_id` - User ID
+- `request_id` - HTTP request ID (from header)
+- `method` - HTTP method
+- `path` - HTTP path
+- `status` - HTTP status code
+
+**Log Levels:**
+- `DEBUG` - Detailed execution flow (disabled in production)
+- `INFO` - Job executions, API requests, lifecycle events
+- `WARN` - Validation failures, retryable errors
+- `ERROR` - Execution failures, unrecoverable errors
+
+**Example Log Entry:**
+```json
+{
+  "time": "2026-07-01T10:30:00.123Z",
+  "level": "INFO",
+  "msg": "Job execution completed",
+  "job_id": "job-uuid",
+  "job_run_id": "run-uuid",
+  "org_id": "000101",
+  "user_id": "user-123",
+  "status": "completed",
+  "duration_ms": 1234
+}
+```
 
 ---
 
