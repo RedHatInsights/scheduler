@@ -332,7 +332,16 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize job executor with map of runners
-	jobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
+	baseExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
+
+	// Wrap with denylist executor if denylist is configured
+	var jobExecutor executor.JobExecutor
+	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
+		log.Printf("Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
+		jobExecutor = executor.NewDenylistExecutor(baseExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
+	} else {
+		jobExecutor = baseExecutor
+	}
 
 	// Create functional core service
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
@@ -607,8 +616,17 @@ func runWorker(cmd *cobra.Command, args []string) {
 	}
 	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 
+	// Wrap with denylist executor if denylist is configured
+	var wrappedExecutor executor.JobExecutor
+	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
+		log.Printf("[WORKER] Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
+		wrappedExecutor = executor.NewDenylistExecutor(baseExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
+	} else {
+		wrappedExecutor = baseExecutor
+	}
+
 	// Wrap the executor with failure tracking for auto-pause functionality
-	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
+	jobExecutor := executor.NewFailureTrackingExecutor(wrappedExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {
