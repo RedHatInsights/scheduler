@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"fmt"
 	"log/slog"
 
 	"insights-scheduler/internal/core/domain"
@@ -40,10 +39,12 @@ func NewDenylistExecutor(wrapped JobExecutor, denylistJobIDs []string, baseLogge
 func (e *DenylistExecutor) Execute(job domain.Job) error {
 	if e.isDenied(job.ID) {
 		logger := logging.NewJobExecutionLogger(e.baseLogger, job.ID, "", job.OrgID, job.UserID)
-		logger.Warn("Job execution denied - job is on denylist",
+		logger.Warn("Job execution skipped - job is on denylist",
 			slog.String("name", job.Name),
 			slog.String("type", string(job.Type)))
-		return fmt.Errorf("job %s is on the denylist and cannot be executed", job.ID)
+		// Return nil (success) so denied jobs don't count as failures
+		// This prevents auto-pause and failure notifications for denied jobs
+		return nil
 	}
 
 	return e.wrapped.Execute(job)
@@ -52,10 +53,12 @@ func (e *DenylistExecutor) Execute(job domain.Job) error {
 func (e *DenylistExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) error {
 	if e.isDenied(job.ID) {
 		logger := logging.NewJobExecutionLogger(e.baseLogger, job.ID, jobRunID, job.OrgID, job.UserID)
-		logger.Warn("Job execution denied - job is on denylist",
+		logger.Warn("Job execution skipped - job is on denylist",
 			slog.String("name", job.Name),
 			slog.String("type", string(job.Type)))
-		return fmt.Errorf("job %s is on the denylist and cannot be executed", job.ID)
+		// Return nil (success) so denied jobs don't count as failures
+		// This prevents auto-pause and failure notifications for denied jobs
+		return nil
 	}
 
 	return e.wrapped.ExecuteWithJobRun(job, jobRunID)

@@ -332,15 +332,14 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize job executor with map of runners
-	baseExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
+	baseJobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
 
 	// Wrap with denylist executor if denylist is configured
-	var jobExecutor executor.JobExecutor
+	// NOTE: Denylist must be outermost wrapper so denied jobs don't count as failures
+	var jobExecutor executor.JobExecutor = baseJobExecutor
 	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
 		log.Printf("Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
-		jobExecutor = executor.NewDenylistExecutor(baseExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
-	} else {
-		jobExecutor = baseExecutor
+		jobExecutor = executor.NewDenylistExecutor(jobExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
 	}
 
 	// Create functional core service
@@ -616,17 +615,18 @@ func runWorker(cmd *cobra.Command, args []string) {
 	}
 	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 
+	// Wrap the executor with failure tracking for auto-pause functionality
+	failureTrackingExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
+
 	// Wrap with denylist executor if denylist is configured
-	var wrappedExecutor executor.JobExecutor
+	// NOTE: Denylist is the outermost wrapper so denied jobs don't count as failures
+	var jobExecutor executor.JobExecutor
 	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
 		log.Printf("[WORKER] Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
-		wrappedExecutor = executor.NewDenylistExecutor(baseExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
+		jobExecutor = executor.NewDenylistExecutor(failureTrackingExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
 	} else {
-		wrappedExecutor = baseExecutor
+		jobExecutor = failureTrackingExecutor
 	}
-
-	// Wrap the executor with failure tracking for auto-pause functionality
-	jobExecutor := executor.NewFailureTrackingExecutor(wrappedExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {

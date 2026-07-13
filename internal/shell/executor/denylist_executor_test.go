@@ -3,7 +3,6 @@ package executor
 import (
 	"log/slog"
 	"os"
-	"strings"
 	"testing"
 
 	"insights-scheduler/internal/core/domain"
@@ -75,12 +74,9 @@ func TestDenylistExecutor_Execute_DeniesListedJobs(t *testing.T) {
 
 	err := executor.Execute(job)
 
-	if err == nil {
-		t.Error("Expected error for denied job, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "denylist") {
-		t.Errorf("Expected error to mention denylist, got: %v", err)
+	// Denied jobs return nil (success) to avoid counting as failures
+	if err != nil {
+		t.Errorf("Expected nil for denied job (to avoid failure tracking), got: %v", err)
 	}
 
 	if mockExecutor.executeCallCount != 0 {
@@ -104,12 +100,9 @@ func TestDenylistExecutor_ExecuteWithJobRun_DeniesListedJobs(t *testing.T) {
 
 	err := executor.ExecuteWithJobRun(job, "run-123")
 
-	if err == nil {
-		t.Error("Expected error for denied job, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "denylist") {
-		t.Errorf("Expected error to mention denylist, got: %v", err)
+	// Denied jobs return nil (success) to avoid counting as failures
+	if err != nil {
+		t.Errorf("Expected nil for denied job (to avoid failure tracking), got: %v", err)
 	}
 
 	if mockExecutor.executeWithJobRunCallCount != 0 {
