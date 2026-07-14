@@ -1,7 +1,6 @@
 package http
 
 import (
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -30,7 +29,7 @@ func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.
 
 	if orgIDGuardCfg.Enabled {
 		api.Use(OrgIDGuardMiddleware(orgIDGuardCfg))
-		fmt.Printf("Org ID guard enabled: allowing org IDs [%s]\n", strings.Join(orgIDGuardCfg.AllowedOrgIDs, ", "))
+		baseLogger.Info("Org ID guard enabled", slog.String("allowed_org_ids", strings.Join(orgIDGuardCfg.AllowedOrgIDs, ", ")))
 	}
 
 	// Job CRUD operations
