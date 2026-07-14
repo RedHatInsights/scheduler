@@ -18,15 +18,18 @@ The Insights Scheduler is a job scheduling service built using Go and following 
 
 ### Core Capabilities
 
-- **Cron-based scheduling**: Standard 5-field cron expressions
+- **Cron-based scheduling**: Standard 5-field cron expressions with timezone support
 - **Multiple job types**: Message processing, HTTP requests, command execution, export service integration
-- **Persistence**: SQLite (local) or PostgreSQL (production)
+- **Persistence**: PostgreSQL (production) or SQLite (local development)
 - **Distributed scheduling**: Redis-based coordination for multi-worker deployments
 - **Horizontal scaling**: Stateless API and Worker pods with rolling updates
 - **Zero-downtime deployments**: No missed jobs during rolling updates
-- **Job run history**: Complete audit trail of all job executions
-- **Identity management**: Red Hat identity integration via X-Rh-Identity header
+- **Job run history**: Complete audit trail of all job executions with structured results
+- **User-based authorization**: User-scoped access control via X-Rh-Identity header
 - **Dual persistence**: Redis + PostgreSQL ensure job state survives failures
+- **Auto-pause on failures**: Jobs automatically pause after N consecutive failures (configurable)
+- **Structured logging**: CloudWatch-compatible JSON logging with context fields
+- **Metrics**: Prometheus metrics for monitoring job execution and system health
 
 ## Architecture Patterns
 
@@ -36,20 +39,64 @@ The codebase follows a strict separation between pure business logic and side ef
 
 ```
 internal/
-├── core/                    # Functional Core (Pure)
-│   ├── domain/              # Domain models and validation
-│   │   ├── job.go           # Immutable Job types
-│   │   └── errors.go        # Domain errors
-│   └── usecases/            # Business logic
-│       ├── job_service.go   # Job CRUD operations
-│       └── scheduling.go    # Scheduling calculations
+├── core/                           # Functional Core (Pure)
+│   ├── domain/                     # Domain models and validation
+│   │   ├── job.go                  # Immutable Job types with timezone support
+│   │   ├── job_run.go              # Job execution history
+│   │   ├── result.go               # Structured job results
+│   │   └── errors.go               # Domain errors
+│   ├── ports/                      # Interface definitions
+│   │   ├── job_service.go          # Core job operations
+│   │   ├── authorized_job_service.go  # Identity-aware operations
+│   │   ├── scheduler_job_service.go   # Scheduler-specific operations
+│   │   └── executor.go             # Job execution interface
+│   └── usecases/                   # Business logic
+│       ├── job_service.go          # Job CRUD operations
+│       ├── job_run_service.go      # Job run management
+│       ├── authorized_adapter.go   # Identity extraction adapter
+│       ├── scheduler_adapter.go    # Scheduler operations adapter
+│       └── scheduling.go           # Scheduling calculations
 │
-└── shell/                   # Imperative Shell (Side Effects)
-    ├── http/                # HTTP handlers
-    ├── storage/             # Database implementations
-    ├── scheduler/           # Background schedulers
-    ├── executor/            # Job execution
-    └── messaging/           # Kafka integration
+├── clients/                        # External service clients
+│   └── export/                     # Export service integration
+│       ├── client.go               # REST client for export service
+│       └── types.go                # Export request/response types
+│
+├── identity/                       # User validation
+│   ├── validator.go                # Identity header generation
+│   ├── bop_validator.go            # Back Office Portal integration
+│   ├── 3scale_validator.go         # 3scale API gateway integration
+│   └── metrics.go                  # Identity validation metrics
+│
+├── config/                         # Configuration management
+│   └── config.go                   # Clowder and env var configuration
+│
+└── shell/                          # Imperative Shell (Side Effects)
+    ├── http/                       # REST API
+    │   ├── routes.go               # Route definitions
+    │   ├── handlers.go             # HTTP handlers
+    │   ├── dto.go                  # Request/response DTOs
+    │   └── middleware.go           # Logging middleware
+    ├── storage/                    # Persistence
+    │   ├── postgres_repository.go  # PostgreSQL job repository
+    │   ├── postgres_job_run_repository.go  # Job run persistence
+    │   ├── migrations.go           # Schema migrations
+    │   └── memory_repository.go    # In-memory (testing)
+    ├── scheduler/                  # Background schedulers
+    │   ├── redis_scheduler.go      # Redis-based distributed scheduler
+    │   └── scheduler.go            # In-memory cron scheduler (legacy)
+    ├── executor/                   # Job execution
+    │   ├── job_executor.go         # Executor orchestration
+    │   ├── export_job_executor.go  # Export service integration
+    │   ├── http_job_executor.go    # HTTP request execution (simulated)
+    │   ├── message_job_executor.go # Message processing (simulated)
+    │   ├── command_job_executor.go # Command execution (simulated)
+    │   ├── kafka_notifier.go       # Job completion notifications
+    │   └── metrics.go              # Executor metrics
+    ├── messaging/                  # Kafka integration
+    │   └── kafka_producer.go       # Kafka message producer
+    └── logging/                    # Structured logging
+        └── logger.go               # CloudWatch-compatible JSON logger
 ```
 
 **Benefits**:
@@ -233,10 +280,34 @@ User Request
 Success Response
 ```
 
+### Auto-Pause on Consecutive Failures
+
+The scheduler automatically pauses jobs that fail repeatedly:
+
+**Configuration:**
+- Environment variable: `MAX_CONSECUTIVE_FAILURES` (default: 3)
+- Set to `0` to disable auto-pause feature
+
+**Behavior:**
+1. Each job tracks `consecutive_failures` counter
+2. Counter increments on execution failure
+3. Counter resets to 0 on successful execution
+4. When `consecutive_failures >= MAX_CONSECUTIVE_FAILURES`, job status changes to `paused`
+5. Paused jobs must be manually resumed via `/jobs/{id}/resume` endpoint
+
+**Notifications:**
+- Auto-paused jobs trigger Kafka notification to `platform.notifications.ingress` topic
+- Event type: `job-auto-paused`
+- Context includes: `job_id`, `consecutive_failures`, `last_error`
+
+**Metrics:**
+- `scheduler_jobs_auto_paused_total` - Counter of auto-paused jobs
+- `scheduler_jobs_consecutive_failures` - Gauge of current failure count per job
+
 ### Job Execution
 
 ```
-Worker Pod (polling every 1 second)
+Worker Pod (polling every 10 seconds, configurable via SCHEDULER_REDIS_POLL_INTERVAL)
     │
     ▼
 ┌───────────────┐
@@ -816,25 +887,59 @@ Structured logging with context:
 
 ### Authentication
 
-All API requests require X-Rh-Identity header:
+All API requests require the `X-Rh-Identity` header, which is enforced by the `identity.EnforceIdentity` middleware on all `/api/scheduler/v1/*` routes.
 
+**Identity Header Format:**
 ```
 X-Rh-Identity: <base64-encoded-json>
 {
   "identity": {
-    "org_id": "12345",
+    "org_id": "000101",
     "user": {
-      "user_id": "67890"
-    }
+      "user_id": "user-123",
+      "username": "jdoe",
+      "email": "jdoe@example.com"
+    },
+    "type": "User",
+    "account_number": "000202"
   }
 }
 ```
 
+The middleware validates the header and extracts identity information into the request context. Missing or invalid identity headers result in 400 Bad Request responses.
+
 ### Authorization
 
-- Users can only access jobs within their organization
-- `org_id` from identity header used for filtering
-- Database queries include `WHERE org_id = ?`
+The service implements **user-based authorization** with multi-tenant isolation:
+
+**Two-Layer Authorization Model:**
+
+1. **AuthorizedJobServiceAdapter** (`internal/core/usecases/authorized_adapter.go`)
+   - Extracts `org_id` and `user_id` from the identity context
+   - Passes these values to the core service layer
+   - Users cannot spoof org_id or user_id via request payloads
+
+2. **Core Service Authorization Checks** (`internal/core/usecases/job_service.go`)
+   - `GetJobWithUserCheck()` - Verifies `job.UserID == userID`
+   - `GetJobsByUserID()` - Filters jobs by user ID
+   - Authorization failures return `ErrJobNotFound` (404) instead of 403 to prevent information leakage
+
+**User Isolation:**
+- Jobs are scoped to `user_id` (not just `org_id`)
+- Users can only view, modify, and delete their own jobs
+- Cross-user access attempts return "job not found" to prevent enumeration attacks
+
+**Database Filtering:**
+- Repository methods filter by `user_id`: `FindByUserID(userID string)`
+- Indexes exist on `user_id` and `org_id` columns for performance
+
+**Request Flow:**
+```
+1. HTTP Request → Identity Middleware validates X-Rh-Identity header
+2. AuthorizedJobServiceAdapter extracts user_id from identity
+3. Core JobService enforces user_id authorization checks
+4. Repository filters jobs by user_id
+```
 
 ### Network Security
 
