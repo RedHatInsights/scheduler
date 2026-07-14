@@ -352,7 +352,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	coreJobService.SetCronScheduler(cronScheduler)
 
 	// Setup HTTP routes with authorized service adapter
-	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger)
+	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger, cfg.OrgIDGuard)
 
 	// Create HTTP server
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -492,7 +492,7 @@ func runAPI(cmd *cobra.Command, args []string) {
 	jobRunService := usecases.NewJobRunService(jobRunRepo, jobRepo)
 
 	// Setup HTTP routes with authorized service adapter
-	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger)
+	router := httpShell.SetupRoutes(httpJobService, jobRunService, baseLogger, cfg.OrgIDGuard)
 
 	// Create HTTP server
 	server := &http.Server{

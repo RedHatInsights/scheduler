@@ -27,6 +27,7 @@ type Config struct {
 	Bop           BopConfig           `mapstructure:"bop" json:"bop"`
 	Scheduler     SchedulerConfig     `mapstructure:"scheduler" json:"scheduler"`
 	ThreeScale    ThreeScaleConfig    `mapstructure:"threescale" json:"threescale"`
+	OrgIDGuard    OrgIDGuardConfig    `mapstructure:"org_id_guard" json:"org_id_guard"`
 
 	UserValidatorImpl         string           `mapstructure:"user_validator_impl" json:"user_validator_impl"`
 	JobCompletionNotifierImpl string           `mapstructure:"job_completion_notifier_impl" json:"job_completion_notifier_impl"`
@@ -146,6 +147,13 @@ type ThreeScaleConfig struct {
 	BaseURL string        `mapstructure:"base_url" json:"base_url"`
 	Timeout time.Duration `mapstructure:"timeout" json:"timeout"`
 	Enabled bool          `mapstructure:"enabled" json:"enabled"`
+}
+
+// OrgIDGuardConfig restricts API access to a set of allowed org IDs.
+// When enabled with an empty allowlist, all requests are denied.
+type OrgIDGuardConfig struct {
+	Enabled       bool     `mapstructure:"enabled" json:"enabled"`
+	AllowedOrgIDs []string `mapstructure:"allowed_org_ids" json:"allowed_org_ids"`
 }
 
 // CloudWatchConfig contains CloudWatch Logs settings
@@ -300,6 +308,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("threescale.timeout", 5*time.Second)
 	v.SetDefault("threescale.enabled", true)
 
+	// Org ID Guard
+	v.SetDefault("org_id_guard.enabled", false)
+	v.SetDefault("org_id_guard.allowed_org_ids", []string{})
+
 	// CloudWatch
 	v.SetDefault("cloudwatch.enabled", false)
 	v.SetDefault("cloudwatch.log_group_name", "/aws/insights-scheduler")
@@ -403,6 +415,10 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")
 	_ = v.BindEnv("threescale.timeout", "THREESCALE_TIMEOUT")
 	_ = v.BindEnv("threescale.enabled", "THREESCALE_ENABLED")
+
+	// Org ID Guard
+	_ = v.BindEnv("org_id_guard.enabled", "ORG_ID_GUARD_ENABLED")
+	_ = v.BindEnv("org_id_guard.allowed_org_ids", "ORG_ID_GUARD_ALLOWED_ORG_IDS")
 
 	// CloudWatch
 	_ = v.BindEnv("cloudwatch.enabled", "CLOUDWATCH_ENABLED")

@@ -133,6 +133,10 @@ objects:
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
         - name: REDIS_ENABLED
           value: "true"
+        - name: ORG_ID_GUARD_ENABLED
+          value: ${ORG_ID_GUARD_ENABLED}
+        - name: ORG_ID_GUARD_ALLOWED_ORG_IDS
+          value: ${ORG_ID_GUARD_ALLOWED_ORG_IDS}
 
     - name: worker
       webServices:
@@ -356,6 +360,13 @@ parameters:
   description: Public-facing URL for export service download links
   value: https://console.redhat.com/api/export/v1
   required: true
+
+- name: ORG_ID_GUARD_ENABLED
+  description: Enable the org ID guard middleware to restrict API access to allowed org IDs
+  value: "false"
+- name: ORG_ID_GUARD_ALLOWED_ORG_IDS
+  description: Comma-separated list of org IDs allowed to access the API (only used when ORG_ID_GUARD_ENABLED is true)
+  value: ""
 
 - name: CLEANUP_SCHEDULE
   description: Cron schedule for job run cleanup (default daily at 2 AM UTC)

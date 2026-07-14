@@ -1,16 +1,19 @@
 package http
 
 import (
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
 
+	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/core/usecases"
 )
 
-func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.JobRunService, baseLogger *slog.Logger) *mux.Router {
+func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.JobRunService, baseLogger *slog.Logger, orgIDGuardCfg config.OrgIDGuardConfig) *mux.Router {
 	router := mux.NewRouter()
 	handler := NewJobHandler(jobService)
 	runHandler := NewJobRunHandler(jobRunService)
@@ -24,6 +27,11 @@ func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.
 	// Apply identity middleware to all API routes
 	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
 	api.Use(identity.EnforceIdentity)
+
+	if orgIDGuardCfg.Enabled {
+		api.Use(OrgIDGuardMiddleware(orgIDGuardCfg))
+		fmt.Printf("Org ID guard enabled: allowing org IDs [%s]\n", strings.Join(orgIDGuardCfg.AllowedOrgIDs, ", "))
+	}
 
 	// Job CRUD operations
 	api.HandleFunc("/jobs", handler.CreateJob).Methods("POST")
