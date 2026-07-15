@@ -41,6 +41,7 @@ import (
 
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
@@ -336,7 +337,7 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Wrap with denylist executor if denylist is configured
 	// NOTE: Denylist must be outermost wrapper so denied jobs don't count as failures
-	var jobExecutor executor.JobExecutor = baseJobExecutor
+	var jobExecutor ports.JobExecutor = baseJobExecutor
 	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
 		log.Printf("Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
 		jobExecutor = executor.NewDenylistExecutor(jobExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
@@ -620,7 +621,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 	// Wrap with denylist executor if denylist is configured
 	// NOTE: Denylist is the outermost wrapper so denied jobs don't count as failures
-	var jobExecutor executor.JobExecutor
+	var jobExecutor ports.JobExecutor
 	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
 		log.Printf("[WORKER] Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
 		jobExecutor = executor.NewDenylistExecutor(failureTrackingExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
