@@ -2,6 +2,7 @@ package executor
 
 import (
 	"log/slog"
+	"strings"
 
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/ports"
@@ -17,10 +18,13 @@ type DenylistExecutor struct {
 }
 
 func NewDenylistExecutor(wrapped ports.JobExecutor, denylistJobIDs []string, baseLogger *slog.Logger) *DenylistExecutor {
-	// Convert slice to map for O(1) lookups
+	// Convert slice to map for O(1) lookups, trimming whitespace from each ID
 	denylistMap := make(map[string]bool)
 	for _, jobID := range denylistJobIDs {
-		denylistMap[jobID] = true
+		trimmed := strings.TrimSpace(jobID)
+		if trimmed != "" {
+			denylistMap[trimmed] = true
+		}
 	}
 
 	return &DenylistExecutor{

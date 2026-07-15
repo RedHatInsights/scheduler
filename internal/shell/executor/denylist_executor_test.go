@@ -134,3 +134,75 @@ func TestDenylistExecutor_EmptyDenylist_AllowsAllJobs(t *testing.T) {
 		t.Errorf("Expected wrapped executor to be called once, got %d", mockExecutor.executeCallCount)
 	}
 }
+
+func TestDenylistExecutor_TrimsWhitespace(t *testing.T) {
+	mockExecutor := &MockExecutor{}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// Denylist with spaces around job IDs (simulates SCHEDULER_DENYLIST_JOB_IDS="job-1, job-2, job-3")
+	denylist := []string{" denied-job-1 ", "denied-job-2 ", " denied-job-3"}
+	executor := NewDenylistExecutor(mockExecutor, denylist, logger)
+
+	tests := []struct {
+		jobID          string
+		shouldBeDenied bool
+		description    string
+	}{
+		{"denied-job-1", true, "leading and trailing spaces"},
+		{"denied-job-2", true, "trailing space"},
+		{"denied-job-3", true, "leading space"},
+		{"allowed-job", false, "not on denylist"},
+	}
+
+	for _, tt := range tests {
+		mockExecutor.executeCallCount = 0
+
+		job := domain.Job{
+			ID:     tt.jobID,
+			Name:   "Test Job",
+			OrgID:  "org1",
+			UserID: "user1",
+		}
+
+		err := executor.Execute(job)
+
+		if err != nil {
+			t.Errorf("[%s] Expected no error, got: %v", tt.description, err)
+		}
+
+		if tt.shouldBeDenied && mockExecutor.executeCallCount != 0 {
+			t.Errorf("[%s] Job %s should be denied, but was executed", tt.description, tt.jobID)
+		}
+
+		if !tt.shouldBeDenied && mockExecutor.executeCallCount != 1 {
+			t.Errorf("[%s] Job %s should be allowed, but was denied", tt.description, tt.jobID)
+		}
+	}
+}
+
+func TestDenylistExecutor_IgnoresEmptyStrings(t *testing.T) {
+	mockExecutor := &MockExecutor{}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// Denylist with empty strings (could happen with trailing commas: "job-1,job-2,")
+	denylist := []string{"denied-job-1", "", "  ", "denied-job-2"}
+	executor := NewDenylistExecutor(mockExecutor, denylist, logger)
+
+	job := domain.Job{
+		ID:     "denied-job-1",
+		Name:   "Denied Job",
+		OrgID:  "org1",
+		UserID: "user1",
+	}
+
+	err := executor.Execute(job)
+
+	// Should be denied
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	if mockExecutor.executeCallCount != 0 {
+		t.Error("Job should be denied")
+	}
+}

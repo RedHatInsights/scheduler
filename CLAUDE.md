@@ -134,6 +134,7 @@ Jobs support four payload types:
 - Default: Empty (no jobs denied)
 - Description: Comma-separated list of job IDs that should not be executed. Denied jobs will be logged but not run.
 - Example: `SCHEDULER_DENYLIST_JOB_IDS=job-id-1,job-id-2,job-id-3`
+- Whitespace handling: Spaces around job IDs are automatically trimmed (e.g., `job-1, job-2, job-3` works correctly)
 - Note: When the scheduler attempts to execute a denied job, it will log a warning message and skip execution (returning success to avoid triggering failure tracking). The job remains in the database and scheduled, but will silently skip execution while on the denylist. Denied jobs do not count as failures and will not auto-pause.
 
 ### Database Configuration
