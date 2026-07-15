@@ -9,7 +9,7 @@ import (
 )
 
 // DenylistExecutor wraps another executor and checks if job IDs are on a denylist before executing.
-// If a job is denied, it logs the denial and returns success without executing.
+// Denied jobs are logged and return nil (success) to avoid triggering failure tracking or auto-pause.
 type DenylistExecutor struct {
 	wrapped     ports.JobExecutor
 	denylistIDs map[string]bool
