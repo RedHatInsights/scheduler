@@ -336,7 +336,10 @@ func runServer(cmd *cobra.Command, args []string) {
 	baseJobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
 
 	// Wrap with denylist executor if denylist is configured
-	// NOTE: Denylist must be outermost wrapper so denied jobs don't count as failures
+	// NOTE: In legacy server mode, denylist wraps baseExecutor directly (no FailureTrackingExecutor).
+	// Failure tracking is done by JobService.ExecuteScheduledJobWithJobRun() instead.
+	// This differs from worker mode where denylist wraps FailureTrackingExecutor, but both
+	// achieve the same result: denied jobs return nil (success) and don't increment failures.
 	var jobExecutor ports.JobExecutor = baseJobExecutor
 	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
 		log.Printf("Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
