@@ -41,6 +41,7 @@ import (
 
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
@@ -332,7 +333,18 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Initialize job executor with map of runners
-	jobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
+	baseJobExecutor := executor.NewJobExecutor(runners, runRepo, baseLogger)
+
+	// Wrap with denylist executor if denylist is configured
+	// NOTE: In legacy server mode, denylist wraps baseExecutor directly (no FailureTrackingExecutor).
+	// Failure tracking is done by JobService.ExecuteScheduledJobWithJobRun() instead.
+	// This differs from worker mode where denylist wraps FailureTrackingExecutor, but both
+	// achieve the same result: denied jobs return nil (success) and don't increment failures.
+	var jobExecutor ports.JobExecutor = baseJobExecutor
+	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
+		log.Printf("Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
+		jobExecutor = executor.NewDenylistExecutor(jobExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
+	}
 
 	// Create functional core service
 	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
@@ -608,7 +620,17 @@ func runWorker(cmd *cobra.Command, args []string) {
 	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 
 	// Wrap the executor with failure tracking for auto-pause functionality
-	jobExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
+	failureTrackingExecutor := executor.NewFailureTrackingExecutor(baseExecutor, jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures, baseLogger)
+
+	// Wrap with denylist executor if denylist is configured
+	// NOTE: Denylist is the outermost wrapper so denied jobs don't count as failures
+	var jobExecutor ports.JobExecutor
+	if len(cfg.Scheduler.DenylistJobIDs) > 0 {
+		log.Printf("[WORKER] Job denylist enabled with %d denied job IDs", len(cfg.Scheduler.DenylistJobIDs))
+		jobExecutor = executor.NewDenylistExecutor(failureTrackingExecutor, cfg.Scheduler.DenylistJobIDs, baseLogger)
+	} else {
+		jobExecutor = failureTrackingExecutor
+	}
 
 	// Initialize Redis scheduler
 	if !cfg.Redis.Enabled {

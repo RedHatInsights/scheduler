@@ -140,6 +140,7 @@ type SchedulerConfig struct {
 	EnablePeriodicSync      bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
 	JobRunRetentionCount    int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
 	MaxConsecutiveFailures  int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
+	DenylistJobIDs          []string      `mapstructure:"denylist_job_ids" json:"denylist_job_ids"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
@@ -302,6 +303,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.enable_periodic_sync", false)
 	v.SetDefault("scheduler.job_run_retention_count", 10)
 	v.SetDefault("scheduler.max_consecutive_failures", 3)
+	v.SetDefault("scheduler.denylist_job_ids", []string{})
 
 	// 3scale
 	v.SetDefault("threescale.base_url", "http://3scale-service:8000")
@@ -410,6 +412,7 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("scheduler.enable_periodic_sync", "ENABLE_PERIODIC_SYNC")
 	_ = v.BindEnv("scheduler.job_run_retention_count", "JOB_RUN_RETENTION_COUNT")
 	_ = v.BindEnv("scheduler.max_consecutive_failures", "MAX_CONSECUTIVE_FAILURES")
+	_ = v.BindEnv("scheduler.denylist_job_ids", "SCHEDULER_DENYLIST_JOB_IDS")
 
 	// 3scale
 	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")

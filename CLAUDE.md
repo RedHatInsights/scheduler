@@ -129,6 +129,14 @@ Jobs support four payload types:
 - Example: `MAX_CONSECUTIVE_FAILURES=5`
 - Note: When a job fails N consecutive times, it will be automatically paused and will not run again until manually resumed via the `/jobs/{id}/resume` endpoint. The failure counter resets to 0 after any successful execution or when the job is manually resumed.
 
+**Job Denylist**:
+- Variable: `SCHEDULER_DENYLIST_JOB_IDS`
+- Default: Empty (no jobs denied)
+- Description: Comma-separated list of job IDs that should not be executed. Denied jobs will be logged but not run.
+- Example: `SCHEDULER_DENYLIST_JOB_IDS=job-id-1,job-id-2,job-id-3`
+- Whitespace handling: Spaces around job IDs are automatically trimmed (e.g., `job-1, job-2, job-3` works correctly)
+- Note: When the scheduler attempts to execute a denied job, it will log a warning message and skip execution (returning success to avoid triggering failure tracking). The job remains in the database and scheduled, but will silently skip execution while on the denylist. Denied jobs do not count as failures and will not auto-pause.
+
 ### Database Configuration
 
 - `DB_TYPE`: Database type (`sqlite`, `postgres`)

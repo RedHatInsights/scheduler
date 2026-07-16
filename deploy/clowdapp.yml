@@ -246,6 +246,8 @@ objects:
           value: "-1"
         - name: THREESCALE_URL
           value: ${THREESCALE_URL}
+        - name: SCHEDULER_DENYLIST_JOB_IDS
+          value: ${SCHEDULER_DENYLIST_JOB_IDS}
 
     jobs:
     - name: job-run-cleanup
@@ -377,3 +379,6 @@ parameters:
 - name: JOB_RUN_RETENTION_COUNT
   description: Number of recent job runs to retain per job during cleanup
   value: "10"
+- name: SCHEDULER_DENYLIST_JOB_IDS
+  description: Comma-separated list of job IDs to deny execution (jobs will be logged but not run)
+  value: ""
