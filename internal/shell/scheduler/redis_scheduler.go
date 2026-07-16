@@ -2,14 +2,18 @@ package scheduler
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/robfig/cron/v3"
 
+	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/ports"
 )
@@ -61,12 +65,24 @@ const (
 )
 
 // NewRedisScheduler creates a new Redis-based scheduler
-func NewRedisScheduler(redisAddr string, executor ports.JobExecutor, jobRepo JobRepository, pollInterval time.Duration) (*RedisScheduler, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+func NewRedisScheduler(redisCfg config.RedisConfig, executor ports.JobExecutor, jobRepo JobRepository, pollInterval time.Duration) (*RedisScheduler, error) {
+	opts := &redis.Options{
+		Addr:     fmt.Sprintf("%s:%d", redisCfg.Host, redisCfg.Port),
+		Password: redisCfg.Password,
+		DB:       redisCfg.DB,
+		PoolSize: redisCfg.PoolSize,
+	}
+
+	if redisCfg.TLS.Enabled {
+		tlsConfig, err := buildTLSConfig(redisCfg.TLS)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure Redis TLS: %w", err)
+		}
+		opts.TLSConfig = tlsConfig
+		log.Printf("[RedisScheduler] TLS enabled for Redis connection to %s", opts.Addr)
+	}
+
+	client := redis.NewClient(opts)
 
 	// Test connection
 	ctx := context.Background()
@@ -90,6 +106,34 @@ func NewRedisScheduler(redisAddr string, executor ports.JobExecutor, jobRepo Job
 		cancel:       cancel,
 		pollInterval: pollInterval,
 	}, nil
+}
+
+func buildTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+
+	if cfg.CAFile != "" {
+		caCert, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA file %s: %w", cfg.CAFile, err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate from %s", cfg.CAFile)
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	if cfg.CertFile != "" && cfg.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
 }
 
 // Start begins the scheduler loop

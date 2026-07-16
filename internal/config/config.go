@@ -62,12 +62,13 @@ type DatabaseConfig struct {
 
 // RedisConfig contains Redis connection settings
 type RedisConfig struct {
-	Enabled  bool   `mapstructure:"enabled" json:"enabled"`
-	Host     string `mapstructure:"host" json:"host"`
-	Port     int    `mapstructure:"port" json:"port"`
-	Password string `mapstructure:"password" json:"password"`
-	DB       int    `mapstructure:"db" json:"db"`
-	PoolSize int    `mapstructure:"pool_size" json:"pool_size"`
+	Enabled  bool      `mapstructure:"enabled" json:"enabled"`
+	Host     string    `mapstructure:"host" json:"host"`
+	Port     int       `mapstructure:"port" json:"port"`
+	Password string    `mapstructure:"password" json:"password"`
+	DB       int       `mapstructure:"db" json:"db"`
+	PoolSize int       `mapstructure:"pool_size" json:"pool_size"`
+	TLS      TLSConfig `mapstructure:"tls" json:"tls"`
 }
 
 // KafkaConfig contains Kafka connection settings
@@ -251,6 +252,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
 	v.SetDefault("redis.pool_size", 10)
+	v.SetDefault("redis.tls.enabled", false)
+	v.SetDefault("redis.tls.insecure_skip_verify", false)
+	v.SetDefault("redis.tls.cert_file", "")
+	v.SetDefault("redis.tls.key_file", "")
+	v.SetDefault("redis.tls.ca_file", "")
 
 	// Kafka
 	v.SetDefault("kafka.enabled", false)
@@ -361,6 +367,11 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("redis.password", "REDIS_PASSWORD")
 	_ = v.BindEnv("redis.db", "REDIS_DB")
 	_ = v.BindEnv("redis.pool_size", "REDIS_POOL_SIZE")
+	_ = v.BindEnv("redis.tls.enabled", "REDIS_TLS_ENABLED")
+	_ = v.BindEnv("redis.tls.insecure_skip_verify", "REDIS_TLS_INSECURE_SKIP_VERIFY")
+	_ = v.BindEnv("redis.tls.cert_file", "REDIS_TLS_CERT_FILE")
+	_ = v.BindEnv("redis.tls.key_file", "REDIS_TLS_KEY_FILE")
+	_ = v.BindEnv("redis.tls.ca_file", "REDIS_TLS_CA_FILE")
 
 	// Kafka
 	_ = v.BindEnv("kafka.brokers", "KAFKA_BROKERS")
@@ -484,6 +495,15 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 
 		if clowderConfig.InMemoryDb.Username != nil && *clowderConfig.InMemoryDb.Username != "" {
 			fmt.Printf("Redis username provided: %s (note: currently only password auth is used)\n", *clowderConfig.InMemoryDb.Username)
+		}
+
+		if clowderConfig.InMemoryDb.SslMode != nil && *clowderConfig.InMemoryDb.SslMode {
+			config.Redis.TLS.Enabled = true
+			fmt.Println("Redis TLS: enabled via Clowder")
+			if clowderConfig.TlsCAPath != nil && *clowderConfig.TlsCAPath != "" {
+				config.Redis.TLS.CAFile = *clowderConfig.TlsCAPath
+				fmt.Printf("Redis TLS: using CA from Clowder TlsCAPath: %s\n", *clowderConfig.TlsCAPath)
+			}
 		}
 	} else {
 		if config.Redis.Enabled {
