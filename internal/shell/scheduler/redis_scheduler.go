@@ -131,6 +131,8 @@ func buildTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
 			return nil, fmt.Errorf("failed to load client certificate: %w", err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
+	} else if cfg.CertFile != "" || cfg.KeyFile != "" {
+		return nil, fmt.Errorf("both cert_file and key_file must be provided for mTLS (got cert_file=%q, key_file=%q)", cfg.CertFile, cfg.KeyFile)
 	}
 
 	return tlsConfig, nil

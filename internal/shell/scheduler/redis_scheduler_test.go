@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -434,6 +435,36 @@ func TestBuildTLSConfig_InvalidClientCerts(t *testing.T) {
 	_, err := buildTLSConfig(cfg)
 	if err == nil {
 		t.Fatal("Expected error for invalid client certs, got nil")
+	}
+}
+
+func TestBuildTLSConfig_PartialClientCert_CertOnly(t *testing.T) {
+	cfg := config.TLSConfig{
+		Enabled:  true,
+		CertFile: "/some/cert.pem",
+	}
+
+	_, err := buildTLSConfig(cfg)
+	if err == nil {
+		t.Fatal("Expected error when CertFile is set without KeyFile, got nil")
+	}
+	if !strings.Contains(err.Error(), "both cert_file and key_file must be provided") {
+		t.Errorf("Expected partial cert error message, got: %v", err)
+	}
+}
+
+func TestBuildTLSConfig_PartialClientCert_KeyOnly(t *testing.T) {
+	cfg := config.TLSConfig{
+		Enabled: true,
+		KeyFile: "/some/key.pem",
+	}
+
+	_, err := buildTLSConfig(cfg)
+	if err == nil {
+		t.Fatal("Expected error when KeyFile is set without CertFile, got nil")
+	}
+	if !strings.Contains(err.Error(), "both cert_file and key_file must be provided") {
+		t.Errorf("Expected partial cert error message, got: %v", err)
 	}
 }
 

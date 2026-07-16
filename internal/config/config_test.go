@@ -791,8 +791,3 @@ func intPtr(i int) *int {
 func stringPtr(s string) *string {
 	return &s
 }
-
-// Helper function for creating bool pointers
-func boolPtr(b bool) *bool {
-	return &b
-}

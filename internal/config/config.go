@@ -251,7 +251,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("redis.port", 6379)
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
-	v.SetDefault("redis.pool_size", 10)
+	// 0 lets go-redis use its own default: 10 * runtime.GOMAXPROCS(0)
+	v.SetDefault("redis.pool_size", 0)
 	v.SetDefault("redis.tls.enabled", false)
 	v.SetDefault("redis.tls.insecure_skip_verify", false)
 	v.SetDefault("redis.tls.cert_file", "")
@@ -503,6 +504,8 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 			if clowderConfig.TlsCAPath != nil && *clowderConfig.TlsCAPath != "" {
 				config.Redis.TLS.CAFile = *clowderConfig.TlsCAPath
 				fmt.Printf("Redis TLS: using CA from Clowder TlsCAPath: %s\n", *clowderConfig.TlsCAPath)
+			} else {
+				fmt.Println("WARNING: Redis TLS enabled but no Clowder TlsCAPath provided, falling back to system trust store")
 			}
 		}
 	} else {
