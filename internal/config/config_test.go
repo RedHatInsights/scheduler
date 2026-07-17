@@ -18,6 +18,7 @@ func clearConfigEnvVars(t *testing.T) {
 		"DB_TYPE", "DB_PATH", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USERNAME", "DB_PASSWORD",
 		"DB_SSL_MODE", "DB_MAX_OPEN_CONNECTIONS", "DB_MAX_IDLE_CONNECTIONS", "DB_CONNECTION_MAX_LIFETIME",
 		"REDIS_ENABLED", "REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_DB", "REDIS_POOL_SIZE",
+		"REDIS_TLS_ENABLED", "REDIS_TLS_INSECURE_SKIP_VERIFY", "REDIS_TLS_CERT_FILE", "REDIS_TLS_KEY_FILE", "REDIS_TLS_CA_FILE",
 		"KAFKA_BROKERS", "KAFKA_TOPIC", "KAFKA_SECURITY_PROTOCOL", "KAFKA_CLIENT_ID", "KAFKA_TIMEOUT",
 		"KAFKA_RETRIES", "KAFKA_BATCH_SIZE", "KAFKA_COMPRESSION", "KAFKA_REQUIRED_ACKS",
 		"KAFKA_SASL_ENABLED", "KAFKA_SASL_MECHANISM", "KAFKA_SASL_USERNAME", "KAFKA_SASL_PASSWORD",
@@ -631,6 +632,153 @@ func TestDurationEnvironmentVariables(t *testing.T) {
 
 	if config.ExportService.Timeout != 10*time.Minute {
 		t.Errorf("Expected export service timeout 10m, got %v", config.ExportService.Timeout)
+	}
+}
+
+func TestClowderRedisOverrides(t *testing.T) {
+	clearConfigEnvVars(t)
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	sslMode := true
+	password := "redis-secret"
+	username := "redis-user"
+	tlsCAPath := "/tmp/clowder-ca/ca.pem"
+
+	mockClowder := &clowder.AppConfig{
+		MetricsPort: 8080,
+		MetricsPath: "/metrics",
+		InMemoryDb: &clowder.InMemoryDBConfig{
+			Hostname: "redis.clowder.svc",
+			Port:     6380,
+			Password: &password,
+			Username: &username,
+			SslMode:  &sslMode,
+		},
+		TlsCAPath: &tlsCAPath,
+		Logging:   clowder.LoggingConfig{},
+	}
+
+	applyClowderOverrides(config, mockClowder)
+
+	if !config.Redis.Enabled {
+		t.Error("Expected Redis to be enabled via Clowder")
+	}
+
+	if config.Redis.Host != "redis.clowder.svc" {
+		t.Errorf("Expected Redis host 'redis.clowder.svc', got %s", config.Redis.Host)
+	}
+
+	if config.Redis.Port != 6380 {
+		t.Errorf("Expected Redis port 6380, got %d", config.Redis.Port)
+	}
+
+	if config.Redis.Password != "redis-secret" {
+		t.Errorf("Expected Redis password 'redis-secret', got %s", config.Redis.Password)
+	}
+
+	if !config.Redis.TLS.Enabled {
+		t.Error("Expected Redis TLS to be enabled when Clowder SslMode is true")
+	}
+
+	if config.Redis.TLS.CAFile != "/tmp/clowder-ca/ca.pem" {
+		t.Errorf("Expected Redis TLS CAFile from Clowder TlsCAPath, got %s", config.Redis.TLS.CAFile)
+	}
+}
+
+func TestClowderRedisOverrides_NoTLS(t *testing.T) {
+	clearConfigEnvVars(t)
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	password := "redis-secret"
+
+	mockClowder := &clowder.AppConfig{
+		MetricsPort: 8080,
+		MetricsPath: "/metrics",
+		InMemoryDb: &clowder.InMemoryDBConfig{
+			Hostname: "redis.local",
+			Port:     6379,
+			Password: &password,
+		},
+		Logging: clowder.LoggingConfig{},
+	}
+
+	applyClowderOverrides(config, mockClowder)
+
+	if !config.Redis.Enabled {
+		t.Error("Expected Redis to be enabled via Clowder")
+	}
+
+	if config.Redis.TLS.Enabled {
+		t.Error("Expected Redis TLS to be disabled when Clowder SslMode is nil")
+	}
+}
+
+func TestClowderRedisOverrides_TLSWithoutCAPath(t *testing.T) {
+	clearConfigEnvVars(t)
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	sslMode := true
+
+	mockClowder := &clowder.AppConfig{
+		MetricsPort: 8080,
+		MetricsPath: "/metrics",
+		InMemoryDb: &clowder.InMemoryDBConfig{
+			Hostname: "redis.local",
+			Port:     6379,
+			SslMode:  &sslMode,
+		},
+		Logging: clowder.LoggingConfig{},
+	}
+
+	applyClowderOverrides(config, mockClowder)
+
+	if !config.Redis.TLS.Enabled {
+		t.Error("Expected Redis TLS to be enabled when Clowder SslMode is true")
+	}
+
+	if config.Redis.TLS.CAFile != "" {
+		t.Errorf("Expected empty CAFile when TlsCAPath is nil, got %s", config.Redis.TLS.CAFile)
+	}
+}
+
+func TestRedisDefaultTLSConfig(t *testing.T) {
+	clearConfigEnvVars(t)
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.Redis.TLS.Enabled {
+		t.Error("Expected Redis TLS to be disabled by default")
+	}
+
+	if config.Redis.TLS.InsecureSkipVerify {
+		t.Error("Expected Redis TLS InsecureSkipVerify to be false by default")
+	}
+
+	if config.Redis.TLS.CAFile != "" {
+		t.Error("Expected Redis TLS CAFile to be empty by default")
+	}
+
+	if config.Redis.TLS.CertFile != "" {
+		t.Error("Expected Redis TLS CertFile to be empty by default")
+	}
+
+	if config.Redis.TLS.KeyFile != "" {
+		t.Error("Expected Redis TLS KeyFile to be empty by default")
 	}
 }
 

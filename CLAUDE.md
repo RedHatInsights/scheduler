@@ -152,6 +152,11 @@ Jobs support four payload types:
 - `REDIS_HOST`: Redis server host
 - `REDIS_PORT`: Redis server port (default: `6379`)
 - `REDIS_PASSWORD`: Redis authentication password (optional)
+- `REDIS_TLS_ENABLED`: Enable TLS for Redis connections (`true`/`false`, default: `false`)
+- `REDIS_TLS_CA_FILE`: Path to CA certificate file for verifying the Redis server (optional)
+- `REDIS_TLS_CERT_FILE`: Path to client certificate file for mTLS (optional, requires `REDIS_TLS_KEY_FILE`)
+- `REDIS_TLS_KEY_FILE`: Path to client private key file for mTLS (optional, requires `REDIS_TLS_CERT_FILE`)
+- `REDIS_TLS_INSECURE_SKIP_VERIFY`: Skip TLS certificate verification (`true`/`false`, default: `false`)
 
 ### Kafka Configuration
 

@@ -482,10 +482,9 @@ func runAPI(cmd *cobra.Command, args []string) {
 	// Initialize Redis client for scheduling coordination
 	var redisScheduler *scheduler.RedisScheduler
 	if cfg.Redis.Enabled {
-		redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
-		log.Printf("[API] Connecting to Redis at %s", redisAddr)
+		log.Printf("[API] Connecting to Redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
 
-		redisScheduler, err = scheduler.NewRedisScheduler(redisAddr, dummyExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
+		redisScheduler, err = scheduler.NewRedisScheduler(cfg.Redis, dummyExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
 		if err != nil {
 			log.Fatalf("[API] Failed to connect to Redis: %v", err)
 		}
@@ -637,10 +636,9 @@ func runWorker(cmd *cobra.Command, args []string) {
 		log.Fatalf("[WORKER] Redis must be enabled for worker pods. Set REDIS_ENABLED=true")
 	}
 
-	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
-	log.Printf("[WORKER] Connecting to Redis at %s", redisAddr)
+	log.Printf("[WORKER] Connecting to Redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
 
-	redisScheduler, err := scheduler.NewRedisScheduler(redisAddr, jobExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
+	redisScheduler, err := scheduler.NewRedisScheduler(cfg.Redis, jobExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
 	}
