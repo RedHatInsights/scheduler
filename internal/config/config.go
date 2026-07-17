@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/spf13/viper"
@@ -508,6 +509,25 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 				fmt.Println("WARNING: Redis TLS enabled but no Clowder TlsCAPath provided, falling back to system trust store")
 			}
 		}
+
+		envRedisHost := os.Getenv("REDIS_HOST")
+		if envRedisHost != "" {
+			fmt.Println("FIXME: pulling redis hostname from env var!  This is a hack!")
+			config.Redis.Host = clowderConfig.InMemoryDb.Hostname
+		}
+
+		envRedisTlsEnabled := os.Getenv("REDIS_TLS_ENABLED")
+		if envRedisTlsEnabled != "" {
+			fmt.Println("FIXME: pulling redis_tls_enabled from env var!  This is a hack!")
+			config.Redis.TLS.Enabled, _ = strconv.ParseBool(envRedisTlsEnabled)
+		}
+
+		envRedisTlsInsecure := os.Getenv("REDIS_TLS_INSECURE_SKIP_VERIFY")
+		if envRedisTlsInsecure != "" {
+			fmt.Println("FIXME: pulling redis_tls_insecure_skip_verify from env var!  This is a hack!")
+			config.Redis.TLS.Enabled, _ = strconv.ParseBool(envRedisTlsInsecure)
+		}
+
 	} else {
 		if config.Redis.Enabled {
 			fmt.Printf("Redis: %s:%d\n", config.Redis.Host, config.Redis.Port)
