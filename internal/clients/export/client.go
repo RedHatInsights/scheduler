@@ -107,6 +107,7 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode >= 400 {
+		log.Printf("[DEBUG] Export client - Error response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
@@ -221,6 +222,7 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[DEBUG] Export client - Download error response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return nil, fmt.Errorf("download failed (status %d): %s", resp.StatusCode, string(body))
