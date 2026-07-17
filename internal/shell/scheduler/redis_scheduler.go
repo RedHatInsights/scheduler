@@ -110,6 +110,7 @@ func NewRedisScheduler(redisCfg config.RedisConfig, executor ports.JobExecutor, 
 
 func buildTLSConfig(cfg config.TLSConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: cfg.InsecureSkipVerify,
 	}
 
