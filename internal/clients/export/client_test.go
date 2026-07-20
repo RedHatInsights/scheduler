@@ -337,6 +337,222 @@ func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
 	}
 }
 
+func TestClient_WaitForExportCompletion_FailedWithSourceErrors(t *testing.T) {
+	callCount := 0
+	sourceErr := "advisor processing error: timeout contacting host inventory"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		response := ExportStatusResponse{
+			ID:     "export-abc-123",
+			Status: StatusFailed,
+			Sources: []SourceStatus{
+				{
+					Application: AppAdvisor,
+					Resource:    "recommendations",
+					Status:      "failed",
+					Error:       &sourceErr,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.URL)
+
+	userValidator := identity.NewFakeUserValidator()
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
+
+	status, err := client.WaitForExportCompletion(context.Background(), "export-abc-123", identityHeader, 3, 1*time.Millisecond)
+	if err == nil {
+		t.Fatal("Expected error for failed export")
+	}
+
+	if status == nil {
+		t.Fatal("Expected non-nil status for failed export")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "export-abc-123") {
+		t.Errorf("Error should contain export ID, got: %s", errMsg)
+	}
+	if !contains(errMsg, "advisor/recommendations") {
+		t.Errorf("Error should contain source details, got: %s", errMsg)
+	}
+	if !contains(errMsg, "timeout contacting host inventory") {
+		t.Errorf("Error should contain source error message, got: %s", errMsg)
+	}
+	if callCount != 1 {
+		t.Errorf("Expected 1 poll attempt for immediate failure, got %d", callCount)
+	}
+}
+
+func TestClient_WaitForExportCompletion_Timeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := ExportStatusResponse{
+			ID:     "export-timeout-456",
+			Status: StatusRunning,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.URL)
+
+	userValidator := identity.NewFakeUserValidator()
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
+
+	_, err = client.WaitForExportCompletion(context.Background(), "export-timeout-456", identityHeader, 3, 1*time.Millisecond)
+	if err == nil {
+		t.Fatal("Expected error for timed-out export")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "export-timeout-456") {
+		t.Errorf("Error should contain export ID, got: %s", errMsg)
+	}
+	if !contains(errMsg, "3 polling attempts") {
+		t.Errorf("Error should mention polling attempts, got: %s", errMsg)
+	}
+}
+
+func TestClient_WaitForExportCompletion_PollError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(ErrorResponse{
+			Error:   "internal_error",
+			Message: "database connection lost",
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.URL)
+
+	userValidator := identity.NewFakeUserValidator()
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
+
+	_, err = client.WaitForExportCompletion(context.Background(), "export-poll-789", identityHeader, 3, 1*time.Millisecond)
+	if err == nil {
+		t.Fatal("Expected error for polling failure")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "export-poll-789") {
+		t.Errorf("Error should contain export ID, got: %s", errMsg)
+	}
+	if !contains(errMsg, "500") {
+		t.Errorf("Error should contain HTTP status code, got: %s", errMsg)
+	}
+}
+
+func TestClient_WaitForExportCompletion_UnknownStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := ExportStatusResponse{
+			ID:     "export-unknown-101",
+			Status: "bogus_status",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, server.URL)
+
+	userValidator := identity.NewFakeUserValidator()
+	identityHeader, err := userValidator.GenerateIdentityHeader(context.Background(), "org123", "test-user-id")
+	if err != nil {
+		t.Fatalf("GenerateIdentityHeader failed: %v", err)
+	}
+
+	_, err = client.WaitForExportCompletion(context.Background(), "export-unknown-101", identityHeader, 3, 1*time.Millisecond)
+	if err == nil {
+		t.Fatal("Expected error for unknown status")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "export-unknown-101") {
+		t.Errorf("Error should contain export ID, got: %s", errMsg)
+	}
+	if !contains(errMsg, "bogus_status") {
+		t.Errorf("Error should contain the unknown status value, got: %s", errMsg)
+	}
+}
+
+func TestExtractSourceErrors(t *testing.T) {
+	err1 := "advisor timed out"
+	err2 := "compliance data unavailable"
+
+	tests := []struct {
+		name     string
+		sources  []SourceStatus
+		contains []string
+	}{
+		{
+			name:     "no sources",
+			sources:  nil,
+			contains: []string{"no source error details"},
+		},
+		{
+			name: "single source error",
+			sources: []SourceStatus{
+				{Application: AppAdvisor, Resource: "recommendations", Error: &err1},
+			},
+			contains: []string{"advisor/recommendations", "advisor timed out"},
+		},
+		{
+			name: "multiple source errors",
+			sources: []SourceStatus{
+				{Application: AppAdvisor, Resource: "recommendations", Error: &err1},
+				{Application: AppCompliance, Resource: "policies", Error: &err2},
+			},
+			contains: []string{"advisor/recommendations", "compliance/policies"},
+		},
+		{
+			name: "source with nil error skipped",
+			sources: []SourceStatus{
+				{Application: AppAdvisor, Resource: "recommendations", Error: nil},
+				{Application: AppCompliance, Resource: "policies", Error: &err2},
+			},
+			contains: []string{"compliance/policies"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractSourceErrors(tt.sources)
+			for _, s := range tt.contains {
+				if !contains(result, s) {
+					t.Errorf("Expected result to contain %q, got: %s", s, result)
+				}
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestClient_GetExportDownloadURL(t *testing.T) {
 	// Test that public URL is used for download URLs
 	internalURL := "http://export-service:8000/api/v1"

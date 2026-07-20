@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -106,6 +107,7 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode >= 400 {
+		log.Printf("[DEBUG] Export client - Error response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
@@ -220,6 +222,7 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[DEBUG] Export client - Download error response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return nil, fmt.Errorf("download failed (status %d): %s", resp.StatusCode, string(body))
@@ -259,28 +262,42 @@ func (c *Client) DeleteExport(ctx context.Context, exportID string, identityHead
 	return nil
 }
 
+// extractSourceErrors collects error messages from failed sources in an export status response.
+func extractSourceErrors(sources []SourceStatus) string {
+	var errors []string
+	for _, s := range sources {
+		if s.Error != nil && *s.Error != "" {
+			errors = append(errors, fmt.Sprintf("%s/%s: %s", s.Application, s.Resource, *s.Error))
+		}
+	}
+	if len(errors) == 0 {
+		return "no source error details available"
+	}
+	return fmt.Sprintf("%s", strings.Join(errors, "; "))
+}
+
 // WaitForExportCompletion polls an export until it's complete or failed
 func (c *Client) WaitForExportCompletion(ctx context.Context, exportID string, identityHeader string, maxRetries int, pollInterval time.Duration) (*ExportStatusResponse, error) {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		status, err := c.GetExportStatus(ctx, exportID, identityHeader)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get export status: %w", err)
+			return nil, fmt.Errorf("export %s: failed to get status: %w", exportID, err)
 		}
 
 		switch status.Status {
 		case StatusComplete:
 			return status, nil
 		case StatusFailed:
-			return status, fmt.Errorf("export failed")
+			return status, fmt.Errorf("export %s failed: %s", exportID, extractSourceErrors(status.Sources))
 		case StatusPending, StatusRunning, StatusPartial:
 			// Continue waiting
 			if attempt < maxRetries-1 {
 				time.Sleep(pollInterval)
 			}
 		default:
-			return status, fmt.Errorf("unknown export status: %s", status.Status)
+			return status, fmt.Errorf("export %s: unknown status: %s", exportID, status.Status)
 		}
 	}
 
-	return nil, fmt.Errorf("export did not complete after %d polling attempts", maxRetries)
+	return nil, fmt.Errorf("export %s: did not complete after %d polling attempts", exportID, maxRetries)
 }
