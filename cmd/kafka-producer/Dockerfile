@@ -1,51 +1,42 @@
 # Multi-stage build for Kafka Producer
-FROM golang:1.23-alpine AS builder
+FROM registry.access.redhat.com/hi/go:latest-fips-builder AS builder
+
+USER 0
 
 # Set working directory
-WORKDIR /app
-
-# Install dependencies
-RUN apk add --no-cache git
+WORKDIR /opt/app-root/src
 
 # Copy go mod files
 COPY go.mod go.sum ./
 
 # Download dependencies
-RUN go mod download
+RUN if [ -f /cachi2/cachi2.env ]; then source /cachi2/cachi2.env; fi && \
+    go mod download
 
 # Copy source code
 COPY . .
 
 # Build the producer
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kafka-producer ./cmd/kafka-producer/
+RUN if [ -f /cachi2/cachi2.env ]; then source /cachi2/cachi2.env; fi && \
+    CGO_ENABLED=1 GOOS=linux go build -o kafka-producer ./cmd/kafka-producer/
 
 # Final stage
-FROM alpine:latest
-
-# Install ca-certificates for HTTPS connections
-RUN apk --no-cache add ca-certificates tzdata
-
-# Create non-root user
-RUN addgroup -g 1001 producer && \
-    adduser -D -s /bin/sh -u 1001 -G producer producer
+FROM registry.access.redhat.com/hi/go:latest-fips
 
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/kafka-producer .
+COPY --from=builder /opt/app-root/src/kafka-producer .
 
 # Copy examples and documentation
-COPY --from=builder /app/cmd/kafka-producer/README.md .
-COPY --from=builder /app/cmd/kafka-producer/examples.sh .
+COPY --from=builder /opt/app-root/src/cmd/kafka-producer/README.md .
+COPY --from=builder /opt/app-root/src/cmd/kafka-producer/examples.sh .
 
 # Make scripts executable
 RUN chmod +x kafka-producer examples.sh
 
-# Change ownership
-RUN chown -R producer:producer /app
-
 # Switch to non-root user
-USER producer
+USER 1001
 
 # Default command
 ENTRYPOINT ["./kafka-producer"]
