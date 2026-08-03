@@ -357,6 +357,19 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 	return updatedJob, nil
 }
 
+func (s *DefaultJobService) UpdateJobWithUserCheck(ctx context.Context, id string, name string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound
+	}
+
+	return s.UpdateJob(ctx, id, name, job.OrgID, userID, schedule, payloadType, payload, status)
+}
+
 func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string, userOrgID string, updates map[string]interface{}) (domain.Job, error) {
 	job, err := s.repo.FindByID(id)
 	if err != nil {
