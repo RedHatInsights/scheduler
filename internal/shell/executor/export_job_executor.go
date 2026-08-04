@@ -40,14 +40,13 @@ func (e *ExportJobExecutor) sendNotification(ctx context.Context, exportID strin
 	if status.Status == export.StatusComplete {
 		downloadURL = e.exportClient.GetExportDownloadURL(exportID)
 	} else if status.Status == export.StatusFailed {
-		errorMsg = extractExportSourceErrors(status.Sources)
+		errorMsg = export.ExtractSourceErrors(status.Sources)
 	}
 
 	notification := &ExportCompletionNotification{
 		ExportID:    exportID,
 		JobID:       job.ID,
 		JobName:     job.Name,
-		AccountID:   "",
 		OrgID:       job.OrgID,
 		Status:      string(status.Status),
 		DownloadURL: downloadURL,
@@ -59,15 +58,6 @@ func (e *ExportJobExecutor) sendNotification(ctx context.Context, exportID strin
 			slog.String("export_id", exportID),
 			slog.Any("error", err))
 	}
-}
-
-func extractExportSourceErrors(sources []export.SourceStatus) string {
-	for _, s := range sources {
-		if s.Message != nil && *s.Message != "" {
-			return *s.Message
-		}
-	}
-	return "Export processing failed"
 }
 
 // Execute executes an export job

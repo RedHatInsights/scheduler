@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,6 +30,7 @@ type Client struct {
 	baseURL       string
 	publicBaseURL string
 	httpClient    *http.Client
+	logger        *slog.Logger
 }
 
 // NewClient creates a new export service client
@@ -42,6 +43,7 @@ func NewClient(baseURL string, publicBaseURL string) *Client {
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		logger: slog.Default(),
 	}
 }
 
@@ -63,7 +65,6 @@ func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint
 	}
 
 	url := c.baseURL + endpoint
-	fmt.Println("url: ", url)
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -83,7 +84,8 @@ func (c *Client) createRequestWithIdentity(ctx context.Context, method, endpoint
 	// Set the request ID header for distributed tracing
 	req.Header.Set(RequestIDHeader, requestID)
 
-	log.Printf("[DEBUG] Export client - %s %s - Request-ID: %s", method, endpoint, requestID)
+	c.logger.Debug(fmt.Sprintf("Export client - %s %s", method, endpoint),
+		slog.String("request_id", requestID))
 
 	return req, nil
 }
@@ -94,12 +96,16 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("[DEBUG] Export client - Request failed - Request-ID: %s, Error: %v", requestID, err)
+		c.logger.Debug("Export client - Request failed",
+			slog.String("request_id", requestID),
+			slog.Any("error", err))
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("[DEBUG] Export client - Response received - Request-ID: %s, Status: %d", requestID, resp.StatusCode)
+	c.logger.Debug("Export client - Response received",
+		slog.String("request_id", requestID),
+		slog.Int("status", resp.StatusCode))
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -107,7 +113,10 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		log.Printf("[DEBUG] Export client - Error response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
+		c.logger.Debug("Export client - Error response body",
+			slog.String("request_id", requestID),
+			slog.Int("status", resp.StatusCode),
+			slog.String("body", string(body)))
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
@@ -117,7 +126,10 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 
 	if result != nil {
 		if err := json.Unmarshal(body, result); err != nil {
-			log.Printf("[DEBUG] Export client - Failed to unmarshal response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
+			c.logger.Debug("Export client - Failed to unmarshal response body",
+				slog.String("request_id", requestID),
+				slog.Int("status", resp.StatusCode),
+				slog.String("body", string(body)))
 			return fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 	}
@@ -214,16 +226,23 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("[DEBUG] Export client - Download request failed - Request-ID: %s, Error: %v", requestID, err)
+		c.logger.Debug("Export client - Download request failed",
+			slog.String("request_id", requestID),
+			slog.Any("error", err))
 		return nil, fmt.Errorf("download request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("[DEBUG] Export client - Download response received - Request-ID: %s, Status: %d", requestID, resp.StatusCode)
+	c.logger.Debug("Export client - Download response received",
+		slog.String("request_id", requestID),
+		slog.Int("status", resp.StatusCode))
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[DEBUG] Export client - Download error response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
+		c.logger.Debug("Export client - Download error response body",
+			slog.String("request_id", requestID),
+			slog.Int("status", resp.StatusCode),
+			slog.String("body", string(body)))
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return nil, fmt.Errorf("download failed (status %d): %s", resp.StatusCode, string(body))
@@ -236,7 +255,9 @@ func (c *Client) DownloadExport(ctx context.Context, exportID string, identityHe
 		return nil, fmt.Errorf("failed to read download data: %w", err)
 	}
 
-	log.Printf("[DEBUG] Export client - Downloaded %d bytes - Request-ID: %s", len(data), requestID)
+	c.logger.Debug("Export client - Download complete",
+		slog.String("request_id", requestID),
+		slog.Int("bytes", len(data)))
 
 	return data, nil
 }
@@ -263,8 +284,8 @@ func (c *Client) DeleteExport(ctx context.Context, exportID string, identityHead
 	return nil
 }
 
-// extractSourceErrors collects error messages from failed sources in an export status response.
-func extractSourceErrors(sources []SourceStatus) string {
+// ExtractSourceErrors collects error messages from failed sources in an export status response.
+func ExtractSourceErrors(sources []SourceStatus) string {
 	var errors []string
 	for _, s := range sources {
 		if s.Message != nil && *s.Message != "" {
@@ -289,7 +310,7 @@ func (c *Client) WaitForExportCompletion(ctx context.Context, exportID string, i
 		case StatusComplete:
 			return status, nil
 		case StatusFailed:
-			return status, fmt.Errorf("export %s failed: %s", exportID, extractSourceErrors(status.Sources))
+			return status, fmt.Errorf("export %s failed: %s", exportID, ExtractSourceErrors(status.Sources))
 		case StatusPending, StatusRunning, StatusPartial:
 			// Continue waiting
 			if attempt < maxRetries-1 {

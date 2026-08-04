@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -377,13 +378,13 @@ func TestClient_WaitForExportCompletion_FailedWithSourceErrors(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	if !contains(errMsg, "export-abc-123") {
+	if !strings.Contains(errMsg, "export-abc-123") {
 		t.Errorf("Error should contain export ID, got: %s", errMsg)
 	}
-	if !contains(errMsg, "advisor/recommendations") {
+	if !strings.Contains(errMsg, "advisor/recommendations") {
 		t.Errorf("Error should contain source details, got: %s", errMsg)
 	}
-	if !contains(errMsg, "timeout contacting host inventory") {
+	if !strings.Contains(errMsg, "timeout contacting host inventory") {
 		t.Errorf("Error should contain source error message, got: %s", errMsg)
 	}
 	if callCount != 1 {
@@ -416,10 +417,10 @@ func TestClient_WaitForExportCompletion_Timeout(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	if !contains(errMsg, "export-timeout-456") {
+	if !strings.Contains(errMsg, "export-timeout-456") {
 		t.Errorf("Error should contain export ID, got: %s", errMsg)
 	}
-	if !contains(errMsg, "3 polling attempts") {
+	if !strings.Contains(errMsg, "3 polling attempts") {
 		t.Errorf("Error should mention polling attempts, got: %s", errMsg)
 	}
 }
@@ -448,10 +449,10 @@ func TestClient_WaitForExportCompletion_PollError(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	if !contains(errMsg, "export-poll-789") {
+	if !strings.Contains(errMsg, "export-poll-789") {
 		t.Errorf("Error should contain export ID, got: %s", errMsg)
 	}
-	if !contains(errMsg, "500") {
+	if !strings.Contains(errMsg, "500") {
 		t.Errorf("Error should contain HTTP status code, got: %s", errMsg)
 	}
 }
@@ -481,10 +482,10 @@ func TestClient_WaitForExportCompletion_UnknownStatus(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	if !contains(errMsg, "export-unknown-101") {
+	if !strings.Contains(errMsg, "export-unknown-101") {
 		t.Errorf("Error should contain export ID, got: %s", errMsg)
 	}
-	if !contains(errMsg, "bogus_status") {
+	if !strings.Contains(errMsg, "bogus_status") {
 		t.Errorf("Error should contain the unknown status value, got: %s", errMsg)
 	}
 }
@@ -530,27 +531,14 @@ func TestExtractSourceErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractSourceErrors(tt.sources)
+			result := ExtractSourceErrors(tt.sources)
 			for _, s := range tt.contains {
-				if !contains(result, s) {
+				if !strings.Contains(result, s) {
 					t.Errorf("Expected result to contain %q, got: %s", s, result)
 				}
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
-}
-
-func containsSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestClient_GetExportDownloadURL(t *testing.T) {

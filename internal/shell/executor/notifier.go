@@ -10,7 +10,6 @@ type ExportCompletionNotification struct {
 	ExportID    string
 	JobID       string
 	JobName     string
-	AccountID   string
 	OrgID       string
 	Status      string
 	DownloadURL string
