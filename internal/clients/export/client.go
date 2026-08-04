@@ -117,6 +117,7 @@ func (c *Client) doRequest(req *http.Request, result interface{}) error {
 
 	if result != nil {
 		if err := json.Unmarshal(body, result); err != nil {
+			log.Printf("[DEBUG] Export client - Failed to unmarshal response body - Request-ID: %s, Status: %d, Body: %s", requestID, resp.StatusCode, string(body))
 			return fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 	}
