@@ -296,65 +296,14 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 
 	// Check if job belongs to the same organization
 	if job.OrgID != orgID {
-		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+		return domain.Job{}, domain.ErrJobNotFound
 	}
 
-	// Validate org_id
 	if orgID == "" {
 		return domain.Job{}, domain.ErrInvalidOrgID
 	}
 
-	if !domain.IsValidSchedule(schedule) {
-		return domain.Job{}, domain.ErrInvalidSchedule
-	}
-
-	if !domain.IsValidPayloadType(string(payloadType)) {
-		return domain.Job{}, domain.ErrInvalidPayload
-	}
-
-	if !domain.IsValidStatus(status) {
-		return domain.Job{}, domain.ErrInvalidStatus
-	}
-
-	// Prevent manual setting of system-managed statuses
-	statusVal := domain.JobStatus(status)
-	if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
-		return domain.Job{}, domain.ErrInvalidStatusTransition
-	}
-
-	scheduleVal := domain.Schedule(schedule)
-
-	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
-
-	// Recalculate next run time if schedule changed
-	if schedule != string(job.Schedule) {
-		nextRunAt, calcErr := calculateNextRunAt(schedule, updatedJob.Timezone)
-		if calcErr != nil {
-			log.Printf("[DEBUG] UpdateJob - failed to calculate next run time: %v", calcErr)
-			return domain.Job{}, calcErr
-		}
-		if nextRunAt != nil {
-			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
-			log.Printf("[DEBUG] UpdateJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
-		}
-	}
-
-	err = s.repo.Save(updatedJob)
-	if err != nil {
-		return domain.Job{}, err
-	}
-
-	// Update cron scheduling
-	if s.cronScheduler != nil {
-		s.cronScheduler.UnscheduleJob(id) // Remove old schedule
-		if updatedJob.Status == domain.StatusScheduled {
-			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
-				// Log error but don't fail the update
-			}
-		}
-	}
-
-	return updatedJob, nil
+	return s.applyJobUpdate(job, name, orgID, userID, schedule, payloadType, payload, status)
 }
 
 func (s *DefaultJobService) UpdateJobWithUserCheck(ctx context.Context, id string, name string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
@@ -367,7 +316,56 @@ func (s *DefaultJobService) UpdateJobWithUserCheck(ctx context.Context, id strin
 		return domain.Job{}, domain.ErrJobNotFound
 	}
 
-	return s.UpdateJob(ctx, id, name, job.OrgID, userID, schedule, payloadType, payload, status)
+	return s.applyJobUpdate(job, name, job.OrgID, userID, schedule, payloadType, payload, status)
+}
+
+func (s *DefaultJobService) applyJobUpdate(job domain.Job, name string, orgID string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+	if !domain.IsValidSchedule(schedule) {
+		return domain.Job{}, domain.ErrInvalidSchedule
+	}
+
+	if !domain.IsValidPayloadType(string(payloadType)) {
+		return domain.Job{}, domain.ErrInvalidPayload
+	}
+
+	if !domain.IsValidStatus(status) {
+		return domain.Job{}, domain.ErrInvalidStatus
+	}
+
+	statusVal := domain.JobStatus(status)
+	if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+		return domain.Job{}, domain.ErrInvalidStatusTransition
+	}
+
+	scheduleVal := domain.Schedule(schedule)
+
+	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
+
+	if schedule != string(job.Schedule) {
+		nextRunAt, calcErr := calculateNextRunAt(schedule, updatedJob.Timezone)
+		if calcErr != nil {
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+		}
+	}
+
+	err := s.repo.Save(updatedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(job.ID)
+		if updatedJob.Status == domain.StatusScheduled {
+			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
+				// Log error but don't fail the update
+			}
+		}
+	}
+
+	return updatedJob, nil
 }
 
 func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string, userOrgID string, updates map[string]interface{}) (domain.Job, error) {
