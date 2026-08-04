@@ -267,14 +267,14 @@ func (c *Client) DeleteExport(ctx context.Context, exportID string, identityHead
 func extractSourceErrors(sources []SourceStatus) string {
 	var errors []string
 	for _, s := range sources {
-		if s.Error != nil && *s.Error != "" {
-			errors = append(errors, fmt.Sprintf("%s/%s: %s", s.Application, s.Resource, *s.Error))
+		if s.Message != nil && *s.Message != "" {
+			errors = append(errors, fmt.Sprintf("%s/%s: %s", s.Application, s.Resource, *s.Message))
 		}
 	}
 	if len(errors) == 0 {
 		return "no source error details available"
 	}
-	return fmt.Sprintf("%s", strings.Join(errors, "; "))
+	return strings.Join(errors, "; ")
 }
 
 // WaitForExportCompletion polls an export until it's complete or failed

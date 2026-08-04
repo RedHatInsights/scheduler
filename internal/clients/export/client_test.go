@@ -339,7 +339,7 @@ func TestUserValidator_GenerateIdentityHeader(t *testing.T) {
 
 func TestClient_WaitForExportCompletion_FailedWithSourceErrors(t *testing.T) {
 	callCount := 0
-	sourceErr := "advisor processing error: timeout contacting host inventory"
+	sourceMsg := "advisor processing error: timeout contacting host inventory"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		response := ExportStatusResponse{
@@ -350,7 +350,7 @@ func TestClient_WaitForExportCompletion_FailedWithSourceErrors(t *testing.T) {
 					Application: AppAdvisor,
 					Resource:    "recommendations",
 					Status:      "failed",
-					Error:       &sourceErr,
+					Message:     &sourceMsg,
 				},
 			},
 		}
@@ -490,8 +490,8 @@ func TestClient_WaitForExportCompletion_UnknownStatus(t *testing.T) {
 }
 
 func TestExtractSourceErrors(t *testing.T) {
-	err1 := "advisor timed out"
-	err2 := "compliance data unavailable"
+	msg1 := "advisor timed out"
+	msg2 := "compliance data unavailable"
 
 	tests := []struct {
 		name     string
@@ -506,23 +506,23 @@ func TestExtractSourceErrors(t *testing.T) {
 		{
 			name: "single source error",
 			sources: []SourceStatus{
-				{Application: AppAdvisor, Resource: "recommendations", Error: &err1},
+				{Application: AppAdvisor, Resource: "recommendations", Message: &msg1},
 			},
 			contains: []string{"advisor/recommendations", "advisor timed out"},
 		},
 		{
 			name: "multiple source errors",
 			sources: []SourceStatus{
-				{Application: AppAdvisor, Resource: "recommendations", Error: &err1},
-				{Application: AppCompliance, Resource: "policies", Error: &err2},
+				{Application: AppAdvisor, Resource: "recommendations", Message: &msg1},
+				{Application: AppCompliance, Resource: "policies", Message: &msg2},
 			},
 			contains: []string{"advisor/recommendations", "compliance/policies"},
 		},
 		{
-			name: "source with nil error skipped",
+			name: "source with nil message skipped",
 			sources: []SourceStatus{
-				{Application: AppAdvisor, Resource: "recommendations", Error: nil},
-				{Application: AppCompliance, Resource: "policies", Error: &err2},
+				{Application: AppAdvisor, Resource: "recommendations", Message: nil},
+				{Application: AppCompliance, Resource: "policies", Message: &msg2},
 			},
 			contains: []string{"compliance/policies"},
 		},

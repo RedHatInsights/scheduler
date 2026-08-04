@@ -63,8 +63,8 @@ func (e *ExportJobExecutor) sendNotification(ctx context.Context, exportID strin
 
 func extractExportSourceErrors(sources []export.SourceStatus) string {
 	for _, s := range sources {
-		if s.Error != nil && *s.Error != "" {
-			return *s.Error
+		if s.Message != nil && *s.Message != "" {
+			return *s.Message
 		}
 	}
 	return "Export processing failed"

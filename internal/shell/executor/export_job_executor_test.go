@@ -125,7 +125,7 @@ func TestExportJobExecutor_SuccessfulExport(t *testing.T) {
 }
 
 func TestExportJobExecutor_ExportFailed_IncludesExportIDAndSendsNotification(t *testing.T) {
-	sourceErr := "advisor service unavailable"
+	sourceMsg := "advisor service unavailable"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "POST" && r.URL.Path == "/exports" {
@@ -144,7 +144,7 @@ func TestExportJobExecutor_ExportFailed_IncludesExportIDAndSendsNotification(t *
 						Application: export.AppAdvisor,
 						Resource:    "recommendations",
 						Status:      "failed",
-						Error:       &sourceErr,
+						Message:     &sourceMsg,
 					},
 				},
 			})
@@ -281,7 +281,7 @@ func TestExportJobExecutor_CreateExportFails(t *testing.T) {
 }
 
 func TestExtractExportSourceErrors(t *testing.T) {
-	err1 := "source error message"
+	msg1 := "source error message"
 
 	tests := []struct {
 		name     string
@@ -294,16 +294,16 @@ func TestExtractExportSourceErrors(t *testing.T) {
 			expected: "Export processing failed",
 		},
 		{
-			name: "nil error pointer returns default",
+			name: "nil message pointer returns default",
 			sources: []export.SourceStatus{
-				{Application: export.AppAdvisor, Resource: "recs", Error: nil},
+				{Application: export.AppAdvisor, Resource: "recs", Message: nil},
 			},
 			expected: "Export processing failed",
 		},
 		{
-			name: "returns first source error",
+			name: "returns first source message",
 			sources: []export.SourceStatus{
-				{Application: export.AppAdvisor, Resource: "recs", Error: &err1},
+				{Application: export.AppAdvisor, Resource: "recs", Message: &msg1},
 			},
 			expected: "source error message",
 		},
