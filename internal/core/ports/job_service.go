@@ -31,6 +31,9 @@ type JobService interface {
 	// UpdateJob updates an existing job (full update)
 	UpdateJob(ctx context.Context, id, name, orgID, userID, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
 
+	// UpdateJobWithUserCheck updates an existing job with user authorization check
+	UpdateJobWithUserCheck(ctx context.Context, id, name, userID, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)
+
 	// PatchJobWithUserCheck partially updates a job with user authorization check
 	PatchJobWithUserCheck(ctx context.Context, id, userID string, updates map[string]interface{}) (domain.Job, error)
 
