@@ -33,13 +33,10 @@ func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidat
 	}
 }
 
-func (e *ExportJobExecutor) sendNotification(ctx context.Context, exportID string, job domain.Job, status *export.ExportStatusResponse, logger *slog.Logger) {
-	downloadURL := ""
+func (e *ExportJobExecutor) sendNotification(ctx context.Context, exportID string, job domain.Job, status *export.ExportStatusResponse, downloadURL string, logger *slog.Logger) {
 	errorMsg := ""
 
-	if status.Status == export.StatusComplete {
-		downloadURL = e.exportClient.GetExportDownloadURL(exportID)
-	} else if status.Status == export.StatusFailed {
+	if status.Status == export.StatusFailed {
 		errorMsg = export.ExtractSourceErrors(status.Sources)
 	}
 
@@ -120,7 +117,7 @@ func (e *ExportJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interf
 
 		// Send failure notification if we have a status response (e.g. StatusFailed)
 		if finalStatus != nil {
-			e.sendNotification(ctx, createResult.ID, job, finalStatus, logger)
+			e.sendNotification(ctx, createResult.ID, job, finalStatus, "", logger)
 		}
 
 		return nil, domain.ResultTypeExport, fmt.Errorf("export %s failed or timed out: %w", createResult.ID, err)
@@ -130,10 +127,10 @@ func (e *ExportJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interf
 		slog.String("export_id", createResult.ID),
 		slog.String("status", string(finalStatus.Status)))
 
-	e.sendNotification(ctx, createResult.ID, job, finalStatus, logger)
-
 	downloadURL := e.exportClient.GetExportDownloadURL(createResult.ID)
 	logger.Info("Report download URL generated", slog.String("download_url", downloadURL))
+
+	e.sendNotification(ctx, createResult.ID, job, finalStatus, downloadURL, logger)
 
 	result := domain.ExportResult{
 		ExportID: createResult.ID,
