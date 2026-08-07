@@ -24,15 +24,12 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	// Create a fake user validator
 	userValidator := identity.NewFakeUserValidator()
 
-	// Create null notifier (test null object pattern)
-	notifier := NewNullJobCompletionNotifier()
-
 	// Create payload-specific runners
 	runners := map[domain.PayloadType]JobRunner{
 		domain.PayloadMessage:     NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: NewHTTPJobExecutor(),
 		domain.PayloadCommand:     NewCommandJobExecutor(),
-		domain.PayloadExport:      NewExportJobExecutor(cfg, userValidator, notifier),
+		domain.PayloadExport:      NewExportJobExecutor(cfg, userValidator, nil),
 	}
 
 	// Create executor with map of executors
@@ -58,6 +55,7 @@ func TestExportCompletionNotificationStructure(t *testing.T) {
 		ExportID:    "export-123",
 		JobID:       "job-456",
 		OrgID:       "org-789",
+		AccountID:   "account-123",
 		Status:      "complete",
 		DownloadURL: "https://example.com/exports/export-123",
 		ErrorMsg:    "",

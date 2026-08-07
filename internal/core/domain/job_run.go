@@ -15,54 +15,83 @@ const (
 )
 
 type JobRun struct {
-	ID           string       `json:"id"`
-	JobID        string       `json:"job_id"`
-	Status       JobRunStatus `json:"status"`
-	StartTime    time.Time    `json:"start_time"`
-	EndTime      *time.Time   `json:"end_time,omitempty"`
-	ErrorMessage *string      `json:"error_message,omitempty"`
-	ResultType   *ResultType  `json:"result_type,omitempty"`
-	Result       interface{}  `json:"result,omitempty"`
+	ID              string       `json:"id"`
+	JobID           string       `json:"job_id"`
+	Status          JobRunStatus `json:"status"`
+	StartTime       time.Time    `json:"start_time"`
+	EndTime         *time.Time   `json:"end_time,omitempty"`
+	ErrorMessage    *string      `json:"error_message,omitempty"`
+	ResultType      *ResultType  `json:"result_type,omitempty"`
+	Result          interface{}  `json:"result,omitempty"`
+	ExternalJobID   *string      `json:"external_job_id,omitempty"`
+	ExternalService *string      `json:"external_service,omitempty"`
+	PollStartedAt   *time.Time   `json:"poll_started_at,omitempty"`
 }
 
 func NewJobRun(jobID string) JobRun {
 	return JobRun{
-		ID:           uuid.New().String(),
-		JobID:        jobID,
-		Status:       RunStatusRunning,
-		StartTime:    time.Now().UTC(),
-		EndTime:      nil,
-		ErrorMessage: nil,
-		ResultType:   nil,
-		Result:       nil,
+		ID:              uuid.New().String(),
+		JobID:           jobID,
+		Status:          RunStatusRunning,
+		StartTime:       time.Now().UTC(),
+		EndTime:         nil,
+		ErrorMessage:    nil,
+		ResultType:      nil,
+		Result:          nil,
+		ExternalJobID:   nil,
+		ExternalService: nil,
+		PollStartedAt:   nil,
 	}
 }
 
 func (jr JobRun) WithCompleted(resultType ResultType, result interface{}) JobRun {
 	now := time.Now().UTC()
 	return JobRun{
-		ID:           jr.ID,
-		JobID:        jr.JobID,
-		Status:       RunStatusCompleted,
-		StartTime:    jr.StartTime,
-		EndTime:      &now,
-		ErrorMessage: nil,
-		ResultType:   &resultType,
-		Result:       result,
+		ID:              jr.ID,
+		JobID:           jr.JobID,
+		Status:          RunStatusCompleted,
+		StartTime:       jr.StartTime,
+		EndTime:         &now,
+		ErrorMessage:    nil,
+		ResultType:      &resultType,
+		Result:          result,
+		ExternalJobID:   jr.ExternalJobID,
+		ExternalService: jr.ExternalService,
+		PollStartedAt:   jr.PollStartedAt,
 	}
 }
 
 func (jr JobRun) WithFailed(errorMessage string) JobRun {
 	now := time.Now().UTC()
 	return JobRun{
-		ID:           jr.ID,
-		JobID:        jr.JobID,
-		Status:       RunStatusFailed,
-		StartTime:    jr.StartTime,
-		EndTime:      &now,
-		ErrorMessage: &errorMessage,
-		ResultType:   nil,
-		Result:       nil,
+		ID:              jr.ID,
+		JobID:           jr.JobID,
+		Status:          RunStatusFailed,
+		StartTime:       jr.StartTime,
+		EndTime:         &now,
+		ErrorMessage:    &errorMessage,
+		ResultType:      nil,
+		Result:          nil,
+		ExternalJobID:   jr.ExternalJobID,
+		ExternalService: jr.ExternalService,
+		PollStartedAt:   jr.PollStartedAt,
+	}
+}
+
+func (jr JobRun) WithExternalJob(externalJobID, externalService string) JobRun {
+	now := time.Now().UTC()
+	return JobRun{
+		ID:              jr.ID,
+		JobID:           jr.JobID,
+		Status:          jr.Status,
+		StartTime:       jr.StartTime,
+		EndTime:         jr.EndTime,
+		ErrorMessage:    jr.ErrorMessage,
+		ResultType:      jr.ResultType,
+		Result:          jr.Result,
+		ExternalJobID:   &externalJobID,
+		ExternalService: &externalService,
+		PollStartedAt:   &now,
 	}
 }
 

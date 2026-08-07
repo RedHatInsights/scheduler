@@ -25,6 +25,7 @@ type NotificationMessage struct {
 	Application string                 `json:"application"`
 	EventType   string                 `json:"event_type"`
 	Timestamp   string                 `json:"timestamp"` // RFC3339 format
+	AccountID   string                 `json:"account_id"`
 	OrgID       string                 `json:"org_id"`
 	Context     map[string]interface{} `json:"context"`
 	Events      []interface{}          `json:"events"`
@@ -70,6 +71,7 @@ func (n *NotificationsBasedJobCompletionNotifier) JobComplete(ctx context.Contex
 		"application": platformNotification.Application,
 		"event-type":  platformNotification.EventType,
 		"org-id":      platformNotification.OrgID,
+		"account-id":  platformNotification.AccountID,
 		"version":     platformNotification.Version,
 	}
 
@@ -158,6 +160,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		Application: NOTIFICATIONS_APP,
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		AccountID:   notification.AccountID,
 		OrgID:       notification.OrgID,
 		Context:     context,
 		Events:      []interface{}{},
@@ -186,6 +189,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildAutoPausedPlatformNotific
 		Application: NOTIFICATIONS_APP,
 		EventType:   "job-auto-paused",
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		AccountID:   "", // Not used for auto-pause notifications
 		OrgID:       notification.OrgID,
 		Context:     context,
 		Events:      []interface{}{},

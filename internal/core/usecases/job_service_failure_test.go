@@ -73,20 +73,21 @@ func TestJobFailureCounterIncrementsOnFailure(t *testing.T) {
 	}
 }
 
-func TestJobFailureCounterResetsOnSuccess(t *testing.T) {
+func TestExportJobKickoffSuccessDoesNotResetFailures(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: true}
 
 	service := NewJobService(repo, scheduler, executor, 3)
 
-	// Create a job
+	// Export jobs defer success tracking to ExportPollerService,
+	// so a successful kick-off should NOT reset the failure counter.
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("CreateJob() failed: %v", err)
 	}
 
-	// Fail the job once via scheduler
+	// Fail the job once
 	err = service.ExecuteScheduledJobWithJobRun(job, "run-1")
 	if err != nil {
 		t.Fatalf("ExecuteScheduledJobWithJobRun() failed: %v", err)
@@ -97,29 +98,25 @@ func TestJobFailureCounterResetsOnSuccess(t *testing.T) {
 		t.Errorf("After 1 failure, expected consecutive_failures=1, got %d", updatedJob.ConsecutiveFailures)
 	}
 
-	// Now make it succeed
+	// Now make kick-off succeed
 	executor.shouldFail = false
 	err = service.ExecuteScheduledJobWithJobRun(updatedJob, "run-2")
 	if err != nil {
 		t.Fatalf("ExecuteScheduledJobWithJobRun() failed: %v", err)
 	}
 
-	// Check the failure count reset
 	updatedJob, err = service.GetJob(context.Background(), job.ID)
 	if err != nil {
 		t.Fatalf("GetJob() failed: %v", err)
 	}
 
-	if updatedJob.ConsecutiveFailures != 0 {
-		t.Errorf("After success, expected consecutive_failures=0, got %d", updatedJob.ConsecutiveFailures)
-	}
-
-	if updatedJob.LastFailedAt != nil {
-		t.Error("After success, expected last_failed_at to be cleared, got non-nil")
+	// Failure counter should remain — only the ExportPollerService resets it on actual completion
+	if updatedJob.ConsecutiveFailures != 1 {
+		t.Errorf("After export kick-off success, expected consecutive_failures to remain 1, got %d", updatedJob.ConsecutiveFailures)
 	}
 
 	if updatedJob.Status != domain.StatusScheduled {
-		t.Errorf("After success, expected status=scheduled, got %s", updatedJob.Status)
+		t.Errorf("After kick-off success, expected status=scheduled, got %s", updatedJob.Status)
 	}
 }
 

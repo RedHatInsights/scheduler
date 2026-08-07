@@ -15,7 +15,7 @@ func NewMessageJobExecutor() *MessageJobExecutor {
 }
 
 // Execute executes a message job
-func (e *MessageJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interface{}, domain.ResultType, error) {
+func (e *MessageJobExecutor) Execute(job domain.Job, jobRunID string, logger *slog.Logger) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {

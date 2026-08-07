@@ -55,11 +55,13 @@ Handles all side effects and I/O:
 
 **Scheduler** (`internal/shell/scheduler/`):
 - `scheduler.go` - Background goroutine that polls for jobs
+- `export_poller_service.go` - Centralized polling for in-flight export jobs (replaces inline polling)
 - Uses functional core for scheduling decisions
 
 **Executor** (`internal/shell/executor/`):
 - `job_executor.go` - Generic job executor with map-based payload type dispatch
-- `export_job_executor.go` - Export service integration
+- `export_job_executor.go` - Export service integration (fire-and-forget kick-off; polling handled by ExportPollerService)
+- `failure_tracker.go` - Shared consecutive failure tracking logic (used by FailureTrackingExecutor and ExportPollerService)
 - `message_job_executor.go`, `http_job_executor.go`, `command_job_executor.go` - Simulated executors
 - `kafka_notifier.go` - Platform notifications integration
 - Job completion notification system with Kafka support
@@ -128,6 +130,18 @@ Jobs support four payload types:
 - Description: Number of consecutive failures before a job is automatically paused. Set to `0` to disable auto-pause.
 - Example: `MAX_CONSECUTIVE_FAILURES=5`
 - Note: When a job fails N consecutive times, it will be automatically paused and will not run again until manually resumed via the `/jobs/{id}/resume` endpoint. The failure counter resets to 0 after any successful execution or when the job is manually resumed.
+
+**Export Poll Scan Interval**:
+- Variable: `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL`
+- Default: `10s`
+- Description: How often the ExportPollerService checks for in-flight export runs that need status polling
+- Example: `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL=15s`
+
+**Export Poll Max Age**:
+- Variable: `SCHEDULER_EXPORT_POLL_MAX_AGE`
+- Default: `30m`
+- Description: Maximum time an export run can remain in-flight before it is timed out and marked as failed. Increase this for long-running exports.
+- Example: `SCHEDULER_EXPORT_POLL_MAX_AGE=2h`
 
 **Job Denylist**:
 - Variable: `SCHEDULER_DENYLIST_JOB_IDS`

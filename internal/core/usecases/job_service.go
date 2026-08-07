@@ -28,6 +28,7 @@ type JobRunRepository interface {
 	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
 	FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error)
 	FindAll() ([]domain.JobRun, error)
+	FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error)
 	CleanupOldRuns(keepPerJob int) (int64, error)
 }
 
@@ -296,30 +297,14 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 
 	// Check if job belongs to the same organization
 	if job.OrgID != orgID {
-		return domain.Job{}, domain.ErrJobNotFound
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
 	}
 
+	// Validate org_id
 	if orgID == "" {
 		return domain.Job{}, domain.ErrInvalidOrgID
 	}
 
-	return s.applyJobUpdate(job, name, orgID, userID, schedule, payloadType, payload, status)
-}
-
-func (s *DefaultJobService) UpdateJobWithUserCheck(ctx context.Context, id string, name string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
-	job, err := s.repo.FindByID(id)
-	if err != nil {
-		return domain.Job{}, err
-	}
-
-	if job.UserID != userID {
-		return domain.Job{}, domain.ErrJobNotFound
-	}
-
-	return s.applyJobUpdate(job, name, job.OrgID, userID, schedule, payloadType, payload, status)
-}
-
-func (s *DefaultJobService) applyJobUpdate(job domain.Job, name string, orgID string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
 	if !domain.IsValidSchedule(schedule) {
 		return domain.Job{}, domain.ErrInvalidSchedule
 	}
@@ -332,6 +317,7 @@ func (s *DefaultJobService) applyJobUpdate(job domain.Job, name string, orgID st
 		return domain.Job{}, domain.ErrInvalidStatus
 	}
 
+	// Prevent manual setting of system-managed statuses
 	statusVal := domain.JobStatus(status)
 	if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
 		return domain.Job{}, domain.ErrInvalidStatusTransition
@@ -341,23 +327,27 @@ func (s *DefaultJobService) applyJobUpdate(job domain.Job, name string, orgID st
 
 	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
 
+	// Recalculate next run time if schedule changed
 	if schedule != string(job.Schedule) {
 		nextRunAt, calcErr := calculateNextRunAt(schedule, updatedJob.Timezone)
 		if calcErr != nil {
+			log.Printf("[DEBUG] UpdateJob - failed to calculate next run time: %v", calcErr)
 			return domain.Job{}, calcErr
 		}
 		if nextRunAt != nil {
 			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] UpdateJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
 		}
 	}
 
-	err := s.repo.Save(updatedJob)
+	err = s.repo.Save(updatedJob)
 	if err != nil {
 		return domain.Job{}, err
 	}
 
+	// Update cron scheduling
 	if s.cronScheduler != nil {
-		s.cronScheduler.UnscheduleJob(job.ID)
+		s.cronScheduler.UnscheduleJob(id) // Remove old schedule
 		if updatedJob.Status == domain.StatusScheduled {
 			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
 				// Log error but don't fail the update
@@ -1030,6 +1020,12 @@ func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRun
 			finalStatus = domain.StatusFailed
 		}
 
+		finalJob = finalJob.WithStatus(finalStatus)
+	} else if job.Type == domain.PayloadExport {
+		// Export success only means kick-off succeeded; the ExportPollerService
+		// handles failure tracking when the export actually completes.
+		finalJob = runningJob
+		finalStatus = domain.StatusScheduled
 		finalJob = finalJob.WithStatus(finalStatus)
 	} else {
 		// Success - reset failure counter

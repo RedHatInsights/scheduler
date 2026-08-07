@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -44,17 +45,24 @@ func NewPostgresJobRunRepository(cfg *config.Config, logger *slog.Logger) (*Post
 
 func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	query := `
-		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service, poll_started_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status, end_time = excluded.end_time,
 			error_message = excluded.error_message, result_type = excluded.result_type,
-			result = excluded.result`
+			result = excluded.result, external_job_id = excluded.external_job_id,
+			external_service = excluded.external_service, poll_started_at = excluded.poll_started_at`
 
 	var endTime *string
 	if run.EndTime != nil {
 		s := run.EndTime.Format(time.RFC3339)
 		endTime = &s
+	}
+
+	var pollStartedAt *string
+	if run.PollStartedAt != nil {
+		s := run.PollStartedAt.Format(time.RFC3339)
+		pollStartedAt = &s
 	}
 
 	// Marshal Result to JSON if present
@@ -75,7 +83,8 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	}
 
 	_, err := r.db.Exec(query, run.ID, run.JobID, run.Status, run.StartTime.Format(time.RFC3339),
-		endTime, run.ErrorMessage, resultType, resultJSON, time.Now().UTC().Format(time.RFC3339))
+		endTime, run.ErrorMessage, resultType, resultJSON, run.ExternalJobID, run.ExternalService,
+		pollStartedAt, time.Now().UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("failed to save job run: %w", err)
 	}
@@ -83,7 +92,7 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 }
 
 func (r *PostgresJobRunRepository) FindByID(id string) (domain.JobRun, error) {
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result FROM job_runs WHERE id = $1`
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service, poll_started_at FROM job_runs WHERE id = $1`
 	return r.scanRun(r.db.QueryRow(query, id))
 }
 
@@ -97,7 +106,7 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 	}
 
 	// Then get the paginated results
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result
+	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service, poll_started_at
 		FROM job_runs WHERE job_id = $1 ORDER BY start_time DESC LIMIT $2 OFFSET $3`
 	runs, err := r.queryRuns(query, jobID, limit, offset)
 	if err != nil {
@@ -108,7 +117,7 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 }
 
 func (r *PostgresJobRunRepository) FindByJobIDAndOrgID(jobID, orgID string) ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result
+	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, jr.poll_started_at
 		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE jr.job_id = $1 AND j.org_id = $2 ORDER BY jr.start_time DESC`, jobID, orgID)
 }
@@ -125,7 +134,7 @@ func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int
 	}
 
 	// Then get the paginated results
-	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result
+	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, jr.poll_started_at
 		FROM job_runs jr
 		INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE j.user_id = $1
@@ -140,16 +149,22 @@ func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int
 }
 
 func (r *PostgresJobRunRepository) FindAll() ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result
+	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service, poll_started_at
 		FROM job_runs ORDER BY start_time DESC`)
+}
+
+func (r *PostgresJobRunRepository) FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error) {
+	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service, poll_started_at
+		FROM job_runs WHERE status = $1 ORDER BY start_time ASC`, status)
 }
 
 func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) {
 	var run domain.JobRun
 	var startTimeStr string
 	var endTimeStr, errorMessage, resultType, result *string
+	var pollStartedAtStr *string
 
-	err := row.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result)
+	err := row.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result, &run.ExternalJobID, &run.ExternalService, &pollStartedAtStr)
 	if err == sql.ErrNoRows {
 		return domain.JobRun{}, domain.ErrJobRunNotFound
 	}
@@ -161,6 +176,11 @@ func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) 
 	if endTimeStr != nil {
 		if t, err := time.Parse(time.RFC3339, *endTimeStr); err == nil {
 			run.EndTime = &t
+		}
+	}
+	if pollStartedAtStr != nil {
+		if t, err := time.Parse(time.RFC3339, *pollStartedAtStr); err == nil {
+			run.PollStartedAt = &t
 		}
 	}
 	run.ErrorMessage = errorMessage
@@ -195,14 +215,20 @@ func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) 
 		var run domain.JobRun
 		var startTimeStr string
 		var endTimeStr, errorMessage, resultType, result *string
+		var pollStartedAtStr *string
 
-		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result); err != nil {
+		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result, &run.ExternalJobID, &run.ExternalService, &pollStartedAtStr); err != nil {
 			return nil, fmt.Errorf("failed to scan job run: %w", err)
 		}
 		run.StartTime, _ = time.Parse(time.RFC3339, startTimeStr)
 		if endTimeStr != nil {
 			if t, err := time.Parse(time.RFC3339, *endTimeStr); err == nil {
 				run.EndTime = &t
+			}
+		}
+		if pollStartedAtStr != nil {
+			if t, err := time.Parse(time.RFC3339, *pollStartedAtStr); err == nil {
+				run.PollStartedAt = &t
 			}
 		}
 		run.ErrorMessage = errorMessage

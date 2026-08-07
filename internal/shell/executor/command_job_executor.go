@@ -15,7 +15,7 @@ func NewCommandJobExecutor() *CommandJobExecutor {
 }
 
 // Execute executes a command job
-func (e *CommandJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interface{}, domain.ResultType, error) {
+func (e *CommandJobExecutor) Execute(job domain.Job, jobRunID string, logger *slog.Logger) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {

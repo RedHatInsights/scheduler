@@ -7,6 +7,11 @@ const (
 	ResultTypeCommand ResultType = "command"
 	ResultTypeHTTP    ResultType = "http_request"
 	ResultTypeMessage ResultType = "message"
+
+	// ResultTypePending signals that the job kicked off an async operation
+	// and the outcome will be determined later by a background poller.
+	// DefaultJobExecutor skips the completion save when it sees this.
+	ResultTypePending ResultType = "pending"
 )
 
 // ExportResult represents the result of an export job execution

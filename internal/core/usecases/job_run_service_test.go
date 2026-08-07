@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"context"
 	"testing"
 
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
@@ -15,6 +16,7 @@ type mockJobRunRepository struct {
 	findByJobIDAndOrgID func(jobID string, orgID string) ([]domain.JobRun, error)
 	findByUserIDFunc    func(userID string, offset, limit int) ([]domain.JobRun, int, error)
 	findAllFunc         func() ([]domain.JobRun, error)
+	findByStatusFunc    func(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error)
 	saveFunc            func(run domain.JobRun) error
 }
 
@@ -49,6 +51,13 @@ func (m *mockJobRunRepository) FindByUserID(userID string, offset, limit int) ([
 func (m *mockJobRunRepository) FindAll() ([]domain.JobRun, error) {
 	if m.findAllFunc != nil {
 		return m.findAllFunc()
+	}
+	return nil, nil
+}
+
+func (m *mockJobRunRepository) FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error) {
+	if m.findByStatusFunc != nil {
+		return m.findByStatusFunc(ctx, status)
 	}
 	return nil, nil
 }
