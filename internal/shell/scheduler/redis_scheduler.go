@@ -417,8 +417,16 @@ func (s *RedisScheduler) executeJob(jobID string) {
 			log.Printf("[RedisScheduler] Warning: Failed to save job %s to database: %v", jobID, err)
 			// Continue with Redis update even if database save fails
 		} else {
+			lastRunStr := "<nil>"
+			if scheduledJob.Job.LastRunAt != nil {
+				lastRunStr = scheduledJob.Job.LastRunAt.Format(time.RFC3339)
+			}
+			nextRunStr := "<nil>"
+			if scheduledJob.Job.NextRunAt != nil {
+				nextRunStr = scheduledJob.Job.NextRunAt.Format(time.RFC3339)
+			}
 			log.Printf("[RedisScheduler] Saved job %s to database with last_run_at=%s, next_run_at=%s",
-				jobID, scheduledJob.Job.LastRunAt.Format(time.RFC3339), scheduledJob.Job.NextRunAt.Format(time.RFC3339))
+				jobID, lastRunStr, nextRunStr)
 		}
 	}
 
