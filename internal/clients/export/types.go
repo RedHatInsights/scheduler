@@ -72,7 +72,8 @@ type SourceStatus struct {
 	Application Application `json:"application"`
 	Resource    string      `json:"resource"`
 	Status      string      `json:"status"`
-	Error       *string     `json:"error,omitempty"`
+	Error       *int        `json:"error,omitempty"`
+	Message     *string     `json:"message,omitempty"`
 }
 
 // ExportListResponse represents a list of export statuses

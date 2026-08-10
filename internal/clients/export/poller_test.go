@@ -90,25 +90,27 @@ func TestExportPoller_StatusMapping(t *testing.T) {
 }
 
 func TestExportPoller_ErrorExtraction(t *testing.T) {
-	// Test that error messages are properly extracted
-	errMsg := "test error message"
+	errCode := 500
+	errMsg := "advisor processing error"
 	sources := []SourceStatus{
 		{
 			Application: AppInventory,
 			Resource:    "systems",
 			Status:      "failed",
-			Error:       &errMsg,
+			Error:       &errCode,
+			Message:     &errMsg,
 		},
 	}
 
-	// Verify error extraction logic
 	var extractedError string
-	if len(sources) > 0 && sources[0].Error != nil {
-		extractedError = *sources[0].Error
+	if len(sources) > 0 {
+		if sources[0].Message != nil {
+			extractedError = *sources[0].Message
+		}
 	}
 
 	if extractedError != errMsg {
-		t.Errorf("expected error %s, got %s", errMsg, extractedError)
+		t.Errorf("expected error %q, got %q", errMsg, extractedError)
 	}
 }
 
