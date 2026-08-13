@@ -7,6 +7,7 @@ import (
 
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/template"
 	"insights-scheduler/internal/identity"
 )
 
@@ -32,7 +33,10 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 		domain.PayloadMessage:     NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: NewHTTPJobExecutor(),
 		domain.PayloadCommand:     NewCommandJobExecutor(),
-		domain.PayloadExport:      NewExportJobExecutor(cfg, userValidator, notifier),
+		domain.PayloadExport: func() JobRunner {
+			e, _ := template.NewEvaluator()
+			return NewExportJobExecutor(cfg, userValidator, notifier, e)
+		}(),
 	}
 
 	// Create executor with map of executors

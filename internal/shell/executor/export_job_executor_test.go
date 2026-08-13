@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +16,18 @@ import (
 	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/template"
 	"insights-scheduler/internal/identity"
 )
+
+func mustCELEvaluator(t *testing.T) *template.Evaluator {
+	t.Helper()
+	e, err := template.NewEvaluator()
+	if err != nil {
+		t.Fatalf("NewEvaluator() error: %v", err)
+	}
+	return e
+}
 
 type recordingNotifier struct {
 	mu            sync.Mutex
@@ -91,7 +102,7 @@ func TestExportJobExecutor_SuccessfulExport(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
 	result, resultType, err := executor.Execute(newTestJob(), newTestLogger())
 
 	if err != nil {
@@ -164,7 +175,7 @@ func TestExportJobExecutor_ExportFailed_IncludesExportIDAndSendsNotification(t *
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
 	_, _, err := executor.Execute(newTestJob(), newTestLogger())
 
 	if err == nil {
@@ -223,7 +234,7 @@ func TestExportJobExecutor_PollTimeout_IncludesExportID(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
 	_, _, err := executor.Execute(newTestJob(), newTestLogger())
 
 	if err == nil {
@@ -262,7 +273,7 @@ func TestExportJobExecutor_CreateExportFails(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
 	_, _, err := executor.Execute(newTestJob(), newTestLogger())
 
 	if err == nil {
@@ -277,5 +288,130 @@ func TestExportJobExecutor_CreateExportFails(t *testing.T) {
 	notifications := notifier.getNotifications()
 	if len(notifications) != 0 {
 		t.Errorf("Expected 0 notifications for creation failure, got %d", len(notifications))
+	}
+}
+
+func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
+	// Create a test server that captures the request body
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "POST" && r.URL.Path == "/exports" {
+			capturedBody, _ = io.ReadAll(r.Body)
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-template-123",
+				Status: export.StatusPending,
+			})
+			return
+		}
+		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/status") {
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-template-123",
+				Status: export.StatusComplete,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// Create job with CEL-templated payload
+	payload := map[string]interface{}{
+		"name":   "Templated Export",
+		"format": "json",
+		"sources": []interface{}{
+			map[string]interface{}{
+				"application": "advisor",
+				"resource":    "recommendations",
+				"filters": map[string]interface{}{
+					"start_date": "cel:now.first_of_last_month().format_date('2006-01-02')",
+					"end_date":   "cel:now.last_of_last_month().format_date('2006-01-02')",
+				},
+			},
+		},
+	}
+	job := domain.NewJob("Templated Export Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
+
+	notifier := &recordingNotifier{}
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:        server.URL,
+			PublicBaseURL:  "https://console.example.com/api/export/v1",
+			PollMaxRetries: 5,
+			PollInterval:   1 * time.Millisecond,
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
+	_, _, err := executor.Execute(job, newTestLogger())
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Verify the captured request body has resolved dates (not cel: prefixes)
+	if capturedBody == nil {
+		t.Fatal("Expected captured request body")
+	}
+
+	var sentReq map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &sentReq); err != nil {
+		t.Fatalf("Failed to parse captured body: %v", err)
+	}
+
+	// The sources should contain resolved dates, not cel: expressions
+	sources := sentReq["sources"].([]interface{})
+	source := sources[0].(map[string]interface{})
+	filters := source["filters"].(map[string]interface{})
+
+	startDate := filters["start_date"].(string)
+	endDate := filters["end_date"].(string)
+
+	// Dates should be in YYYY-MM-DD format and NOT start with "cel:"
+	if strings.HasPrefix(startDate, "cel:") {
+		t.Errorf("start_date was not resolved: %s", startDate)
+	}
+	if strings.HasPrefix(endDate, "cel:") {
+		t.Errorf("end_date was not resolved: %s", endDate)
+	}
+	// Basic format check
+	if len(startDate) != 10 || startDate[4] != '-' || startDate[7] != '-' {
+		t.Errorf("start_date not in YYYY-MM-DD format: %s", startDate)
+	}
+}
+
+func TestExportJobExecutor_InvalidTemplate(t *testing.T) {
+	// Test that invalid CEL expressions produce a clear error
+	payload := map[string]interface{}{
+		"name":   "Bad Template",
+		"format": "json",
+		"sources": []interface{}{
+			map[string]interface{}{
+				"application": "advisor",
+				"resource":    "recommendations",
+				"filters": map[string]interface{}{
+					"start_date": "cel:invalid_func()",
+				},
+			},
+		},
+	}
+	job := domain.NewJob("Bad Template Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
+
+	notifier := &recordingNotifier{}
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       "http://unused",
+			PublicBaseURL: "http://unused",
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
+	_, _, err := executor.Execute(job, newTestLogger())
+
+	if err == nil {
+		t.Fatal("Expected error for invalid CEL expression")
+	}
+	if !strings.Contains(err.Error(), "payload templates") {
+		t.Errorf("Error should mention payload templates, got: %s", err.Error())
 	}
 }

@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -65,6 +66,11 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	// Call service with identity - authorization is handled by the service
 	job, err := h.jobService.CreateJob(r.Context(), ident, req.Name, req.Schedule, req.Timezone, req.Type, req.Payload)
 	if err != nil {
+		if errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+			logger.Warn("Invalid payload template", slog.Any("error", err))
+			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidPayloadTemplate(err)})
+			return
+		}
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidOrgID || err == domain.ErrInvalidTimezone {
 			logger.Warn("Validation error creating job", slog.Any("error", err))
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
@@ -201,6 +207,11 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
 			return
 		}
+		if errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+			logger.Warn("UpdateJob invalid payload template", slog.Any("error", err))
+			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidPayloadTemplate(err)})
+			return
+		}
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidStatusTransition || err == domain.ErrInvalidOrgID {
 			logger.Warn("UpdateJob validation error", slog.Any("error", err))
 			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorBadRequest()})
@@ -246,6 +257,11 @@ func (h *JobHandler) PatchJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			respondWithErrors(w, http.StatusNotFound, []ErrorObject{errorNotFound("job", id)})
+			return
+		}
+		if errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+			logger.Warn("PatchJob invalid payload template", slog.Any("error", err))
+			respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidPayloadTemplate(err)})
 			return
 		}
 		if err == domain.ErrInvalidSchedule || err == domain.ErrInvalidPayload || err == domain.ErrInvalidStatus || err == domain.ErrInvalidStatusTransition || err == domain.ErrInvalidOrgID {
