@@ -16,6 +16,18 @@ const (
 	maxEvalCount    = 50
 )
 
+var dateFormatConstants = map[string]string{
+	"ISO_DATE":      "2006-01-02",
+	"ISO_DATETIME":  "2006-01-02T15:04:05Z",
+	"ISO_8601":      "2006-01-02T15:04:05Z07:00",
+	"US_DATE":       "01/02/2006",
+	"EU_DATE":       "02/01/2006",
+	"DATE_SLASH":    "2006/01/02",
+	"YEAR_MONTH":    "2006-01",
+	"MONTH_DAY":     "01-02",
+	"DATETIME_FULL": "2006-01-02 15:04:05",
+}
+
 // Evaluator manages the CEL environment and executes templated expressions.
 type Evaluator struct {
 	env *cel.Env
@@ -23,10 +35,16 @@ type Evaluator struct {
 
 // NewEvaluator sets up the CEL environment with context variables and custom date functions.
 func NewEvaluator() (*Evaluator, error) {
-	env, err := cel.NewEnv(
-		// Inject standard context variables
+	envOpts := []cel.EnvOption{
 		cel.Variable("now", cel.TimestampType),
 		cel.Variable("job_id", cel.StringType),
+	}
+
+	for name := range dateFormatConstants {
+		envOpts = append(envOpts, cel.Variable(name, cel.StringType))
+	}
+
+	envOpts = append(envOpts,
 
 		// Custom Member Function 1: timestamp.add_days(int) -> timestamp
 		cel.Function("add_days",
@@ -265,11 +283,23 @@ func NewEvaluator() (*Evaluator, error) {
 		),
 	)
 
+	env, err := cel.NewEnv(envOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize CEL environment: %w", err)
 	}
 
 	return &Evaluator{env: env}, nil
+}
+
+func (e *Evaluator) withFormatConstants(ctx map[string]any) map[string]any {
+	merged := make(map[string]any, len(ctx)+len(dateFormatConstants))
+	for k, v := range dateFormatConstants {
+		merged[k] = v
+	}
+	for k, v := range ctx {
+		merged[k] = v
+	}
+	return merged
 }
 
 // EvaluateExpr compiles and runs a single CEL string against the current context.
@@ -288,7 +318,7 @@ func (e *Evaluator) EvaluateExpr(exprStr string, ctx map[string]any) (any, error
 		return nil, fmt.Errorf("program creation error: %w", err)
 	}
 
-	out, _, err := prg.Eval(ctx)
+	out, _, err := prg.Eval(e.withFormatConstants(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("eval error: %w", err)
 	}

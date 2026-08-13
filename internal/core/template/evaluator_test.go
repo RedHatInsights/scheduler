@@ -323,6 +323,75 @@ func TestComposability(t *testing.T) {
 	}
 }
 
+func TestFormatConstants(t *testing.T) {
+	e := mustEvaluator(t)
+	now := time.Date(2026, 8, 12, 14, 30, 45, 0, time.UTC)
+
+	tests := []struct {
+		name     string
+		constant string
+		want     string
+	}{
+		{"ISO_DATE", "ISO_DATE", "2026-08-12"},
+		{"ISO_DATETIME", "ISO_DATETIME", "2026-08-12T14:30:45Z"},
+		{"ISO_8601", "ISO_8601", "2026-08-12T14:30:45Z"},
+		{"US_DATE", "US_DATE", "08/12/2026"},
+		{"EU_DATE", "EU_DATE", "12/08/2026"},
+		{"DATE_SLASH", "DATE_SLASH", "2026/08/12"},
+		{"YEAR_MONTH", "YEAR_MONTH", "2026-08"},
+		{"MONTH_DAY", "MONTH_DAY", "08-12"},
+		{"DATETIME_FULL", "DATETIME_FULL", "2026-08-12 14:30:45"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evalDate(t, e, "now.format_date("+tt.constant+")", now)
+			if got != tt.want {
+				t.Errorf("format_date(%s) = %s, want %s", tt.constant, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatConstants_WithDateFunctions(t *testing.T) {
+	e := mustEvaluator(t)
+	now := time.Date(2026, 8, 12, 14, 30, 0, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		expr string
+		want string
+	}{
+		{
+			"first_of_last_month with ISO_DATE",
+			"now.first_of_last_month().format_date(ISO_DATE)",
+			"2026-07-01",
+		},
+		{
+			"end_of_day with DATETIME_FULL",
+			"now.end_of_day().format_date(DATETIME_FULL)",
+			"2026-08-12 23:59:59",
+		},
+		{
+			"first_of_quarter with YEAR_MONTH",
+			"now.first_of_quarter().format_date(YEAR_MONTH)",
+			"2026-07",
+		},
+		{
+			"first_of_month with US_DATE",
+			"now.first_of_month().format_date(US_DATE)",
+			"08/01/2026",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evalDate(t, e, tt.expr, now)
+			if got != tt.want {
+				t.Errorf("got %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestExpressionLengthLimit(t *testing.T) {
 	e := mustEvaluator(t)
 	ctx := map[string]any{"now": time.Now(), "job_id": "test"}
