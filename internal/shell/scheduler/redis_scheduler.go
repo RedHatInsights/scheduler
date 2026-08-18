@@ -408,8 +408,11 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	scheduledJob.LastUpdate = time.Now()
 	scheduledJob.JobRunID = "" // Clear the job run ID after execution (it was for immediate execution only)
 
-	// Use the reloaded job (with updated failure tracking) for rescheduling
-	scheduledJob.Job = updatedJob.WithNextRunAt(nextRun)
+	// Use the reloaded job (with updated failure tracking) for rescheduling.
+	// Re-apply last_run_at since the reload may return a stale value — export
+	// jobs skip FailureTracker.TrackSuccess, so nobody persists last_run_at
+	// between our in-memory set (line 349) and the reload.
+	scheduledJob.Job = updatedJob.WithLastRunAt(now).WithNextRunAt(nextRun)
 
 	// Persist updated job to PostgreSQL (if repository is available)
 	if s.jobRepo != nil {
