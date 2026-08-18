@@ -42,12 +42,9 @@ func (a *AuthorizedJobServiceAdapter) ListJobs(ctx context.Context, ident identi
 }
 
 func (a *AuthorizedJobServiceAdapter) UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
-	// Extract identity fields
-	orgID := ident.Identity.OrgID
 	userID := ident.Identity.User.UserID
 
-	// Delegate to core service
-	return a.core.UpdateJob(ctx, id, name, orgID, userID, schedule, payloadType, payload, status)
+	return a.core.UpdateJobWithUserCheck(ctx, id, name, userID, schedule, payloadType, payload, status)
 }
 
 func (a *AuthorizedJobServiceAdapter) PatchJob(ctx context.Context, ident identity.XRHID, id string, updates map[string]interface{}) (domain.Job, error) {

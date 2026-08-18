@@ -492,6 +492,42 @@ func TestUpdateJob_CanSetStatusToPaused(t *testing.T) {
 	}
 }
 
+func TestUpdateJobWithUserCheck_AllowsOwner(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3)
+
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	updatedJob, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Updated Job", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+	if err != nil {
+		t.Fatalf("UpdateJobWithUserCheck() unexpected error for owner: %v", err)
+	}
+
+	if updatedJob.Name != "Updated Job" {
+		t.Errorf("UpdateJobWithUserCheck() expected name 'Updated Job', got %q", updatedJob.Name)
+	}
+}
+
+func TestUpdateJobWithUserCheck_RejectsDifferentUser(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3)
+
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	_, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Hijacked Job", "user-456", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+	if err != domain.ErrJobNotFound {
+		t.Errorf("UpdateJobWithUserCheck() expected ErrJobNotFound for different user, got %v", err)
+	}
+}
+
 func TestPatchJobWithUserCheck_CannotSetStatusToRunning(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}
