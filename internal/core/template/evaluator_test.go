@@ -668,6 +668,27 @@ func TestValidatePayload_NilPayload(t *testing.T) {
 	}
 }
 
+func TestBareCelPrefix(t *testing.T) {
+	e := mustEvaluator(t)
+	ctx := map[string]any{"now": time.Now(), "job_id": "test"}
+
+	t.Run("validate rejects bare cel: prefix", func(t *testing.T) {
+		payload := map[string]any{"field": "cel:"}
+		err := e.ValidatePayload(payload)
+		if err == nil {
+			t.Fatal("ValidatePayload should reject bare 'cel:' with no expression body")
+		}
+	})
+
+	t.Run("process rejects bare cel: prefix", func(t *testing.T) {
+		payload := map[string]any{"field": "cel:"}
+		_, err := e.ProcessPayload(payload, ctx)
+		if err == nil {
+			t.Fatal("ProcessPayload should reject bare 'cel:' with no expression body")
+		}
+	})
+}
+
 func TestValidatePayload_DoesNotEvaluate(t *testing.T) {
 	e := mustEvaluator(t)
 

@@ -2,12 +2,15 @@ package template
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 )
+
+const celPrefix = "cel:"
 
 const (
 	maxExprLength   = 1024
@@ -326,14 +329,14 @@ func (e *Evaluator) EvaluateExpr(exprStr string, ctx map[string]any) (any, error
 	return out.Value(), nil
 }
 
-// ProcessPayload recursively traverses map/list data structures, replacing
-// expression strings with evaluated dynamic values.
-func (e *Evaluator) ProcessPayload(data any, ctx map[string]any) (any, error) {
-	evalCount := 0
-	return e.processPayload(data, ctx, 0, &evalCount)
-}
+// exprVisitor is called for each cel: expression found during payload traversal.
+// It receives the expression body (without the "cel:" prefix) and returns the
+// replacement value (or the zero value if only validating) and an error.
+type exprVisitor func(expr string) (any, error)
 
-func (e *Evaluator) processPayload(data any, ctx map[string]any, depth int, evalCount *int) (any, error) {
+// walkPayload recursively traverses map/list data structures, calling visitor
+// for each cel:-prefixed string. Used by both ProcessPayload and ValidatePayload.
+func (e *Evaluator) walkPayload(data any, visitor exprVisitor, depth int, evalCount *int) (any, error) {
 	if depth > maxPayloadDepth {
 		return nil, fmt.Errorf("payload nesting depth exceeds maximum of %d", maxPayloadDepth)
 	}
@@ -344,19 +347,19 @@ func (e *Evaluator) processPayload(data any, ctx map[string]any, depth int, eval
 
 	switch v := data.(type) {
 	case string:
-		if len(v) > 4 && v[:4] == "cel:" {
+		if strings.HasPrefix(v, celPrefix) {
 			*evalCount++
 			if *evalCount > maxEvalCount {
 				return nil, fmt.Errorf("number of CEL expressions exceeds maximum of %d", maxEvalCount)
 			}
-			return e.EvaluateExpr(v[4:], ctx)
+			return visitor(v[len(celPrefix):])
 		}
 		return v, nil
 
 	case map[string]any:
 		result := make(map[string]any, len(v))
 		for key, val := range v {
-			evalVal, err := e.processPayload(val, ctx, depth+1, evalCount)
+			evalVal, err := e.walkPayload(val, visitor, depth+1, evalCount)
 			if err != nil {
 				return nil, fmt.Errorf("field '%s': %w", key, err)
 			}
@@ -367,7 +370,7 @@ func (e *Evaluator) processPayload(data any, ctx map[string]any, depth int, eval
 	case []any:
 		result := make([]any, len(v))
 		for i, val := range v {
-			evalVal, err := e.processPayload(val, ctx, depth+1, evalCount)
+			evalVal, err := e.walkPayload(val, visitor, depth+1, evalCount)
 			if err != nil {
 				return nil, fmt.Errorf("index %d: %w", i, err)
 			}
@@ -380,61 +383,32 @@ func (e *Evaluator) processPayload(data any, ctx map[string]any, depth int, eval
 	}
 }
 
+// ProcessPayload recursively traverses map/list data structures, replacing
+// cel:-prefixed expression strings with evaluated dynamic values.
+func (e *Evaluator) ProcessPayload(data any, ctx map[string]any) (any, error) {
+	evalCount := 0
+	return e.walkPayload(data, func(expr string) (any, error) {
+		return e.EvaluateExpr(expr, ctx)
+	}, 0, &evalCount)
+}
+
 // ValidatePayload recursively walks a payload structure and compiles any
-// "cel:" expressions without evaluating them. This is intended for API-time
+// cel: expressions without evaluating them. This is intended for API-time
 // validation when users create or update jobs, so that malformed expressions
 // are rejected early. It enforces expression length, nesting depth, and eval
 // count limits. The runtime cost limit (maxEvalCost) is only enforced during
 // actual evaluation in ProcessPayload, not here.
 func (e *Evaluator) ValidatePayload(data any) error {
 	evalCount := 0
-	return e.validatePayload(data, 0, &evalCount)
-}
-
-func (e *Evaluator) validatePayload(data any, depth int, evalCount *int) error {
-	if depth > maxPayloadDepth {
-		return fmt.Errorf("payload nesting depth exceeds maximum of %d", maxPayloadDepth)
-	}
-
-	if data == nil {
-		return nil
-	}
-
-	switch v := data.(type) {
-	case string:
-		if len(v) > 4 && v[:4] == "cel:" {
-			*evalCount++
-			if *evalCount > maxEvalCount {
-				return fmt.Errorf("number of CEL expressions exceeds maximum of %d", maxEvalCount)
-			}
-			expr := v[4:]
-			if len(expr) > maxExprLength {
-				return fmt.Errorf("expression length %d exceeds maximum of %d characters", len(expr), maxExprLength)
-			}
-			_, iss := e.env.Compile(expr)
-			if iss.Err() != nil {
-				return fmt.Errorf("compile error: %w", iss.Err())
-			}
+	_, err := e.walkPayload(data, func(expr string) (any, error) {
+		if len(expr) > maxExprLength {
+			return nil, fmt.Errorf("expression length %d exceeds maximum of %d characters", len(expr), maxExprLength)
 		}
-		return nil
-
-	case map[string]any:
-		for key, val := range v {
-			if err := e.validatePayload(val, depth+1, evalCount); err != nil {
-				return fmt.Errorf("field '%s': %w", key, err)
-			}
+		_, iss := e.env.Compile(expr)
+		if iss.Err() != nil {
+			return nil, fmt.Errorf("compile error: %w", iss.Err())
 		}
-		return nil
-
-	case []any:
-		for i, val := range v {
-			if err := e.validatePayload(val, depth+1, evalCount); err != nil {
-				return fmt.Errorf("index %d: %w", i, err)
-			}
-		}
-		return nil
-
-	default:
-		return nil
-	}
+		return nil, nil
+	}, 0, &evalCount)
+	return err
 }
