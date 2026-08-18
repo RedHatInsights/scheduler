@@ -272,6 +272,13 @@ func TestAddMonths(t *testing.T) {
 		{"backward 1", time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC), "now.add_months(-1).format_date('2006-01-02')", "2026-07-12"},
 		{"cross year forward", time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC), "now.add_months(3).format_date('2006-01-02')", "2027-02-15"},
 		{"cross year backward", time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC), "now.add_months(-3).format_date('2006-01-02')", "2025-11-10"},
+		{"jan 31 + 1 clamps to feb 28", time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC), "now.add_months(1).format_date('2006-01-02')", "2026-02-28"},
+		{"jan 31 + 1 clamps to feb 29 leap", time.Date(2028, 1, 31, 0, 0, 0, 0, time.UTC), "now.add_months(1).format_date('2006-01-02')", "2028-02-29"},
+		{"mar 31 + 1 clamps to apr 30", time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC), "now.add_months(1).format_date('2006-01-02')", "2026-04-30"},
+		{"may 31 - 1 clamps to apr 30", time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC), "now.add_months(-1).format_date('2006-01-02')", "2026-04-30"},
+		{"jan 29 + 1 clamps to feb 28 non-leap", time.Date(2026, 1, 29, 0, 0, 0, 0, time.UTC), "now.add_months(1).format_date('2006-01-02')", "2026-02-28"},
+		{"jan 30 + 1 clamps to feb 28", time.Date(2026, 1, 30, 0, 0, 0, 0, time.UTC), "now.add_months(1).format_date('2006-01-02')", "2026-02-28"},
+		{"aug 31 + 1 stays sep 30", time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC), "now.add_months(1).format_date('2006-01-02')", "2026-09-30"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

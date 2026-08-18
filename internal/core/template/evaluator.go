@@ -31,6 +31,18 @@ var dateFormatConstants = map[string]string{
 	"DATETIME_FULL": "2006-01-02 15:04:05",
 }
 
+// addMonthsClamped adds n months to t, clamping the day to the last day of the
+// target month when it would otherwise overflow (e.g. Jan 31 + 1 month = Feb 28).
+func addMonthsClamped(t time.Time, n int) time.Time {
+	y, m, d := t.Date()
+	targetMonth := time.Month(int(m) + n)
+	lastDay := time.Date(y, targetMonth+1, 0, 0, 0, 0, 0, t.Location()).Day()
+	if d > lastDay {
+		d = lastDay
+	}
+	return time.Date(y, targetMonth, d, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+}
+
 // Evaluator manages the CEL environment and executes templated expressions.
 type Evaluator struct {
 	env *cel.Env
@@ -84,7 +96,7 @@ func NewEvaluator() (*Evaluator, error) {
 					if !ok {
 						return types.ValOrErr(rhs, "rhs must be an int")
 					}
-					newTime := ts.Time.AddDate(0, int(months), 0)
+					newTime := addMonthsClamped(ts.Time, int(months))
 					return types.Timestamp{Time: newTime}
 				}),
 			),

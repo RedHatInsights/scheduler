@@ -92,7 +92,7 @@ All date functions are member functions on `timestamp` values. They return `time
 | `ts.last_of_month()` | `timestamp` | Last day of the current month at 00:00:00 UTC |
 | `ts.first_of_last_month()` | `timestamp` | 1st of the previous month at 00:00:00 UTC |
 | `ts.last_of_last_month()` | `timestamp` | Last day of the previous month at 00:00:00 UTC |
-| `ts.add_months(n)` | `timestamp` | Add `n` calendar months (negative to subtract) |
+| `ts.add_months(n)` | `timestamp` | Add `n` calendar months (negative to subtract). Days are clamped to the last day of the target month (e.g. Jan 31 + 1 month = Feb 28) |
 
 ### Week Operations (ISO 8601, Monday-based)
 
