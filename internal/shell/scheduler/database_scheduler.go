@@ -195,9 +195,19 @@ func (s *DatabaseScheduler) executeJobWithContext(ctx context.Context, job domai
 		}
 	}
 
-	// For timed-out jobs, do not reschedule
+	// For timed-out jobs, reset status back to scheduled with delayed next_run_at
 	if timedOut {
-		log.Printf("[DatabaseScheduler] Job %s timed out, will not reschedule", job.ID)
+		log.Printf("[DatabaseScheduler] Job %s timed out, resetting status and delaying next run", job.ID)
+
+		// Calculate next run time (delayed by 5 minutes as penalty for timeout)
+		schedule, err := s.parser.Parse(string(job.Schedule))
+		if err == nil {
+			nextRun := schedule.Next(time.Now().Add(5 * time.Minute))
+			timeoutJob := job.WithStatus(domain.StatusScheduled).WithLastRunAt(now).WithNextRunAt(nextRun)
+			if saveErr := s.jobRepo.Save(timeoutJob); saveErr != nil {
+				log.Printf("[DatabaseScheduler] Error saving timed-out job %s: %v", job.ID, saveErr)
+			}
+		}
 		return
 	}
 
@@ -226,13 +236,17 @@ func (s *DatabaseScheduler) executeJobWithContext(ctx context.Context, job domai
 	schedule, err := s.parser.Parse(string(job.Schedule))
 	if err != nil {
 		log.Printf("[DatabaseScheduler] Error parsing schedule for job %s: %v", job.ID, err)
+		// Reset status back to scheduled even if we can't parse schedule
+		resetJob := reloadedJob.WithStatus(domain.StatusScheduled)
+		s.jobRepo.Save(resetJob)
 		return
 	}
 
 	nextRun := schedule.Next(time.Now())
 
 	// Use the reloaded job (with updated failure tracking) for rescheduling
-	updatedJob := reloadedJob.WithLastRunAt(now).WithNextRunAt(nextRun)
+	// IMPORTANT: Set status back to 'scheduled' (it was 'running' during execution)
+	updatedJob := reloadedJob.WithStatus(domain.StatusScheduled).WithLastRunAt(now).WithNextRunAt(nextRun)
 
 	// Persist updated job to PostgreSQL
 	if err := s.jobRepo.Save(updatedJob); err != nil {

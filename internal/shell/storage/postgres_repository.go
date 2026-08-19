@@ -193,11 +193,12 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 
 // FetchDueJobs atomically claims and returns jobs ready for execution
 // Uses FOR UPDATE SKIP LOCKED to prevent duplicate execution across workers
-// Updates next_run_at to far future to prevent re-claiming during execution
-// The caller must update next_run_at to the correct value after execution completes
+// Temporarily sets status to 'running' to prevent re-claiming during execution
+// The caller must set status back to 'scheduled' and update next_run_at after execution
 func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]domain.Job, error) {
-	// Atomically claim jobs by updating next_run_at to far future
+	// Atomically claim jobs by temporarily setting status to 'running'
 	// This prevents other workers from picking up the same job during execution
+	// without affecting the next_run_at schedule
 	query := `
 		WITH claimed_jobs AS (
 			SELECT id
@@ -209,7 +210,7 @@ func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]
 			FOR UPDATE SKIP LOCKED
 		)
 		UPDATE jobs
-		SET next_run_at = NOW() + INTERVAL '1 hour'
+		SET status = 'running'
 		FROM claimed_jobs
 		WHERE jobs.id = claimed_jobs.id
 		RETURNING jobs.id, jobs.name, jobs.org_id, jobs.user_id, jobs.schedule, jobs.timezone,
