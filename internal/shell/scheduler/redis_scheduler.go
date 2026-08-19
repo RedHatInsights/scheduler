@@ -384,8 +384,13 @@ func (s *RedisScheduler) executeJobWithContext(ctx context.Context, jobID string
 		return
 	}
 
-	// Ensure lock is released (use s.ctx so cleanup happens even if job timed out)
-	defer s.client.Del(s.ctx, lockKey)
+	// Ensure lock is released even during shutdown
+	// Use background context because s.ctx may be cancelled during graceful shutdown
+	defer func() {
+		if err := s.client.Del(context.Background(), lockKey).Err(); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to release lock for job %s: %v", jobID, err)
+		}
+	}()
 
 	// Get job data
 	jobKey := jobDataKeyPrefix + jobID
