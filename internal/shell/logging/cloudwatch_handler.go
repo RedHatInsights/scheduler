@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -169,6 +170,12 @@ func (h *CloudWatchHandler) flush() {
 	copy(events, h.buffer)
 	h.buffer = h.buffer[:0]
 	h.mu.Unlock()
+
+	// CloudWatch requires events in chronological order within a batch.
+	// Concurrent goroutines can append events out of order.
+	sort.Slice(events, func(i, j int) bool {
+		return *events[i].Timestamp < *events[j].Timestamp
+	})
 
 	// Send to CloudWatch
 	input := &cloudwatchlogs.PutLogEventsInput{
