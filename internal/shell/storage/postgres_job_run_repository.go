@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -44,17 +45,25 @@ func NewPostgresJobRunRepository(cfg *config.Config, logger *slog.Logger) (*Post
 
 func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	query := `
-		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO job_runs (id, job_id, status, start_time, end_time, error_message, result_type, result,
+		                      external_job_id, external_service, poll_started_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT(id) DO UPDATE SET
 			status = excluded.status, end_time = excluded.end_time,
 			error_message = excluded.error_message, result_type = excluded.result_type,
-			result = excluded.result`
+			result = excluded.result, external_job_id = excluded.external_job_id,
+			external_service = excluded.external_service, poll_started_at = excluded.poll_started_at`
 
 	var endTime *string
 	if run.EndTime != nil {
 		s := run.EndTime.Format(time.RFC3339)
 		endTime = &s
+	}
+
+	var pollStartedAt *string
+	if run.PollStartedAt != nil {
+		s := run.PollStartedAt.Format(time.RFC3339)
+		pollStartedAt = &s
 	}
 
 	// Marshal Result to JSON if present
@@ -75,7 +84,9 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 	}
 
 	_, err := r.db.Exec(query, run.ID, run.JobID, run.Status, run.StartTime.Format(time.RFC3339),
-		endTime, run.ErrorMessage, resultType, resultJSON, time.Now().UTC().Format(time.RFC3339))
+		endTime, run.ErrorMessage, resultType, resultJSON,
+		run.ExternalJobID, run.ExternalService, pollStartedAt,
+		time.Now().UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("failed to save job run: %w", err)
 	}
@@ -249,6 +260,85 @@ func (r *PostgresJobRunRepository) CleanupOldRuns(keepPerJob int) (int64, error)
 	}
 
 	return deleted, nil
+}
+
+// FetchInFlightExportRuns atomically claims export runs that need status polling
+// Uses FOR UPDATE SKIP LOCKED to prevent duplicate polling across workers
+// Returns runs that are 'running' with external_job_id set and ready for polling
+func (r *PostgresJobRunRepository) FetchInFlightExportRuns(ctx context.Context, limit int, maxAge time.Duration) ([]domain.JobRun, error) {
+	query := `
+		SELECT id, job_id, status, start_time, end_time, error_message, result_type, result,
+		       external_job_id, external_service, poll_started_at
+		FROM job_runs
+		WHERE status = 'running'
+		  AND external_service = 'export'
+		  AND external_job_id IS NOT NULL
+		  AND poll_started_at IS NOT NULL
+		  AND poll_started_at > NOW() - $1::interval
+		ORDER BY poll_started_at
+		LIMIT $2
+		FOR UPDATE SKIP LOCKED
+	`
+
+	// Convert maxAge to PostgreSQL interval format (e.g., "30 minutes")
+	interval := fmt.Sprintf("%d seconds", int(maxAge.Seconds()))
+
+	rows, err := r.db.QueryContext(ctx, query, interval, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []domain.JobRun
+	for rows.Next() {
+		var run domain.JobRun
+		var startTimeStr string
+		var endTimeStr, errorMessage, resultType, result *string
+		var externalJobID, externalService *string
+		var pollStartedAtStr *string
+
+		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr,
+			&endTimeStr, &errorMessage, &resultType, &result,
+			&externalJobID, &externalService, &pollStartedAtStr); err != nil {
+			return nil, fmt.Errorf("failed to scan job run: %w", err)
+		}
+
+		run.StartTime, _ = time.Parse(time.RFC3339, startTimeStr)
+		if endTimeStr != nil {
+			if t, err := time.Parse(time.RFC3339, *endTimeStr); err == nil {
+				run.EndTime = &t
+			}
+		}
+		run.ErrorMessage = errorMessage
+
+		// Parse result_type
+		if resultType != nil {
+			rt := domain.ResultType(*resultType)
+			run.ResultType = &rt
+		}
+
+		// Unmarshal Result from JSON if present
+		if result != nil {
+			var resultData interface{}
+			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+			run.Result = resultData
+		}
+
+		// Set export-specific fields
+		run.ExternalJobID = externalJobID
+		run.ExternalService = externalService
+		if pollStartedAtStr != nil {
+			if t, err := time.Parse(time.RFC3339, *pollStartedAtStr); err == nil {
+				run.PollStartedAt = &t
+			}
+		}
+
+		runs = append(runs, run)
+	}
+
+	return runs, rows.Err()
 }
 
 func (r *PostgresJobRunRepository) Close() error {

@@ -39,6 +39,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
+	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/ports"
@@ -631,93 +632,153 @@ func runWorker(cmd *cobra.Command, args []string) {
 		jobExecutor = failureTrackingExecutor
 	}
 
-	// Initialize Redis scheduler
-	if !cfg.Redis.Enabled {
-		log.Fatalf("[WORKER] Redis must be enabled for worker pods. Set REDIS_ENABLED=true")
+	// Initialize scheduler based on backend configuration
+	var jobScheduler interface {
+		Start()
+		Stop()
 	}
 
-	log.Printf("[WORKER] Connecting to Redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	var redisScheduler *scheduler.RedisScheduler // Keep for compatibility with periodic sync logic
 
-	redisScheduler, err := scheduler.NewRedisScheduler(cfg.Redis, jobExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
-	if err != nil {
-		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
-	}
-	defer redisScheduler.Close()
+	if cfg.Scheduler.Backend == "database" {
+		// Database-only mode: Use PostgreSQL FOR UPDATE SKIP LOCKED
+		log.Println("[WORKER] Using database-only scheduler (FOR UPDATE SKIP LOCKED)")
 
-	log.Println("[WORKER] Connected to Redis successfully")
+		dbScheduler := scheduler.NewDatabaseScheduler(
+			jobExecutor,
+			jobRepo,
+			cfg.Scheduler.RedisPollInterval, // Reuse same poll interval config
+			cfg.Scheduler.MaxConcurrentJobs,
+			cfg.Scheduler.JobExecutionTimeout,
+		)
+		jobScheduler = dbScheduler
 
-	// On startup, sync jobs from Postgres to Redis (for resilience)
-	// This ensures Redis has all scheduled jobs even after Redis restart
-	// Use leader election to prevent thundering herd (only one worker syncs)
-	log.Println("[WORKER] Checking if database sync is needed...")
-
-	// First, check if Redis already has jobs
-	jobCount, err := redisScheduler.GetScheduledJobCount()
-	if err != nil {
-		log.Printf("[WORKER] WARNING: Failed to check Redis job count: %v", err)
-	} else if jobCount > 0 {
-		log.Printf("[WORKER] Redis already has %d jobs, skipping sync", jobCount)
+		log.Printf("[WORKER] Database scheduler initialized (poll interval: %s)", cfg.Scheduler.RedisPollInterval)
 	} else {
-		// Redis is empty, try to become sync leader
-		log.Println("[WORKER] Redis is empty, attempting to acquire sync leader lock...")
+		// Redis mode: Use Redis sorted sets with distributed locking
+		if !cfg.Redis.Enabled {
+			log.Fatalf("[WORKER] Redis scheduler requires REDIS_ENABLED=true")
+		}
 
-		isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
+		log.Printf("[WORKER] Using Redis scheduler, connecting to %s:%d", cfg.Redis.Host, cfg.Redis.Port)
+
+		redisScheduler, err = scheduler.NewRedisScheduler(
+			cfg.Redis,
+			jobExecutor,
+			jobRepo,
+			cfg.Scheduler.RedisPollInterval,
+		)
 		if err != nil {
-			log.Printf("[WORKER] WARNING: Failed to acquire leader lock: %v", err)
-			log.Println("[WORKER] Continuing without sync...")
-		} else if !isLeader {
-			log.Println("[WORKER] Another worker is syncing, skipping...")
-		} else {
-			// This worker is the leader, perform sync
-			log.Println("[WORKER] Elected as sync leader, performing database sync")
+			log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
+		}
+		defer redisScheduler.Close()
 
-			allJobs, err := jobRepo.FindAll()
+		log.Println("[WORKER] Connected to Redis successfully")
+
+		// On startup, sync jobs from Postgres to Redis (for resilience)
+		// This ensures Redis has all scheduled jobs even after Redis restart
+		// Use leader election to prevent thundering herd (only one worker syncs)
+		log.Println("[WORKER] Checking if database sync is needed...")
+
+		// First, check if Redis already has jobs
+		jobCount, err := redisScheduler.GetScheduledJobCount()
+		if err != nil {
+			log.Printf("[WORKER] WARNING: Failed to check Redis job count: %v", err)
+		} else if jobCount > 0 {
+			log.Printf("[WORKER] Redis already has %d jobs, skipping sync", jobCount)
+		} else {
+			// Redis is empty, try to become sync leader
+			log.Println("[WORKER] Redis is empty, attempting to acquire sync leader lock...")
+
+			isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
 			if err != nil {
-				log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
+				log.Printf("[WORKER] WARNING: Failed to acquire leader lock: %v", err)
+				log.Println("[WORKER] Continuing without sync...")
+			} else if !isLeader {
+				log.Println("[WORKER] Another worker is syncing, skipping...")
 			} else {
-				log.Printf("[WORKER] Loaded %d jobs from Postgres, syncing to Redis...", len(allJobs))
-				if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
-					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+				// This worker is the leader, perform sync
+				log.Println("[WORKER] Elected as sync leader, performing database sync")
+
+				allJobs, err := jobRepo.FindAll()
+				if err != nil {
+					log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
 				} else {
-					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
+					log.Printf("[WORKER] Loaded %d jobs from Postgres, syncing to Redis...", len(allJobs))
+					if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
+						log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+					} else {
+						count, _ := redisScheduler.GetScheduledJobCount()
+						log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
+					}
 				}
 			}
 		}
+
+		// Optional: Periodic re-sync from Postgres to catch any missed updates
+		// This is a safety mechanism in case API pods fail to update Redis
+		if cfg.Scheduler.EnablePeriodicSync {
+			syncInterval := cfg.Scheduler.DBToRedisSyncInterval
+			log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
+			go func() {
+				ticker := time.NewTicker(syncInterval)
+				defer ticker.Stop()
+
+				for range ticker.C {
+					log.Println("[WORKER] Performing periodic sync from Postgres to Redis")
+					jobs, err := jobRepo.FindAll()
+					if err != nil {
+						log.Printf("[WORKER] Periodic sync failed to load jobs: %v", err)
+						continue
+					}
+
+					if err := redisScheduler.SyncJobsFromDB(jobs); err != nil {
+						log.Printf("[WORKER] Periodic sync failed: %v", err)
+					} else {
+						count, _ := redisScheduler.GetScheduledJobCount()
+						log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis", count)
+					}
+				}
+			}()
+		}
 	}
 
-	// Start Redis scheduler (blocking)
+	// Start export poller service (handles all export completion, notifications, and failure tracking)
+	var distributedLock *scheduler.DistributedLock
+	if cfg.Scheduler.Backend == "redis" && redisScheduler != nil {
+		distributedLock = scheduler.NewDistributedLock(redisScheduler.GetRedisClient(), baseLogger)
+		log.Println("[WORKER] Export poller using Redis distributed locking")
+	} else {
+		// Database mode: Use database-based polling coordination (FOR UPDATE SKIP LOCKED)
+		log.Println("[WORKER] Export poller using database-only coordination")
+	}
+
+	exportClient := export.NewClient(cfg.ExportService.BaseURL, cfg.ExportService.PublicBaseURL)
+	failureTracker := executor.NewFailureTracker(jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures)
+	exportPollerCtx, exportPollerCancel := context.WithCancel(context.Background())
+	defer exportPollerCancel()
+
+	exportPollerService := scheduler.NewExportPollerService(
+		jobRunRepo,
+		jobRepo,
+		exportClient,
+		userValidator,
+		notifier,
+		failureTracker,
+		distributedLock, // nil in database mode = use FOR UPDATE SKIP LOCKED
+		cfg.Scheduler.ExportPollScanInterval,
+		cfg.Scheduler.ExportPollMaxAge,
+		cfg.Scheduler.MaxConcurrentExportPolls,
+		baseLogger,
+	)
+	go exportPollerService.Start(exportPollerCtx)
+	log.Println("[WORKER] Export poller service started")
+
+	// Start scheduler (blocking)
 	log.Println("[WORKER] Starting job execution loop...")
 
 	// Run scheduler in background
-	go redisScheduler.Start()
-
-	// Optional: Periodic re-sync from Postgres to catch any missed updates
-	// This is a safety mechanism in case API pods fail to update Redis
-	if cfg.Scheduler.EnablePeriodicSync {
-		syncInterval := cfg.Scheduler.DBToRedisSyncInterval
-		log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
-		go func() {
-			ticker := time.NewTicker(syncInterval)
-			defer ticker.Stop()
-
-			for range ticker.C {
-				log.Println("[WORKER] Performing periodic sync from Postgres to Redis")
-				jobs, err := jobRepo.FindAll()
-				if err != nil {
-					log.Printf("[WORKER] Periodic sync failed to load jobs: %v", err)
-					continue
-				}
-
-				if err := redisScheduler.SyncJobsFromDB(jobs); err != nil {
-					log.Printf("[WORKER] Periodic sync failed: %v", err)
-				} else {
-					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis", count)
-				}
-			}
-		}()
-	}
+	go jobScheduler.Start()
 
 	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
@@ -725,7 +786,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 	<-quit
 
 	log.Println("[WORKER] Shutting down worker...")
-	redisScheduler.Stop()
+	jobScheduler.Stop()
 
 	// Wait for in-flight jobs to complete (with timeout)
 	log.Printf("[WORKER] Waiting for in-flight jobs to complete (max %s)...", cfg.Scheduler.GracefulShutdownTimeout)

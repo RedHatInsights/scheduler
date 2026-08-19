@@ -483,6 +483,12 @@ func (s *RedisScheduler) TryAcquireLeader(ttl time.Duration) (bool, error) {
 	return result, nil
 }
 
+// GetRedisClient returns the underlying Redis client for use by other components
+// (e.g., distributed locking, polling recovery)
+func (s *RedisScheduler) GetRedisClient() *redis.Client {
+	return s.client
+}
+
 // Close closes the Redis connection
 func (s *RedisScheduler) Close() error {
 	s.Stop()

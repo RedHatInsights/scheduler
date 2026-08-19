@@ -23,6 +23,11 @@ type JobRun struct {
 	ErrorMessage *string      `json:"error_message,omitempty"`
 	ResultType   *ResultType  `json:"result_type,omitempty"`
 	Result       interface{}  `json:"result,omitempty"`
+
+	// Export polling fields (for async job tracking)
+	ExternalJobID   *string    `json:"external_job_id,omitempty"`
+	ExternalService *string    `json:"external_service,omitempty"`
+	PollStartedAt   *time.Time `json:"poll_started_at,omitempty"`
 }
 
 func NewJobRun(jobID string) JobRun {

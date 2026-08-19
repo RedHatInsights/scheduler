@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -187,6 +188,70 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 		}
 		jobs = append(jobs, job)
 	}
+	return jobs, rows.Err()
+}
+
+// FetchDueJobs atomically claims and returns jobs ready for execution
+// Uses FOR UPDATE SKIP LOCKED to prevent duplicate execution across workers
+// The caller must handle job execution and rescheduling
+func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]domain.Job, error) {
+	query := `
+		SELECT id, name, org_id, user_id, schedule, timezone,
+		       payload_type, payload_details, status,
+		       last_run_at, next_run_at, consecutive_failures, last_failed_at
+		FROM jobs
+		WHERE next_run_at <= NOW()
+		  AND status = 'scheduled'
+		ORDER BY next_run_at
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []domain.Job
+	for rows.Next() {
+		var job domain.Job
+		var payloadJSON string
+		var lastRunAtStr, nextRunAtStr, lastFailedAtStr sql.NullString
+
+		if err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID,
+			&job.Schedule, &job.Timezone, &job.Type, &payloadJSON,
+			&job.Status, &lastRunAtStr, &nextRunAtStr,
+			&job.ConsecutiveFailures, &lastFailedAtStr); err != nil {
+			return nil, err
+		}
+
+		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
+			r.logger.Error("Failed to unmarshal job payload",
+				slog.String("job_id", job.ID),
+				slog.Any("error", err))
+			job.Payload = nil
+		}
+
+		if lastRunAtStr.Valid {
+			if t, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {
+				job.LastRunAt = &t
+			}
+		}
+		if nextRunAtStr.Valid {
+			if t, err := time.Parse(time.RFC3339, nextRunAtStr.String); err == nil {
+				job.NextRunAt = &t
+			}
+		}
+		if lastFailedAtStr.Valid {
+			if t, err := time.Parse(time.RFC3339, lastFailedAtStr.String); err == nil {
+				job.LastFailedAt = &t
+			}
+		}
+
+		jobs = append(jobs, job)
+	}
+
 	return jobs, rows.Err()
 }
 
