@@ -137,19 +137,19 @@ type BopConfig struct {
 // SchedulerConfig contains scheduler timing and polling settings
 type SchedulerConfig struct {
 	// Scheduler backend: "redis" or "database"
-	Backend                   string        `mapstructure:"backend" json:"backend"`
-	GracefulShutdownTimeout   time.Duration `mapstructure:"graceful_shutdown_timeout" json:"graceful_shutdown_timeout"`
-	RedisPollInterval         time.Duration `mapstructure:"redis_poll_interval" json:"redis_poll_interval"`
-	DBToRedisSyncInterval     time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
-	EnablePeriodicSync        bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
-	JobRunRetentionCount      int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
-	MaxConsecutiveFailures    int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
-	DenylistJobIDs            []string      `mapstructure:"denylist_job_ids" json:"denylist_job_ids"`
-	MaxConcurrentJobs         int           `mapstructure:"max_concurrent_jobs" json:"max_concurrent_jobs"`
-	JobExecutionTimeout       time.Duration `mapstructure:"job_execution_timeout" json:"job_execution_timeout"`
-	ExportPollScanInterval    time.Duration `mapstructure:"export_poll_scan_interval" json:"export_poll_scan_interval"`
-	ExportPollMaxAge          time.Duration `mapstructure:"export_poll_max_age" json:"export_poll_max_age"`
-	MaxConcurrentExportPolls  int           `mapstructure:"max_concurrent_export_polls" json:"max_concurrent_export_polls"`
+	Backend                  string        `mapstructure:"backend" json:"backend"`
+	GracefulShutdownTimeout  time.Duration `mapstructure:"graceful_shutdown_timeout" json:"graceful_shutdown_timeout"`
+	RedisPollInterval        time.Duration `mapstructure:"redis_poll_interval" json:"redis_poll_interval"`
+	DBToRedisSyncInterval    time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
+	EnablePeriodicSync       bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
+	JobRunRetentionCount     int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
+	MaxConsecutiveFailures   int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
+	DenylistJobIDs           []string      `mapstructure:"denylist_job_ids" json:"denylist_job_ids"`
+	MaxConcurrentJobs        int           `mapstructure:"max_concurrent_jobs" json:"max_concurrent_jobs"`
+	JobExecutionTimeout      time.Duration `mapstructure:"job_execution_timeout" json:"job_execution_timeout"`
+	ExportPollScanInterval   time.Duration `mapstructure:"export_poll_scan_interval" json:"export_poll_scan_interval"`
+	ExportPollMaxAge         time.Duration `mapstructure:"export_poll_max_age" json:"export_poll_max_age"`
+	MaxConcurrentExportPolls int           `mapstructure:"max_concurrent_export_polls" json:"max_concurrent_export_polls"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings

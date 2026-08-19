@@ -193,18 +193,28 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 
 // FetchDueJobs atomically claims and returns jobs ready for execution
 // Uses FOR UPDATE SKIP LOCKED to prevent duplicate execution across workers
-// The caller must handle job execution and rescheduling
+// Updates next_run_at to far future to prevent re-claiming during execution
+// The caller must update next_run_at to the correct value after execution completes
 func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]domain.Job, error) {
+	// Atomically claim jobs by updating next_run_at to far future
+	// This prevents other workers from picking up the same job during execution
 	query := `
-		SELECT id, name, org_id, user_id, schedule, timezone,
-		       payload_type, payload_details, status,
-		       last_run_at, next_run_at, consecutive_failures, last_failed_at
-		FROM jobs
-		WHERE next_run_at <= NOW()
-		  AND status = 'scheduled'
-		ORDER BY next_run_at
-		LIMIT $1
-		FOR UPDATE SKIP LOCKED
+		WITH claimed_jobs AS (
+			SELECT id
+			FROM jobs
+			WHERE next_run_at <= NOW()
+			  AND status = 'scheduled'
+			ORDER BY next_run_at
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE jobs
+		SET next_run_at = NOW() + INTERVAL '1 hour'
+		FROM claimed_jobs
+		WHERE jobs.id = claimed_jobs.id
+		RETURNING jobs.id, jobs.name, jobs.org_id, jobs.user_id, jobs.schedule, jobs.timezone,
+		          jobs.payload_type, jobs.payload_details, jobs.status,
+		          jobs.last_run_at, jobs.next_run_at, jobs.consecutive_failures, jobs.last_failed_at
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, limit)
