@@ -102,6 +102,26 @@ Jobs support four payload types:
 
 ## Environment Variables
 
+### Scheduler Backend Configuration
+
+**Scheduler Backend**:
+- Variable: `SCHEDULER_BACKEND`
+- Default: `redis`
+- Options: `redis` | `database`
+- Description: Determines which scheduling backend to use for distributed job coordination
+  - `redis`: Uses Redis with sorted sets for job scheduling and distributed locking. Requires `REDIS_ENABLED=true`.
+  - `database`: Uses PostgreSQL `FOR UPDATE SKIP LOCKED` for atomic job claiming. Simpler architecture with no Redis dependency.
+- Example: `SCHEDULER_BACKEND=database`
+- When to use database mode:
+  - You want simpler operations (no Redis to manage)
+  - 10-30 second poll intervals are acceptable
+  - You have <50 worker pods
+  - Strong consistency is preferred over eventual consistency
+- When to use Redis mode:
+  - You need sub-second job triggering
+  - You have >50 workers or plan to scale there
+  - You're already using Redis for other features
+
 ### Scheduler Timing Configuration
 
 **Graceful Shutdown Timeout**:

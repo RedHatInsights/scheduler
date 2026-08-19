@@ -11,6 +11,7 @@ type ExportCompletionNotification struct {
 	JobID       string
 	JobName     string
 	OrgID       string
+	AccountID   string
 	Status      string
 	DownloadURL string
 	ErrorMsg    string

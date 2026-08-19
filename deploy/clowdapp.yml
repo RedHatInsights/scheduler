@@ -144,6 +144,8 @@ objects:
           value: ${ORG_ID_GUARD_ENABLED}
         - name: ORG_ID_GUARD_ALLOWED_ORG_IDS
           value: ${ORG_ID_GUARD_ALLOWED_ORG_IDS}
+        - name: SCHEDULER_BACKEND
+          value: ${SCHEDULER_BACKEND}
 
     - name: worker
       webServices:
@@ -261,6 +263,18 @@ objects:
           value: ${THREESCALE_URL}
         - name: SCHEDULER_DENYLIST_JOB_IDS
           value: ${SCHEDULER_DENYLIST_JOB_IDS}
+        - name: SCHEDULER_BACKEND
+          value: ${SCHEDULER_BACKEND}
+        - name: SCHEDULER_MAX_CONCURRENT_JOBS
+          value: ${SCHEDULER_MAX_CONCURRENT_JOBS}
+        - name: SCHEDULER_JOB_EXECUTION_TIMEOUT
+          value: ${SCHEDULER_JOB_EXECUTION_TIMEOUT}
+        - name: SCHEDULER_EXPORT_POLL_SCAN_INTERVAL
+          value: ${SCHEDULER_EXPORT_POLL_SCAN_INTERVAL}
+        - name: SCHEDULER_EXPORT_POLL_MAX_AGE
+          value: ${SCHEDULER_EXPORT_POLL_MAX_AGE}
+        - name: SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS
+          value: ${SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS}
 
     jobs:
     - name: job-run-cleanup
@@ -405,3 +419,22 @@ parameters:
 - name: REDIS_TLS_INSECURE_SKIP_VERIFY
   description: Override Redis TLS insecure skip verify flag (hack for Clowder/app-interface misconfiguration)
   value: ""
+
+- name: SCHEDULER_BACKEND
+  description: Scheduler backend (redis or database) - database uses PostgreSQL FOR UPDATE SKIP LOCKED
+  value: "redis"
+- name: SCHEDULER_MAX_CONCURRENT_JOBS
+  description: Maximum number of jobs that can execute simultaneously
+  value: "10"
+- name: SCHEDULER_JOB_EXECUTION_TIMEOUT
+  description: Maximum time for a job execution before timeout
+  value: "2m"
+- name: SCHEDULER_EXPORT_POLL_SCAN_INTERVAL
+  description: How often to scan for in-flight export jobs
+  value: "10s"
+- name: SCHEDULER_EXPORT_POLL_MAX_AGE
+  description: Maximum time an export can remain in-flight before timeout
+  value: "30m"
+- name: SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS
+  description: Maximum number of export status checks that can run concurrently
+  value: "20"

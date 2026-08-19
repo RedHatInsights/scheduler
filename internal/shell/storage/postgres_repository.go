@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -188,6 +189,117 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 		jobs = append(jobs, job)
 	}
 	return jobs, rows.Err()
+}
+
+// FetchDueJobs atomically claims and returns jobs ready for execution
+// Uses FOR UPDATE SKIP LOCKED to prevent duplicate execution across workers
+// Calculates next_run_at from cron schedule BEFORE committing transaction
+// This prevents race condition where another pod claims same jobs
+func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int, calculateNextRun func(schedule string, now time.Time) (time.Time, error)) ([]domain.Job, error) {
+	query := `
+		SELECT id, name, org_id, user_id, schedule, timezone,
+		       payload_type, payload_details, status,
+		       last_run_at, next_run_at, consecutive_failures, last_failed_at
+		FROM jobs
+		WHERE next_run_at <= NOW()
+		  AND status = 'scheduled'
+		ORDER BY next_run_at
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED
+	`
+
+	// Start transaction to atomically fetch and claim jobs
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	now := time.Now()
+
+	rows, err := tx.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type jobUpdate struct {
+		job     domain.Job
+		nextRun time.Time
+	}
+
+	var jobs []domain.Job
+	var updates []jobUpdate
+
+	for rows.Next() {
+		var job domain.Job
+		var payloadJSON string
+		var lastRunAtStr, nextRunAtStr, lastFailedAtStr sql.NullString
+
+		if err := rows.Scan(&job.ID, &job.Name, &job.OrgID, &job.UserID,
+			&job.Schedule, &job.Timezone, &job.Type, &payloadJSON,
+			&job.Status, &lastRunAtStr, &nextRunAtStr,
+			&job.ConsecutiveFailures, &lastFailedAtStr); err != nil {
+			return nil, err
+		}
+
+		if err := json.Unmarshal([]byte(payloadJSON), &job.Payload); err != nil {
+			r.logger.Error("Failed to unmarshal job payload",
+				slog.String("job_id", job.ID),
+				slog.Any("error", err))
+			job.Payload = nil
+		}
+
+		if lastRunAtStr.Valid {
+			if t, err := time.Parse(time.RFC3339, lastRunAtStr.String); err == nil {
+				job.LastRunAt = &t
+			}
+		}
+		if nextRunAtStr.Valid {
+			if t, err := time.Parse(time.RFC3339, nextRunAtStr.String); err == nil {
+				job.NextRunAt = &t
+			}
+		}
+		if lastFailedAtStr.Valid {
+			if t, err := time.Parse(time.RFC3339, lastFailedAtStr.String); err == nil {
+				job.LastFailedAt = &t
+			}
+		}
+
+		// Calculate next_run_at from cron schedule
+		nextRun, err := calculateNextRun(string(job.Schedule), now)
+		if err != nil {
+			r.logger.Error("Failed to calculate next run time",
+				slog.String("job_id", job.ID),
+				slog.String("schedule", string(job.Schedule)),
+				slog.Any("error", err))
+			continue // Skip jobs with invalid schedules
+		}
+
+		updates = append(updates, jobUpdate{job: job, nextRun: nextRun})
+		jobs = append(jobs, job)
+	}
+	rows.Close()
+
+	if len(updates) == 0 {
+		return jobs, nil
+	}
+
+	// CRITICAL: Update next_run_at BEFORE committing transaction
+	// This prevents another pod from claiming the same jobs
+	updateQuery := `UPDATE jobs SET last_run_at = $1, next_run_at = $2 WHERE id = $3`
+	for _, u := range updates {
+		_, err := tx.Exec(updateQuery, now, u.nextRun, u.job.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update job %s: %w", u.job.ID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return jobs, nil
 }
 
 func (r *PostgresJobRepository) Delete(id string) error {
