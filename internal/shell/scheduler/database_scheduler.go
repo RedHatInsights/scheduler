@@ -114,7 +114,10 @@ func (s *DatabaseScheduler) Stop() {
 
 // processDueJobs finds and executes jobs that are due to run
 func (s *DatabaseScheduler) processDueJobs() {
-	// Fetch due jobs atomically using FOR UPDATE SKIP LOCKED
+	now := time.Now()
+
+	// Fetch and claim due jobs atomically using FOR UPDATE SKIP LOCKED
+	// This sets last_run_at = NOW() to mark them as claimed
 	jobs, err := s.jobRepo.FetchDueJobs(s.ctx, 100)
 	if err != nil {
 		log.Printf("[DatabaseScheduler] Error fetching due jobs: %v", err)
@@ -126,6 +129,24 @@ func (s *DatabaseScheduler) processDueJobs() {
 	}
 
 	log.Printf("[DatabaseScheduler] Found %d jobs due for execution (concurrent dispatch)", len(jobs))
+
+	// Immediately update next_run_at for all claimed jobs to prevent re-claiming
+	// Calculate next run time from cron schedule and save it
+	for _, job := range jobs {
+		schedule, err := s.parser.Parse(string(job.Schedule))
+		if err != nil {
+			log.Printf("[DatabaseScheduler] Error parsing schedule for job %s: %v", job.ID, err)
+			continue
+		}
+
+		nextRun := schedule.Next(now)
+		job = job.WithNextRunAt(nextRun)
+
+		// Save updated next_run_at immediately to prevent duplicate execution
+		if err := s.jobRepo.Save(job); err != nil {
+			log.Printf("[DatabaseScheduler] Error updating next_run_at for job %s: %v", job.ID, err)
+		}
+	}
 
 	// Dispatch jobs concurrently with worker pool limiting
 	for _, job := range jobs {
@@ -195,74 +216,28 @@ func (s *DatabaseScheduler) executeJobWithContext(ctx context.Context, job domai
 		}
 	}
 
-	// For timed-out jobs, reset status back to scheduled with delayed next_run_at
+	// For timed-out jobs, optionally delay next run
 	if timedOut {
-		log.Printf("[DatabaseScheduler] Job %s timed out, resetting status and delaying next run", job.ID)
-
-		// Calculate next run time (delayed by 5 minutes as penalty for timeout)
-		schedule, err := s.parser.Parse(string(job.Schedule))
-		if err == nil {
-			nextRun := schedule.Next(time.Now().Add(5 * time.Minute))
-			timeoutJob := job.WithStatus(domain.StatusScheduled).WithLastRunAt(now).WithNextRunAt(nextRun)
-			if saveErr := s.jobRepo.Save(timeoutJob); saveErr != nil {
-				log.Printf("[DatabaseScheduler] Error saving timed-out job %s: %v", job.ID, saveErr)
-			}
-		}
+		log.Printf("[DatabaseScheduler] Job %s timed out (next_run_at already set correctly)", job.ID)
+		// next_run_at was already calculated and saved before execution
+		// No need to update it unless we want to add a penalty delay
 		return
 	}
 
-	// Reload the job from the database to get updated status/failure tracking
-	// The executor may have updated consecutive_failures and auto-paused the job
-	reloadedJob, err := s.jobRepo.FindByID(job.ID)
-	if err != nil {
-		// Check if job was deleted (race condition: deleted while executing)
-		if err == domain.ErrJobNotFound {
-			log.Printf("[DatabaseScheduler] Job %s was deleted during execution, will not reschedule", job.ID)
-			return
+	// Check if job was deleted or paused during execution
+	// (next_run_at is already correct, but we need to know if we should log differently)
+	if reloadedJob, err := s.jobRepo.FindByID(job.ID); err == nil {
+		if reloadedJob.Status == domain.StatusPaused {
+			log.Printf("[DatabaseScheduler] Job %s was auto-paused during execution (consecutive_failures=%d)",
+				job.ID, reloadedJob.ConsecutiveFailures)
+		} else if err == domain.ErrJobNotFound {
+			log.Printf("[DatabaseScheduler] Job %s was deleted during execution", job.ID)
 		}
-
-		log.Printf("[DatabaseScheduler] Warning: Failed to reload job %s: %v", job.ID, err)
-		reloadedJob = job // Fallback to the job we had
 	}
 
-	// Check if the job was auto-paused or manually paused during execution
-	if reloadedJob.Status == domain.StatusPaused {
-		log.Printf("[DatabaseScheduler] Job %s is now paused (consecutive_failures=%d), will not reschedule",
-			job.ID, reloadedJob.ConsecutiveFailures)
-		return
-	}
-
-	// Calculate next run time and reschedule (only if not paused)
-	schedule, err := s.parser.Parse(string(job.Schedule))
-	if err != nil {
-		log.Printf("[DatabaseScheduler] Error parsing schedule for job %s: %v", job.ID, err)
-		// Reset status back to scheduled even if we can't parse schedule
-		resetJob := reloadedJob.WithStatus(domain.StatusScheduled)
-		s.jobRepo.Save(resetJob)
-		return
-	}
-
-	nextRun := schedule.Next(time.Now())
-
-	// Use the reloaded job (with updated failure tracking) for rescheduling
-	// IMPORTANT: Set status back to 'scheduled' (it was 'running' during execution)
-	updatedJob := reloadedJob.WithStatus(domain.StatusScheduled).WithLastRunAt(now).WithNextRunAt(nextRun)
-
-	// Persist updated job to PostgreSQL
-	if err := s.jobRepo.Save(updatedJob); err != nil {
-		log.Printf("[DatabaseScheduler] Error saving job %s: %v", job.ID, err)
-	} else {
-		lastRunStr := "<nil>"
-		if updatedJob.LastRunAt != nil {
-			lastRunStr = updatedJob.LastRunAt.Format(time.RFC3339)
-		}
-		nextRunStr := "<nil>"
-		if updatedJob.NextRunAt != nil {
-			nextRunStr = updatedJob.NextRunAt.Format(time.RFC3339)
-		}
-		log.Printf("[DatabaseScheduler] Rescheduled job %s for %s (last_run: %s)",
-			job.ID, nextRunStr, lastRunStr)
-	}
+	// Job execution complete, next_run_at was already set at claim time
+	// Status remains 'scheduled' (no status overloading)
+	log.Printf("[DatabaseScheduler] Job %s execution completed", job.ID)
 }
 
 // ScheduleJob adds or updates a job in the schedule

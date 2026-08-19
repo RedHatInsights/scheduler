@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 )
@@ -193,38 +193,38 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 
 // FetchDueJobs atomically claims and returns jobs ready for execution
 // Uses FOR UPDATE SKIP LOCKED to prevent duplicate execution across workers
-// Temporarily sets status to 'running' to prevent re-claiming during execution
-// The caller must set status back to 'scheduled' and update next_run_at after execution
+// Updates last_run_at=NOW() and next_run_at to future cron-calculated time
+// This prevents re-claiming: jobs with next_run_at in future won't match WHERE next_run_at <= NOW()
+// Status remains 'scheduled' throughout - no status overloading for execution state
 func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]domain.Job, error) {
-	// Atomically claim jobs by temporarily setting status to 'running'
-	// This prevents other workers from picking up the same job during execution
-	// without affecting the next_run_at schedule
 	query := `
-		WITH claimed_jobs AS (
-			SELECT id
-			FROM jobs
-			WHERE next_run_at <= NOW()
-			  AND status = 'scheduled'
-			ORDER BY next_run_at
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED
-		)
-		UPDATE jobs
-		SET status = 'running'
-		FROM claimed_jobs
-		WHERE jobs.id = claimed_jobs.id
-		RETURNING jobs.id, jobs.name, jobs.org_id, jobs.user_id, jobs.schedule, jobs.timezone,
-		          jobs.payload_type, jobs.payload_details, jobs.status,
-		          jobs.last_run_at, jobs.next_run_at, jobs.consecutive_failures, jobs.last_failed_at
+		SELECT id, name, org_id, user_id, schedule, timezone,
+		       payload_type, payload_details, status,
+		       last_run_at, next_run_at, consecutive_failures, last_failed_at
+		FROM jobs
+		WHERE next_run_at <= NOW()
+		  AND status = 'scheduled'
+		ORDER BY next_run_at
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, limit)
+	// Start transaction to atomically fetch and claim jobs
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var jobs []domain.Job
+	var jobIDsToUpdate []string
+
 	for rows.Next() {
 		var job domain.Job
 		var payloadJSON string
@@ -261,9 +261,27 @@ func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]
 		}
 
 		jobs = append(jobs, job)
+		jobIDsToUpdate = append(jobIDsToUpdate, job.ID)
+	}
+	rows.Close()
+
+	if len(jobs) == 0 {
+		return jobs, nil
 	}
 
-	return jobs, rows.Err()
+	// Atomically update claimed jobs with last_run_at = NOW()
+	// Scheduler will calculate next_run_at and save it immediately after claiming
+	updateQuery := `UPDATE jobs SET last_run_at = NOW() WHERE id = ANY($1)`
+	_, err = tx.Exec(updateQuery, pq.Array(jobIDsToUpdate))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return jobs, nil
 }
 
 func (r *PostgresJobRepository) Delete(id string) error {
