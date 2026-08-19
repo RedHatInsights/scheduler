@@ -391,7 +391,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	legacyExportPoller := scheduler.NewExportPollerService(
 		runRepo, repo, legacyExportClient, userValidator, notifier,
 		legacyFailureTracker, nil, cfg.Scheduler.ExportPollScanInterval,
-		cfg.Scheduler.ExportPollMaxAge, baseLogger,
+		cfg.Scheduler.ExportPollMaxAge, cfg.Scheduler.MaxConcurrentExportPolls, baseLogger,
 	)
 	go legacyExportPoller.Start(ctx)
 
@@ -728,6 +728,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 		distributedLock,
 		cfg.Scheduler.ExportPollScanInterval,
 		cfg.Scheduler.ExportPollMaxAge,
+		cfg.Scheduler.MaxConcurrentExportPolls,
 		baseLogger,
 	)
 	go exportPollerService.Start(exportPollerCtx)

@@ -143,6 +143,13 @@ Jobs support four payload types:
 - Description: Maximum time an export run can remain in-flight before it is timed out and marked as failed. Increase this for long-running exports.
 - Example: `SCHEDULER_EXPORT_POLL_MAX_AGE=2h`
 
+**Maximum Concurrent Export Polls**:
+- Variable: `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS`
+- Default: `20`
+- Description: Maximum number of export status checks that can run concurrently. Controls scalability of export polling - higher values allow more parallel status checks but increase resource usage.
+- Example: `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS=50`
+- Tuning: Set based on expected concurrent export volume. Each poll makes identity validation + HTTP request to export service (~200ms total). Default of 20 supports ~100 concurrent exports with 10s scan interval.
+
 **Maximum Concurrent Jobs**:
 - Variable: `SCHEDULER_MAX_CONCURRENT_JOBS`
 - Default: `10`

@@ -136,17 +136,18 @@ type BopConfig struct {
 
 // SchedulerConfig contains scheduler timing and polling settings
 type SchedulerConfig struct {
-	GracefulShutdownTimeout time.Duration `mapstructure:"graceful_shutdown_timeout" json:"graceful_shutdown_timeout"`
-	RedisPollInterval       time.Duration `mapstructure:"redis_poll_interval" json:"redis_poll_interval"`
-	DBToRedisSyncInterval   time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
-	ExportPollScanInterval  time.Duration `mapstructure:"export_poll_scan_interval" json:"export_poll_scan_interval"`
-	ExportPollMaxAge        time.Duration `mapstructure:"export_poll_max_age" json:"export_poll_max_age"`
-	EnablePeriodicSync      bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
-	JobRunRetentionCount    int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
-	MaxConsecutiveFailures  int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
-	DenylistJobIDs          []string      `mapstructure:"denylist_job_ids" json:"denylist_job_ids"`
-	MaxConcurrentJobs       int           `mapstructure:"max_concurrent_jobs" json:"max_concurrent_jobs"`
-	JobExecutionTimeout     time.Duration `mapstructure:"job_execution_timeout" json:"job_execution_timeout"`
+	GracefulShutdownTimeout  time.Duration `mapstructure:"graceful_shutdown_timeout" json:"graceful_shutdown_timeout"`
+	RedisPollInterval        time.Duration `mapstructure:"redis_poll_interval" json:"redis_poll_interval"`
+	DBToRedisSyncInterval    time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
+	ExportPollScanInterval   time.Duration `mapstructure:"export_poll_scan_interval" json:"export_poll_scan_interval"`
+	ExportPollMaxAge         time.Duration `mapstructure:"export_poll_max_age" json:"export_poll_max_age"`
+	MaxConcurrentExportPolls int           `mapstructure:"max_concurrent_export_polls" json:"max_concurrent_export_polls"`
+	EnablePeriodicSync       bool          `mapstructure:"enable_periodic_sync" json:"enable_periodic_sync"`
+	JobRunRetentionCount     int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
+	MaxConsecutiveFailures   int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
+	DenylistJobIDs           []string      `mapstructure:"denylist_job_ids" json:"denylist_job_ids"`
+	MaxConcurrentJobs        int           `mapstructure:"max_concurrent_jobs" json:"max_concurrent_jobs"`
+	JobExecutionTimeout      time.Duration `mapstructure:"job_execution_timeout" json:"job_execution_timeout"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
@@ -317,6 +318,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.max_consecutive_failures", 3)
 	v.SetDefault("scheduler.export_poll_scan_interval", 10*time.Second)
 	v.SetDefault("scheduler.export_poll_max_age", 30*time.Minute)
+	v.SetDefault("scheduler.max_concurrent_export_polls", 20)
 	v.SetDefault("scheduler.denylist_job_ids", []string{})
 	v.SetDefault("scheduler.max_concurrent_jobs", 10)
 	v.SetDefault("scheduler.job_execution_timeout", 2*time.Minute)

@@ -188,7 +188,7 @@ func TestExportPollerService_SkipsRunsWithoutExternalID(t *testing.T) {
 
 	svc := NewExportPollerService(
 		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
-		notifier, nil, nil, 100*time.Millisecond, 30*time.Minute, testLogger(),
+		notifier, nil, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -216,7 +216,7 @@ func TestExportPollerService_SkipsNonExportServices(t *testing.T) {
 
 	svc := NewExportPollerService(
 		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
-		notifier, nil, nil, 100*time.Millisecond, 30*time.Minute, testLogger(),
+		notifier, nil, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -245,7 +245,7 @@ func TestExportPollerService_TimesOutOldRuns(t *testing.T) {
 
 	svc := NewExportPollerService(
 		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
-		notifier, tracker, nil, 100*time.Millisecond, 30*time.Minute, testLogger(),
+		notifier, tracker, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -267,7 +267,7 @@ func TestExportPollerService_ScanAndProcess_ContextCancellation(t *testing.T) {
 
 	svc := NewExportPollerService(
 		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
-		nil, nil, nil, 50*time.Millisecond, 30*time.Minute, testLogger(),
+		nil, nil, nil, 50*time.Millisecond, 30*time.Minute, 10, testLogger(),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -303,7 +303,7 @@ func TestExportPollerService_FailureTrackerCalledOnTimeout(t *testing.T) {
 
 	svc := NewExportPollerService(
 		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
-		notifier, tracker, nil, 100*time.Millisecond, 30*time.Minute, testLogger(),
+		notifier, tracker, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -329,7 +329,7 @@ func TestExportPollerService_IdentityFailureRetries(t *testing.T) {
 	svc := NewExportPollerService(
 		runRepo, jobRepo, nil,
 		&mockUserValidator{header: "", err: errors.New("identity service down")},
-		nil, nil, nil, 100*time.Millisecond, 30*time.Minute, testLogger(),
+		nil, nil, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

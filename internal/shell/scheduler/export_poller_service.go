@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"insights-scheduler/internal/clients/export"
@@ -28,17 +29,20 @@ const (
 // startup-only PollingRecovery, providing a single code path for all
 // export completion handling.
 type ExportPollerService struct {
-	runRepo        usecases.JobRunRepository
-	jobRepo        usecases.JobRepository
-	exportClient   *export.Client
-	userValidator  identity.UserValidator
-	notifier       executor.JobCompletionNotifier
-	failureTracker *executor.FailureTracker
-	lock           *DistributedLock // nil = no locking (single-pod mode)
-	logger         *slog.Logger
-	podID          string
-	scanInterval   time.Duration
-	maxAge         time.Duration
+	runRepo            usecases.JobRunRepository
+	jobRepo            usecases.JobRepository
+	exportClient       *export.Client
+	userValidator      identity.UserValidator
+	notifier           executor.JobCompletionNotifier
+	failureTracker     *executor.FailureTracker
+	lock               *DistributedLock // nil = no locking (single-pod mode)
+	logger             *slog.Logger
+	podID              string
+	scanInterval       time.Duration
+	maxAge             time.Duration
+	maxConcurrentPolls int
+	pollSemaphore      chan struct{} // Buffered channel for concurrent poll limiting
+	activePolls        sync.WaitGroup
 }
 
 func NewExportPollerService(
@@ -51,20 +55,28 @@ func NewExportPollerService(
 	lock *DistributedLock,
 	scanInterval time.Duration,
 	maxAge time.Duration,
+	maxConcurrentPolls int,
 	logger *slog.Logger,
 ) *ExportPollerService {
+	if maxConcurrentPolls <= 0 {
+		maxConcurrentPolls = 20 // Default
+	}
+
 	return &ExportPollerService{
-		runRepo:        runRepo,
-		jobRepo:        jobRepo,
-		exportClient:   exportClient,
-		userValidator:  userValidator,
-		notifier:       notifier,
-		failureTracker: failureTracker,
-		lock:           lock,
-		logger:         logger,
-		podID:          GetPodID(),
-		scanInterval:   scanInterval,
-		maxAge:         maxAge,
+		runRepo:            runRepo,
+		jobRepo:            jobRepo,
+		exportClient:       exportClient,
+		userValidator:      userValidator,
+		notifier:           notifier,
+		failureTracker:     failureTracker,
+		lock:               lock,
+		logger:             logger,
+		podID:              GetPodID(),
+		scanInterval:       scanInterval,
+		maxAge:             maxAge,
+		maxConcurrentPolls: maxConcurrentPolls,
+		pollSemaphore:      make(chan struct{}, maxConcurrentPolls),
+		activePolls:        sync.WaitGroup{},
 	}
 }
 
@@ -74,7 +86,8 @@ func (s *ExportPollerService) Start(ctx context.Context) {
 	s.logger.Info("Starting export poller service",
 		slog.String("pod_id", s.podID),
 		slog.Duration("scan_interval", s.scanInterval),
-		slog.Duration("max_age", s.maxAge))
+		slog.Duration("max_age", s.maxAge),
+		slog.Int("max_concurrent_polls", s.maxConcurrentPolls))
 
 	s.scanAndProcess(ctx)
 
@@ -84,7 +97,9 @@ func (s *ExportPollerService) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.logger.Info("Export poller service shutting down")
+			s.logger.Info("Export poller service shutting down, waiting for active polls...")
+			s.activePolls.Wait()
+			s.logger.Info("Export poller service shut down gracefully")
 			return
 		case <-ticker.C:
 			s.scanAndProcess(ctx)
@@ -99,24 +114,48 @@ func (s *ExportPollerService) scanAndProcess(ctx context.Context) {
 		return
 	}
 
+	// Filter to export runs only
+	var exportRuns []domain.JobRun
 	for _, run := range runs {
-		if ctx.Err() != nil {
-			return
-		}
-
 		if run.ExternalJobID == nil || run.ExternalService == nil {
 			continue
 		}
 		if *run.ExternalService != "export" {
 			continue
 		}
+		exportRuns = append(exportRuns, run)
+	}
 
-		if time.Since(run.StartTime) > s.maxAge {
-			s.markAsTimedOut(ctx, run)
-			continue
+	if len(exportRuns) == 0 {
+		return
+	}
+
+	s.logger.Debug("Processing export runs concurrently",
+		slog.Int("count", len(exportRuns)),
+		slog.Int("max_concurrent", s.maxConcurrentPolls))
+
+	// Dispatch runs concurrently with worker pool limiting
+	for _, run := range exportRuns {
+		if ctx.Err() != nil {
+			return
 		}
 
-		s.processRun(ctx, run)
+		run := run // Capture loop variable for goroutine
+
+		s.activePolls.Add(1)
+		go func() {
+			defer s.activePolls.Done()
+
+			// Acquire worker slot (blocks if pool is full)
+			s.pollSemaphore <- struct{}{}
+			defer func() { <-s.pollSemaphore }()
+
+			if time.Since(run.StartTime) > s.maxAge {
+				s.markAsTimedOut(ctx, run)
+			} else {
+				s.processRun(ctx, run)
+			}
+		}()
 	}
 }
 
