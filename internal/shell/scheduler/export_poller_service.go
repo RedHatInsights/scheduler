@@ -262,16 +262,30 @@ func (s *ExportPollerService) markAsTimedOut(ctx context.Context, run domain.Job
 		defer s.lock.Release(ctx, lockKey, s.podID)
 	}
 
+	// Reload run from database after acquiring lock to check if another pod already completed it
+	currentRun, err := s.runRepo.FindByID(run.ID)
+	if err != nil {
+		logger.Error("Failed to reload run after acquiring lock", slog.Any("error", err))
+		return
+	}
+
+	// Check if run is still in-flight
+	if currentRun.Status != domain.RunStatusRunning {
+		logger.Debug("Run already completed by another pod, skipping timeout",
+			slog.String("current_status", string(currentRun.Status)))
+		return
+	}
+
 	logger.Warn("Export job run timed out, marking as failed")
 
-	run = run.WithFailed("Execution timeout - exceeded maximum duration")
-	if err := s.runRepo.Save(run); err != nil {
+	currentRun = currentRun.WithFailed("Execution timeout - exceeded maximum duration")
+	if err := s.runRepo.Save(currentRun); err != nil {
 		logger.Error("Failed to save timed out job run", slog.Any("error", err))
 		return
 	}
 
 	if s.failureTracker != nil {
-		job, err := s.jobRepo.FindByID(run.JobID)
+		job, err := s.jobRepo.FindByID(currentRun.JobID)
 		if err != nil {
 			logger.Error("Failed to load job for timeout failure tracking", slog.Any("error", err))
 			return
