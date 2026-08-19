@@ -477,6 +477,23 @@ func (s *RedisScheduler) executeJobWithContext(ctx context.Context, jobID string
 	if s.jobRepo != nil {
 		reloadedJob, err := s.jobRepo.FindByID(jobID)
 		if err != nil {
+			// Check if job was deleted (race condition: deleted while executing)
+			if err == domain.ErrJobNotFound {
+				log.Printf("[RedisScheduler] Job %s was deleted during execution, removing from schedule", jobID)
+
+				// Remove from Redis sorted set
+				if err := s.client.ZRem(s.ctx, scheduledJobsKey, jobID).Err(); err != nil {
+					log.Printf("[RedisScheduler] Warning: Failed to remove deleted job %s from schedule: %v", jobID, err)
+				}
+
+				// Remove job data from Redis
+				if err := s.client.Del(s.ctx, jobKey).Err(); err != nil {
+					log.Printf("[RedisScheduler] Warning: Failed to remove deleted job data for %s: %v", jobID, err)
+				}
+
+				return // Job was deleted, do not reschedule
+			}
+
 			log.Printf("[RedisScheduler] Warning: Failed to reload job %s from database: %v", jobID, err)
 			updatedJob = scheduledJob.Job // Fallback to the job we had
 		} else {
