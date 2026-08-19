@@ -251,23 +251,18 @@ func TestExportJobExecutor_ExternalJobIDSaveFails(t *testing.T) {
 	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
 	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
-	// CURRENT BEHAVIOR: Returns success even when save fails (this is bug #2 from review)
-	// This test documents the current behavior - it should be fixed to return error
-	if err != nil {
-		t.Errorf("Expected no error (current behavior), got: %v", err)
+	// FIXED: Now returns error when save fails (prevents orphaned runs)
+	if err == nil {
+		t.Fatal("Expected error when external_job_id save fails")
 	}
 
-	if resultType != domain.ResultTypePending {
-		t.Errorf("Expected ResultTypePending (current behavior), got: %v", resultType)
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
 	}
 
 	if result != nil {
 		t.Errorf("Expected nil result, got: %v", result)
 	}
-
-	// TODO: This test documents a bug - when external_job_id save fails,
-	// the executor returns success but the run will be orphaned (no external_job_id)
-	// and ExportPollerService cannot poll it. This should return an error instead.
 }
 
 func TestExportJobExecutor_NoJobRunID(t *testing.T) {
@@ -338,13 +333,13 @@ func TestExportJobExecutor_JobRunNotFound(t *testing.T) {
 	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
 	result, resultType, err := executor.Execute(newTestJob(), "nonexistent-run", newTestLogger())
 
-	// Should succeed (logs warning but doesn't fail)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
+	// Should fail (cannot find job run to save external_job_id)
+	if err == nil {
+		t.Fatal("Expected error when job run not found")
 	}
 
-	if resultType != domain.ResultTypePending {
-		t.Errorf("Expected ResultTypePending, got: %v", resultType)
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
 	}
 
 	if result != nil {

@@ -65,7 +65,20 @@ func (d *DistributedLock) Release(ctx context.Context, lockKey string, ownerID s
 		return fmt.Errorf("failed to release lock: %w", err)
 	}
 
-	if result.(int64) == 1 {
+	// Safe type assertion with fallback
+	released := int64(0)
+	switch v := result.(type) {
+	case int64:
+		released = v
+	case int:
+		released = int64(v)
+	default:
+		d.logger.Warn("Unexpected result type from lock release script",
+			slog.String("lock_key", lockKey),
+			slog.Any("result_type", fmt.Sprintf("%T", result)))
+	}
+
+	if released == 1 {
 		d.logger.Debug("Lock released",
 			slog.String("lock_key", lockKey),
 			slog.String("owner_id", ownerID))
@@ -95,7 +108,21 @@ func (d *DistributedLock) Extend(ctx context.Context, lockKey string, ownerID st
 		return false, fmt.Errorf("failed to extend lock: %w", err)
 	}
 
-	extended := result.(int64) == 1
+	// Safe type assertion with fallback
+	extendResult := int64(0)
+	switch v := result.(type) {
+	case int64:
+		extendResult = v
+	case int:
+		extendResult = int64(v)
+	default:
+		d.logger.Warn("Unexpected result type from lock extend script",
+			slog.String("lock_key", lockKey),
+			slog.Any("result_type", fmt.Sprintf("%T", result)))
+		return false, nil
+	}
+
+	extended := extendResult == 1
 
 	if extended {
 		d.logger.Debug("Lock extended",

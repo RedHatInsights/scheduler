@@ -84,21 +84,23 @@ func (e *ExportJobExecutor) Execute(job domain.Job, jobRunID string, logger *slo
 	if jobRunID != "" && e.runRepo != nil {
 		jobRun, err := e.runRepo.FindByID(jobRunID)
 		if err != nil {
-			logger.Warn("Failed to load job run for external ID save",
+			logger.Error("Failed to load job run for external ID save",
 				slog.String("job_run_id", jobRunID),
 				slog.Any("error", err))
-		} else {
-			jobRun = jobRun.WithExternalJob(createResult.ID, "export")
-			if err := e.runRepo.Save(jobRun); err != nil {
-				logger.Error("Failed to save external job ID",
-					slog.String("export_id", createResult.ID),
-					slog.Any("error", err))
-			} else {
-				logger.Info("Saved external job ID for polling",
-					slog.String("export_id", createResult.ID),
-					slog.String("job_run_id", jobRunID))
-			}
+			return nil, domain.ResultTypeExport, fmt.Errorf("failed to load job run for external ID save: %w", err)
 		}
+
+		jobRun = jobRun.WithExternalJob(createResult.ID, "export")
+		if err := e.runRepo.Save(jobRun); err != nil {
+			logger.Error("Failed to save external job ID - job run will be orphaned",
+				slog.String("export_id", createResult.ID),
+				slog.Any("error", err))
+			return nil, domain.ResultTypeExport, fmt.Errorf("failed to save external job ID: %w", err)
+		}
+
+		logger.Info("Saved external job ID for polling",
+			slog.String("export_id", createResult.ID),
+			slog.String("job_run_id", jobRunID))
 	}
 
 	return nil, domain.ResultTypePending, nil

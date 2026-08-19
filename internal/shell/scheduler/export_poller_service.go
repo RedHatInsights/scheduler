@@ -173,7 +173,8 @@ func (s *ExportPollerService) processRun(ctx context.Context, run domain.JobRun)
 		if !acquired {
 			return
 		}
-		defer s.lock.Release(ctx, lockKey, s.podID)
+		// Use background context for lock release to ensure cleanup even if ctx is cancelled
+		defer s.lock.Release(context.Background(), lockKey, s.podID)
 	}
 
 	logger := s.logger.With(
@@ -298,7 +299,8 @@ func (s *ExportPollerService) markAsTimedOut(ctx context.Context, run domain.Job
 		if err != nil || !acquired {
 			return
 		}
-		defer s.lock.Release(ctx, lockKey, s.podID)
+		// Use background context for lock release to ensure cleanup even if ctx is cancelled
+		defer s.lock.Release(context.Background(), lockKey, s.podID)
 	}
 
 	// Reload run from database after acquiring lock to check if another pod already completed it
