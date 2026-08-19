@@ -143,6 +143,21 @@ Jobs support four payload types:
 - Description: Maximum time an export run can remain in-flight before it is timed out and marked as failed. Increase this for long-running exports.
 - Example: `SCHEDULER_EXPORT_POLL_MAX_AGE=2h`
 
+**Maximum Concurrent Jobs**:
+- Variable: `SCHEDULER_MAX_CONCURRENT_JOBS`
+- Default: `10`
+- Description: Maximum number of jobs that can execute simultaneously. Prevents resource exhaustion when many jobs are due at the same time.
+- Example: `SCHEDULER_MAX_CONCURRENT_JOBS=20`
+- Tuning: Consider database connection limits (default max: 25) and downstream service capacity. Monitor `scheduler_concurrent_jobs` and `scheduler_worker_pool_utilization` metrics.
+
+**Job Execution Timeout**:
+- Variable: `SCHEDULER_JOB_EXECUTION_TIMEOUT`
+- Default: `2m`
+- Description: Maximum time allowed for a single job's create/execute phase before timing out. Guards against hung identity validation or export service calls.
+- Example: `SCHEDULER_JOB_EXECUTION_TIMEOUT=3m`
+- Note: This timeout applies to the create phase (identity validation + CreateExport call). Export completion polling is handled separately by ExportPollerService with its own timeout.
+- Covers: Identity validation (~1-30s) + CreateExport (~1-30s) + safety margin
+
 **Job Denylist**:
 - Variable: `SCHEDULER_DENYLIST_JOB_IDS`
 - Default: Empty (no jobs denied)

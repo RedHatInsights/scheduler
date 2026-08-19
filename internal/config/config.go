@@ -145,6 +145,8 @@ type SchedulerConfig struct {
 	JobRunRetentionCount    int           `mapstructure:"job_run_retention_count" json:"job_run_retention_count"`
 	MaxConsecutiveFailures  int           `mapstructure:"max_consecutive_failures" json:"max_consecutive_failures"`
 	DenylistJobIDs          []string      `mapstructure:"denylist_job_ids" json:"denylist_job_ids"`
+	MaxConcurrentJobs       int           `mapstructure:"max_concurrent_jobs" json:"max_concurrent_jobs"`
+	JobExecutionTimeout     time.Duration `mapstructure:"job_execution_timeout" json:"job_execution_timeout"`
 }
 
 // ThreeScaleConfig contains 3scale API Management service settings
@@ -316,6 +318,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.export_poll_scan_interval", 10*time.Second)
 	v.SetDefault("scheduler.export_poll_max_age", 30*time.Minute)
 	v.SetDefault("scheduler.denylist_job_ids", []string{})
+	v.SetDefault("scheduler.max_concurrent_jobs", 10)
+	v.SetDefault("scheduler.job_execution_timeout", 2*time.Minute)
 
 	// 3scale
 	v.SetDefault("threescale.base_url", "http://3scale-service:8000")
@@ -432,6 +436,8 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("scheduler.export_poll_scan_interval", "SCHEDULER_EXPORT_POLL_SCAN_INTERVAL")
 	_ = v.BindEnv("scheduler.export_poll_max_age", "SCHEDULER_EXPORT_POLL_MAX_AGE")
 	_ = v.BindEnv("scheduler.denylist_job_ids", "SCHEDULER_DENYLIST_JOB_IDS")
+	_ = v.BindEnv("scheduler.max_concurrent_jobs", "SCHEDULER_MAX_CONCURRENT_JOBS")
+	_ = v.BindEnv("scheduler.job_execution_timeout", "SCHEDULER_JOB_EXECUTION_TIMEOUT")
 
 	// 3scale
 	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")

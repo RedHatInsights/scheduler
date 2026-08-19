@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,15 +58,20 @@ func (m *mockJobExecutor) Wait() {
 
 // Mock JobRepository for testing
 type mockJobRepository struct {
+	mu   sync.RWMutex
 	jobs map[string]domain.Job
 }
 
 func (m *mockJobRepository) Save(job domain.Job) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.jobs[job.ID] = job
 	return nil
 }
 
 func (m *mockJobRepository) FindByID(id string) (domain.Job, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	job, ok := m.jobs[id]
 	if !ok {
 		return domain.Job{}, domain.ErrJobNotFound
@@ -270,7 +276,7 @@ func TestNewRedisScheduler_WithConfig(t *testing.T) {
 	exec := &mockJobExecutor{}
 	repo := &mockJobRepository{jobs: make(map[string]domain.Job)}
 
-	rs, err := NewRedisScheduler(cfg, exec, repo, 10*time.Second)
+	rs, err := NewRedisScheduler(cfg, exec, repo, 10*time.Second, 10, 2*time.Minute)
 	if err != nil {
 		t.Fatalf("NewRedisScheduler() unexpected error: %v", err)
 	}
@@ -299,7 +305,7 @@ func TestNewRedisScheduler_WrongPassword(t *testing.T) {
 		DB:       0,
 	}
 
-	_, err := NewRedisScheduler(cfg, &mockJobExecutor{}, &mockJobRepository{jobs: make(map[string]domain.Job)}, 10*time.Second)
+	_, err := NewRedisScheduler(cfg, &mockJobExecutor{}, &mockJobRepository{jobs: make(map[string]domain.Job)}, 10*time.Second, 10, 2*time.Minute)
 	if err == nil {
 		t.Fatal("Expected error with wrong password, got nil")
 	}
@@ -520,7 +526,7 @@ func TestRedisScheduler_ExecuteJob_SetsLastRunAt_ForExportJobs(t *testing.T) {
 	}
 
 	beforeExec := time.Now()
-	scheduler.executeJob(job.ID)
+	scheduler.executeJobWithContext(ctx, job.ID)
 
 	// Verify last_run_at was persisted to the repository
 	savedJob, err := repo.FindByID(job.ID)
@@ -595,7 +601,7 @@ func TestRedisScheduler_ExecuteJob_SetsLastRunAt_ForNonExportJobs(t *testing.T) 
 	}
 
 	beforeExec := time.Now()
-	scheduler.executeJob(job.ID)
+	scheduler.executeJobWithContext(ctx, job.ID)
 
 	savedJob, err := repo.FindByID(job.ID)
 	if err != nil {
