@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 )
@@ -193,10 +193,9 @@ func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]
 
 // FetchDueJobs atomically claims and returns jobs ready for execution
 // Uses FOR UPDATE SKIP LOCKED to prevent duplicate execution across workers
-// Updates last_run_at=NOW() and next_run_at to future cron-calculated time
-// This prevents re-claiming: jobs with next_run_at in future won't match WHERE next_run_at <= NOW()
-// Status remains 'scheduled' throughout - no status overloading for execution state
-func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]domain.Job, error) {
+// Calculates next_run_at from cron schedule BEFORE committing transaction
+// This prevents race condition where another pod claims same jobs
+func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int, calculateNextRun func(schedule string, now time.Time) (time.Time, error)) ([]domain.Job, error) {
 	query := `
 		SELECT id, name, org_id, user_id, schedule, timezone,
 		       payload_type, payload_details, status,
@@ -216,14 +215,21 @@ func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]
 	}
 	defer tx.Rollback()
 
+	now := time.Now()
+
 	rows, err := tx.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	type jobUpdate struct {
+		job     domain.Job
+		nextRun time.Time
+	}
+
 	var jobs []domain.Job
-	var jobIDsToUpdate []string
+	var updates []jobUpdate
 
 	for rows.Next() {
 		var job domain.Job
@@ -260,21 +266,33 @@ func (r *PostgresJobRepository) FetchDueJobs(ctx context.Context, limit int) ([]
 			}
 		}
 
+		// Calculate next_run_at from cron schedule
+		nextRun, err := calculateNextRun(string(job.Schedule), now)
+		if err != nil {
+			r.logger.Error("Failed to calculate next run time",
+				slog.String("job_id", job.ID),
+				slog.String("schedule", string(job.Schedule)),
+				slog.Any("error", err))
+			continue // Skip jobs with invalid schedules
+		}
+
+		updates = append(updates, jobUpdate{job: job, nextRun: nextRun})
 		jobs = append(jobs, job)
-		jobIDsToUpdate = append(jobIDsToUpdate, job.ID)
 	}
 	rows.Close()
 
-	if len(jobs) == 0 {
+	if len(updates) == 0 {
 		return jobs, nil
 	}
 
-	// Atomically update claimed jobs with last_run_at = NOW()
-	// Scheduler will calculate next_run_at and save it immediately after claiming
-	updateQuery := `UPDATE jobs SET last_run_at = NOW() WHERE id = ANY($1)`
-	_, err = tx.Exec(updateQuery, pq.Array(jobIDsToUpdate))
-	if err != nil {
-		return nil, err
+	// CRITICAL: Update next_run_at BEFORE committing transaction
+	// This prevents another pod from claiming the same jobs
+	updateQuery := `UPDATE jobs SET last_run_at = $1, next_run_at = $2 WHERE id = $3`
+	for _, u := range updates {
+		_, err := tx.Exec(updateQuery, now, u.nextRun, u.job.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update job %s: %w", u.job.ID, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

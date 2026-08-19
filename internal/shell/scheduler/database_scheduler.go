@@ -32,7 +32,8 @@ type DatabaseJobRepository interface {
 	Save(job domain.Job) error
 	FindByID(id string) (domain.Job, error)
 	// FetchDueJobs atomically claims jobs using FOR UPDATE SKIP LOCKED
-	FetchDueJobs(ctx context.Context, limit int) ([]domain.Job, error)
+	// calculateNextRun is called within the transaction to compute next_run_at
+	FetchDueJobs(ctx context.Context, limit int, calculateNextRun func(schedule string, now time.Time) (time.Time, error)) ([]domain.Job, error)
 }
 
 // NewDatabaseScheduler creates a new database-based scheduler
@@ -114,11 +115,20 @@ func (s *DatabaseScheduler) Stop() {
 
 // processDueJobs finds and executes jobs that are due to run
 func (s *DatabaseScheduler) processDueJobs() {
-	now := time.Now()
+	// Callback function to calculate next run time from cron schedule
+	// This is called INSIDE the transaction that claims jobs
+	calculateNextRun := func(schedule string, now time.Time) (time.Time, error) {
+		sched, err := s.parser.Parse(schedule)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return sched.Next(now), nil
+	}
 
 	// Fetch and claim due jobs atomically using FOR UPDATE SKIP LOCKED
-	// This sets last_run_at = NOW() to mark them as claimed
-	jobs, err := s.jobRepo.FetchDueJobs(s.ctx, 100)
+	// The repository calculates next_run_at and updates it BEFORE committing
+	// This prevents race condition where another pod claims same jobs
+	jobs, err := s.jobRepo.FetchDueJobs(s.ctx, 100, calculateNextRun)
 	if err != nil {
 		log.Printf("[DatabaseScheduler] Error fetching due jobs: %v", err)
 		return
@@ -129,24 +139,6 @@ func (s *DatabaseScheduler) processDueJobs() {
 	}
 
 	log.Printf("[DatabaseScheduler] Found %d jobs due for execution (concurrent dispatch)", len(jobs))
-
-	// Immediately update next_run_at for all claimed jobs to prevent re-claiming
-	// Calculate next run time from cron schedule and save it
-	for _, job := range jobs {
-		schedule, err := s.parser.Parse(string(job.Schedule))
-		if err != nil {
-			log.Printf("[DatabaseScheduler] Error parsing schedule for job %s: %v", job.ID, err)
-			continue
-		}
-
-		nextRun := schedule.Next(now)
-		job = job.WithNextRunAt(nextRun)
-
-		// Save updated next_run_at immediately to prevent duplicate execution
-		if err := s.jobRepo.Save(job); err != nil {
-			log.Printf("[DatabaseScheduler] Error updating next_run_at for job %s: %v", job.ID, err)
-		}
-	}
 
 	// Dispatch jobs concurrently with worker pool limiting
 	for _, job := range jobs {
