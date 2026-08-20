@@ -52,7 +52,11 @@ func (t *FailureTracker) TrackFailure(job domain.Job, execErr error, logger *slo
 
 		JobsAutoPausedTotal.Inc()
 	} else {
-		updatedJob = updatedJob.WithStatus(domain.StatusFailed)
+		// Below the auto-pause threshold the job remains active and will retry on
+		// its next scheduled tick. The failure is recorded via ConsecutiveFailures /
+		// LastFailedAt (and in the per-run JobRun record) rather than by flipping the
+		// job-level status to "failed", which would misleadingly read as terminal.
+		updatedJob = updatedJob.WithStatus(domain.StatusScheduled)
 	}
 
 	if err := t.jobRepo.Save(updatedJob); err != nil {

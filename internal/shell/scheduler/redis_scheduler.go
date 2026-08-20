@@ -205,7 +205,10 @@ func (s *RedisScheduler) Stop() {
 
 // ScheduleJob adds or updates a job in the Redis schedule
 func (s *RedisScheduler) ScheduleJob(job domain.Job) error {
-	if job.Status != domain.StatusScheduled {
+	// "failed" is treated as active for backward compatibility with rows persisted
+	// before failures stopped flipping the job-level status; such jobs retry and heal
+	// back to "scheduled" on their next successful run.
+	if job.Status != domain.StatusScheduled && job.Status != domain.StatusFailed {
 		log.Printf("[RedisScheduler] Skipping job %s - status is %s", job.ID, job.Status)
 		return nil
 	}

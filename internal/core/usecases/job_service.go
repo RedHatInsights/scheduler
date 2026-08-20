@@ -703,8 +703,10 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, erro
 	var finalJob domain.Job
 
 	if execErr != nil {
+		// Manual runs do not count toward consecutive-failure auto-pause, and the job
+		// stays active/scheduled; the failure is captured in the per-run JobRun record.
 		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
-		finalStatus = domain.StatusFailed
+		finalStatus = domain.StatusScheduled
 		finalJob = runningJob.WithStatus(finalStatus)
 	} else {
 		finalStatus = domain.StatusScheduled
@@ -1027,7 +1029,10 @@ func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRun
 				s.cronScheduler.UnscheduleJob(job.ID)
 			}
 		} else {
-			finalStatus = domain.StatusFailed
+			// Below the auto-pause threshold the job stays active and retries on its
+			// next tick. The failure is recorded via ConsecutiveFailures/LastFailedAt
+			// and the per-run JobRun record, not by flipping the job status to "failed".
+			finalStatus = domain.StatusScheduled
 		}
 
 		finalJob = finalJob.WithStatus(finalStatus)

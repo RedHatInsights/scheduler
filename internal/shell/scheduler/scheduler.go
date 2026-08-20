@@ -91,10 +91,13 @@ func (s *CronScheduler) ScheduleJob(job domain.Job) error {
 			return
 		}
 
-		// Only execute if job is still scheduled
-		if currentJob.Status != domain.StatusScheduled {
-			s.logger.Debug("Job no longer scheduled, skipping execution",
-				slog.String("job_id", job.ID))
+		// Only execute if the job is still active. "failed" is treated as active for
+		// backward compatibility with rows persisted before failures stopped flipping
+		// the job-level status; such jobs retry and heal back to "scheduled" on success.
+		if currentJob.Status != domain.StatusScheduled && currentJob.Status != domain.StatusFailed {
+			s.logger.Debug("Job no longer active, skipping execution",
+				slog.String("job_id", job.ID),
+				slog.String("status", string(currentJob.Status)))
 			return
 		}
 

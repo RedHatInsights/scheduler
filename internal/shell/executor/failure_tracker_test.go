@@ -47,8 +47,11 @@ func TestFailureTracker_TrackFailure_BelowThreshold(t *testing.T) {
 	if updated.ConsecutiveFailures != 1 {
 		t.Errorf("Expected failures=1, got %d", updated.ConsecutiveFailures)
 	}
-	if updated.Status != domain.StatusFailed {
-		t.Errorf("Expected status failed, got %s", updated.Status)
+	if updated.Status != domain.StatusScheduled {
+		t.Errorf("Expected status scheduled (job stays active below threshold), got %s", updated.Status)
+	}
+	if updated.LastFailedAt == nil {
+		t.Error("Expected last_failed_at to be set after a failure, got nil")
 	}
 	if len(notifier.jobAutoPausedCalls) != 0 {
 		t.Errorf("Expected no auto-pause notification, got %d", len(notifier.jobAutoPausedCalls))

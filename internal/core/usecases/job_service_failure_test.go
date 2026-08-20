@@ -68,8 +68,8 @@ func TestJobFailureCounterIncrementsOnFailure(t *testing.T) {
 		t.Error("After failure, expected last_failed_at to be set, got nil")
 	}
 
-	if updatedJob.Status != domain.StatusFailed {
-		t.Errorf("After 1 failure (below threshold), expected status=failed, got %s", updatedJob.Status)
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("After 1 failure (below threshold), job should stay active: expected status=scheduled, got %s", updatedJob.Status)
 	}
 }
 
@@ -396,9 +396,9 @@ func TestManualAPIRunDoesNotTrackFailures(t *testing.T) {
 		t.Error("Manual API run should NOT set last_failed_at, got non-nil")
 	}
 
-	// Status should still be failed (execution failed)
-	if updatedJob.Status != domain.StatusFailed {
-		t.Errorf("After manual run failure, expected status=failed, got %s", updatedJob.Status)
+	// Manual run failures leave the job active (they don't count toward auto-pause)
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("After manual run failure, expected status=scheduled, got %s", updatedJob.Status)
 	}
 
 	// Run it 10 more times manually - should NEVER increment consecutive_failures or auto-pause

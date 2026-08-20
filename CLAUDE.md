@@ -130,6 +130,7 @@ Jobs support four payload types:
 - Description: Number of consecutive failures before a job is automatically paused. Set to `0` to disable auto-pause.
 - Example: `MAX_CONSECUTIVE_FAILURES=5`
 - Note: When a job fails N consecutive times, it will be automatically paused and will not run again until manually resumed via the `/jobs/{id}/resume` endpoint. The failure counter resets to 0 after any successful execution or when the job is manually resumed.
+- Job status while retrying: A failed run does **not** flip the job-level status to `failed`. The job stays `scheduled` (i.e. active and retrying) until it reaches the auto-pause threshold, at which point it becomes `paused`. Failure state is tracked via the `consecutive_failures` and `last_failed_at` fields on the job, and the outcome of each individual run is recorded in that run's `JobRun` record. To detect a job that is failing, check `consecutive_failures > 0` / `last_failed_at` or the run history rather than the job status. (The `failed` job status is retained only for backward compatibility with rows written by older versions; such jobs are still treated as active and heal back to `scheduled` on their next success.)
 
 **Export Poll Scan Interval**:
 - Variable: `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL`
