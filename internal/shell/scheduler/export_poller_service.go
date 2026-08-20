@@ -108,19 +108,18 @@ func (s *ExportPollerService) Start(ctx context.Context) {
 }
 
 func (s *ExportPollerService) scanAndProcess(ctx context.Context) {
-	runs, err := s.runRepo.FindByStatus(ctx, domain.RunStatusRunning)
+	// FindInFlightExternalRuns guarantees status=running AND external_job_id IS NOT NULL,
+	// so we only need to discriminate by external service here.
+	runs, err := s.runRepo.FindInFlightExternalRuns(ctx)
 	if err != nil {
 		s.logger.Error("Failed to scan for running exports", slog.Any("error", err))
 		return
 	}
 
-	// Filter to export runs only
+	// Filter to export runs only (other async services may share this table)
 	var exportRuns []domain.JobRun
 	for _, run := range runs {
-		if run.ExternalJobID == nil || run.ExternalService == nil {
-			continue
-		}
-		if *run.ExternalService != "export" {
+		if run.ExternalService == nil || *run.ExternalService != "export" {
 			continue
 		}
 		exportRuns = append(exportRuns, run)

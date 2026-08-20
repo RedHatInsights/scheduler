@@ -16,7 +16,7 @@ type mockJobRunRepository struct {
 	findByJobIDAndOrgID func(jobID string, orgID string) ([]domain.JobRun, error)
 	findByUserIDFunc    func(userID string, offset, limit int) ([]domain.JobRun, int, error)
 	findAllFunc         func() ([]domain.JobRun, error)
-	findByStatusFunc    func(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error)
+	findInFlightFunc    func(ctx context.Context) ([]domain.JobRun, error)
 	saveFunc            func(run domain.JobRun) error
 }
 
@@ -55,9 +55,9 @@ func (m *mockJobRunRepository) FindAll() ([]domain.JobRun, error) {
 	return nil, nil
 }
 
-func (m *mockJobRunRepository) FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error) {
-	if m.findByStatusFunc != nil {
-		return m.findByStatusFunc(ctx, status)
+func (m *mockJobRunRepository) FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error) {
+	if m.findInFlightFunc != nil {
+		return m.findInFlightFunc(ctx)
 	}
 	return nil, nil
 }

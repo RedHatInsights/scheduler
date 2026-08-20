@@ -46,7 +46,7 @@ func (m *mockJobRunRepositoryForHandler) FindAll() ([]domain.JobRun, error) {
 	return nil, nil
 }
 
-func (m *mockJobRunRepositoryForHandler) FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error) {
+func (m *mockJobRunRepositoryForHandler) FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error) {
 	return nil, nil
 }
 

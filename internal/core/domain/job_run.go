@@ -25,7 +25,6 @@ type JobRun struct {
 	Result          interface{}  `json:"result,omitempty"`
 	ExternalJobID   *string      `json:"external_job_id,omitempty"`
 	ExternalService *string      `json:"external_service,omitempty"`
-	PollStartedAt   *time.Time   `json:"poll_started_at,omitempty"`
 }
 
 func NewJobRun(jobID string) JobRun {
@@ -40,7 +39,6 @@ func NewJobRun(jobID string) JobRun {
 		Result:          nil,
 		ExternalJobID:   nil,
 		ExternalService: nil,
-		PollStartedAt:   nil,
 	}
 }
 
@@ -57,7 +55,6 @@ func (jr JobRun) WithCompleted(resultType ResultType, result interface{}) JobRun
 		Result:          result,
 		ExternalJobID:   jr.ExternalJobID,
 		ExternalService: jr.ExternalService,
-		PollStartedAt:   jr.PollStartedAt,
 	}
 }
 
@@ -74,12 +71,10 @@ func (jr JobRun) WithFailed(errorMessage string) JobRun {
 		Result:          nil,
 		ExternalJobID:   jr.ExternalJobID,
 		ExternalService: jr.ExternalService,
-		PollStartedAt:   jr.PollStartedAt,
 	}
 }
 
 func (jr JobRun) WithExternalJob(externalJobID, externalService string) JobRun {
-	now := time.Now().UTC()
 	return JobRun{
 		ID:              jr.ID,
 		JobID:           jr.JobID,
@@ -91,7 +86,6 @@ func (jr JobRun) WithExternalJob(externalJobID, externalService string) JobRun {
 		Result:          jr.Result,
 		ExternalJobID:   &externalJobID,
 		ExternalService: &externalService,
-		PollStartedAt:   &now,
 	}
 }
 

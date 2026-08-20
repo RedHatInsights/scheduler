@@ -56,12 +56,12 @@ func (r *mockJobRunRepo) FindByUserID(userID string, offset, limit int) ([]domai
 
 func (r *mockJobRunRepo) FindAll() ([]domain.JobRun, error) { return nil, nil }
 
-func (r *mockJobRunRepo) FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error) {
+func (r *mockJobRunRepo) FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var result []domain.JobRun
 	for _, run := range r.runs {
-		if run.Status == status {
+		if run.Status == domain.RunStatusRunning && run.ExternalJobID != nil {
 			result = append(result, run)
 		}
 	}

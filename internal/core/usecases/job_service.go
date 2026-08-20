@@ -28,7 +28,7 @@ type JobRunRepository interface {
 	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
 	FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error)
 	FindAll() ([]domain.JobRun, error)
-	FindByStatus(ctx context.Context, status domain.JobRunStatus) ([]domain.JobRun, error)
+	FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error)
 	CleanupOldRuns(keepPerJob int) (int64, error)
 }
 
