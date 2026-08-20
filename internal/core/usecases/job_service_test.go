@@ -829,8 +829,8 @@ func TestCreateJob_WithValidCELPayload(t *testing.T) {
 	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
 
 	payload := map[string]interface{}{
-		"start_date": "cel:now.start_of_day().format_date(\"2006-01-02\")",
-		"end_date":   "cel:now.add_days(-1).end_of_day().format_date(\"2006-01-02\")",
+		"start_date": "scheduler_cel:now.start_of_day().format_date(\"2006-01-02\")",
+		"end_date":   "scheduler_cel:now.add_days(-1).end_of_day().format_date(\"2006-01-02\")",
 		"name":       "plain string value",
 	}
 
@@ -852,7 +852,7 @@ func TestCreateJob_WithInvalidCELPayload(t *testing.T) {
 	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
 
 	payload := map[string]interface{}{
-		"start_date": "cel:invalid_func()",
+		"start_date": "scheduler_cel:invalid_func()",
 	}
 
 	_, err := service.CreateJob(context.Background(), "Bad CEL Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, payload)
@@ -897,7 +897,7 @@ func TestUpdateJob_WithInvalidCELPayload(t *testing.T) {
 
 	// Try to update with an invalid CEL expression
 	badPayload := map[string]interface{}{
-		"start_date": "cel:undefined_var + broken",
+		"start_date": "scheduler_cel:undefined_var + broken",
 	}
 
 	_, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, badPayload, "scheduled")
@@ -920,7 +920,7 @@ func TestPatchJobWithOrgCheck_WithInvalidCELPayload(t *testing.T) {
 	// Try to patch with an invalid CEL expression in the payload
 	updates := map[string]interface{}{
 		"payload": map[string]interface{}{
-			"start_date": "cel:!!!syntax_error",
+			"start_date": "scheduler_cel:!!!syntax_error",
 		},
 	}
 
@@ -944,7 +944,7 @@ func TestPatchJobWithUserCheck_WithInvalidCELPayload(t *testing.T) {
 	// Try to patch with an invalid CEL expression in the payload
 	updates := map[string]interface{}{
 		"payload": map[string]interface{}{
-			"start_date": "cel:!!!syntax_error",
+			"start_date": "scheduler_cel:!!!syntax_error",
 		},
 	}
 
@@ -965,8 +965,8 @@ func TestCreateJob_WithNestedValidCELPayload(t *testing.T) {
 	payload := map[string]interface{}{
 		"filters": map[string]interface{}{
 			"date_range": map[string]interface{}{
-				"start": "cel:now.add_days(-30).start_of_day().format_date(\"2006-01-02\")",
-				"end":   "cel:now.end_of_day().format_date(\"2006-01-02\")",
+				"start": "scheduler_cel:now.add_days(-30).start_of_day().format_date(\"2006-01-02\")",
+				"end":   "scheduler_cel:now.end_of_day().format_date(\"2006-01-02\")",
 			},
 		},
 		"format": "csv",

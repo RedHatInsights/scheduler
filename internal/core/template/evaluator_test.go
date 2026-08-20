@@ -443,7 +443,7 @@ func TestPayloadDepthLimit(t *testing.T) {
 	e := mustEvaluator(t)
 	ctx := map[string]any{"now": time.Now(), "job_id": "test"}
 
-	var nested any = "cel:job_id"
+	var nested any = "scheduler_cel:job_id"
 	for i := 0; i < maxPayloadDepth+5; i++ {
 		nested = map[string]any{"level": nested}
 	}
@@ -463,7 +463,7 @@ func TestEvalCountLimit(t *testing.T) {
 
 	payload := make(map[string]any, maxEvalCount+10)
 	for i := 0; i < maxEvalCount+10; i++ {
-		payload[fmt.Sprintf("field_%d", i)] = "cel:job_id"
+		payload[fmt.Sprintf("field_%d", i)] = "scheduler_cel:job_id"
 	}
 
 	_, err := e.ProcessPayload(payload, ctx)
@@ -481,18 +481,18 @@ func TestLimitsAllowLegitimatePayloads(t *testing.T) {
 	ctx := map[string]any{"now": now, "job_id": "job_123"}
 
 	payload := map[string]any{
-		"start":   "cel:now.first_of_last_month().format_date('2006-01-02')",
-		"end":     "cel:now.last_of_last_month().format_date('2006-01-02')",
-		"quarter": "cel:now.first_of_quarter().format_date('2006-01-02')",
-		"ref":     "cel:job_id",
+		"start":   "scheduler_cel:now.first_of_last_month().format_date('2006-01-02')",
+		"end":     "scheduler_cel:now.last_of_last_month().format_date('2006-01-02')",
+		"quarter": "scheduler_cel:now.first_of_quarter().format_date('2006-01-02')",
+		"ref":     "scheduler_cel:job_id",
 		"static":  "plain value",
 		"nested": map[string]any{
-			"week_start": "cel:now.first_of_week().format_date('2006-01-02')",
+			"week_start": "scheduler_cel:now.first_of_week().format_date('2006-01-02')",
 			"deep": map[string]any{
-				"composed": "cel:now.first_of_month().add_days(-1).format_date('2006-01-02')",
+				"composed": "scheduler_cel:now.first_of_month().add_days(-1).format_date('2006-01-02')",
 			},
 		},
-		"list": []any{"cel:job_id + '_a'", "cel:job_id + '_b'"},
+		"list": []any{"scheduler_cel:job_id + '_a'", "scheduler_cel:job_id + '_b'"},
 	}
 
 	result, err := e.ProcessPayload(payload, ctx)
@@ -515,11 +515,11 @@ func TestProcessPayloadWithShortcuts(t *testing.T) {
 	ctx := map[string]any{"now": now, "job_id": "job_123"}
 
 	payload := map[string]any{
-		"period_start": "cel:now.first_of_last_month().format_date('2006-01-02')",
-		"period_end":   "cel:now.last_of_last_month().format_date('2006-01-02')",
+		"period_start": "scheduler_cel:now.first_of_last_month().format_date('2006-01-02')",
+		"period_end":   "scheduler_cel:now.last_of_last_month().format_date('2006-01-02')",
 		"static_field": "no_eval",
 		"nested": map[string]any{
-			"quarter_start": "cel:now.first_of_quarter().format_date('2006-01-02')",
+			"quarter_start": "scheduler_cel:now.first_of_quarter().format_date('2006-01-02')",
 		},
 	}
 
@@ -564,16 +564,16 @@ func TestValidatePayload_ValidExpressions(t *testing.T) {
 	e := mustEvaluator(t)
 
 	payload := map[string]any{
-		"start":   "cel:now.first_of_last_month().format_date('2006-01-02')",
-		"end":     "cel:now.last_of_last_month().format_date('2006-01-02')",
-		"ref":     "cel:job_id",
+		"start":   "scheduler_cel:now.first_of_last_month().format_date('2006-01-02')",
+		"end":     "scheduler_cel:now.last_of_last_month().format_date('2006-01-02')",
+		"ref":     "scheduler_cel:job_id",
 		"static":  "plain value",
 		"number":  42,
 		"boolean": true,
 		"nested": map[string]any{
-			"week_start": "cel:now.first_of_week().format_date('2006-01-02')",
+			"week_start": "scheduler_cel:now.first_of_week().format_date('2006-01-02')",
 		},
-		"list": []any{"cel:job_id + '_a'", "static_item"},
+		"list": []any{"scheduler_cel:job_id + '_a'", "static_item"},
 	}
 
 	err := e.ValidatePayload(payload)
@@ -586,7 +586,7 @@ func TestValidatePayload_InvalidCELExpression(t *testing.T) {
 	e := mustEvaluator(t)
 
 	payload := map[string]any{
-		"bad_expr": "cel:this is not valid CEL !!@@##",
+		"bad_expr": "scheduler_cel:this is not valid CEL !!@@##",
 	}
 
 	err := e.ValidatePayload(payload)
@@ -611,14 +611,14 @@ func TestValidatePayload_NoCELExpressions(t *testing.T) {
 
 	err := e.ValidatePayload(payload)
 	if err != nil {
-		t.Errorf("ValidatePayload() should return nil for payload with no cel: expressions, got: %v", err)
+		t.Errorf("ValidatePayload() should return nil for payload with no scheduler_cel: expressions, got: %v", err)
 	}
 }
 
 func TestValidatePayload_ExpressionLengthLimit(t *testing.T) {
 	e := mustEvaluator(t)
 
-	longExpr := "cel:now.format_date('" + strings.Repeat("x", maxExprLength) + "')"
+	longExpr := "scheduler_cel:now.format_date('" + strings.Repeat("x", maxExprLength) + "')"
 	payload := map[string]any{
 		"too_long": longExpr,
 	}
@@ -635,7 +635,7 @@ func TestValidatePayload_ExpressionLengthLimit(t *testing.T) {
 func TestValidatePayload_NestingDepthLimit(t *testing.T) {
 	e := mustEvaluator(t)
 
-	var nested any = "cel:job_id"
+	var nested any = "scheduler_cel:job_id"
 	for i := 0; i < maxPayloadDepth+5; i++ {
 		nested = map[string]any{"level": nested}
 	}
@@ -654,7 +654,7 @@ func TestValidatePayload_EvalCountLimit(t *testing.T) {
 
 	payload := make(map[string]any, maxEvalCount+10)
 	for i := 0; i < maxEvalCount+10; i++ {
-		payload[fmt.Sprintf("field_%d", i)] = "cel:job_id"
+		payload[fmt.Sprintf("field_%d", i)] = "scheduler_cel:job_id"
 	}
 
 	err := e.ValidatePayload(payload)
@@ -679,19 +679,19 @@ func TestBareCelPrefix(t *testing.T) {
 	e := mustEvaluator(t)
 	ctx := map[string]any{"now": time.Now(), "job_id": "test"}
 
-	t.Run("validate rejects bare cel: prefix", func(t *testing.T) {
-		payload := map[string]any{"field": "cel:"}
+	t.Run("validate rejects bare scheduler_cel: prefix", func(t *testing.T) {
+		payload := map[string]any{"field": "scheduler_cel:"}
 		err := e.ValidatePayload(payload)
 		if err == nil {
-			t.Fatal("ValidatePayload should reject bare 'cel:' with no expression body")
+			t.Fatal("ValidatePayload should reject bare 'scheduler_cel:' with no expression body")
 		}
 	})
 
-	t.Run("process rejects bare cel: prefix", func(t *testing.T) {
-		payload := map[string]any{"field": "cel:"}
+	t.Run("process rejects bare scheduler_cel: prefix", func(t *testing.T) {
+		payload := map[string]any{"field": "scheduler_cel:"}
 		_, err := e.ProcessPayload(payload, ctx)
 		if err == nil {
-			t.Fatal("ProcessPayload should reject bare 'cel:' with no expression body")
+			t.Fatal("ProcessPayload should reject bare 'scheduler_cel:' with no expression body")
 		}
 	})
 }
@@ -703,7 +703,7 @@ func TestValidatePayload_DoesNotEvaluate(t *testing.T) {
 	// ValidatePayload should compile it without evaluating, so it should succeed
 	// even without providing runtime context.
 	payload := map[string]any{
-		"expr": "cel:now.add_days(-30).format_date('2006-01-02')",
+		"expr": "scheduler_cel:now.add_days(-30).format_date('2006-01-02')",
 	}
 
 	err := e.ValidatePayload(payload)

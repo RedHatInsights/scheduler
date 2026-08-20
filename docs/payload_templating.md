@@ -1,6 +1,6 @@
 # Payload Templating
 
-The scheduler supports dynamic payload values using [Google CEL (Common Expression Language)](https://cel.dev/) expressions. Any string value in a job payload prefixed with `cel:` is treated as a template expression that gets evaluated at execution time. Non-prefixed strings pass through unchanged.
+The scheduler supports dynamic payload values using [Google CEL (Common Expression Language)](https://cel.dev/) expressions. Any string value in a job payload prefixed with `scheduler_cel:` is treated as a template expression that gets evaluated at execution time. Non-prefixed strings pass through unchanged.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ The scheduler supports dynamic payload values using [Google CEL (Common Expressi
 
 ## Overview
 
-Scheduled jobs often need date-relative parameters. A monthly export job should request "last month's data" relative to when it runs, not a hardcoded date range. Payload templating solves this by evaluating `cel:` expressions at execution time.
+Scheduled jobs often need date-relative parameters. A monthly export job should request "last month's data" relative to when it runs, not a hardcoded date range. Payload templating solves this by evaluating `scheduler_cel:` expressions at execution time.
 
 **Static payload (no templating):**
 ```json
@@ -33,8 +33,8 @@ Scheduled jobs often need date-relative parameters. A monthly export job should 
 ```json
 {
   "filters": {
-    "start_date": "cel:now.first_of_last_month().format_date(ISO_DATE)",
-    "end_date": "cel:now.last_of_last_month().format_date(ISO_DATE)"
+    "start_date": "scheduler_cel:now.first_of_last_month().format_date(ISO_DATE)",
+    "end_date": "scheduler_cel:now.last_of_last_month().format_date(ISO_DATE)"
   }
 }
 ```
@@ -183,8 +183,8 @@ The rhsm-subscriptions service expects `beginning` and `ending` fields in ISO 86
       "resource": "instances",
       "filters": {
         "product_id": "rhel-for-x86-els-payg",
-        "beginning": "cel:now.first_of_last_month().start_of_day().format_date(ISO_DATETIME)",
-        "ending": "cel:now.last_of_last_month().end_of_day().format_date(ISO_DATETIME)"
+        "beginning": "scheduler_cel:now.first_of_last_month().start_of_day().format_date(ISO_DATETIME)",
+        "ending": "scheduler_cel:now.last_of_last_month().end_of_day().format_date(ISO_DATETIME)"
       }
     }
   ]
@@ -213,8 +213,8 @@ On August 18, 2026 this resolves to:
       "application": "inventory",
       "resource": "hosts",
       "filters": {
-        "start_date": "cel:now.first_of_month().format_date(ISO_DATE)",
-        "end_date": "cel:now.format_date(ISO_DATE)"
+        "start_date": "scheduler_cel:now.first_of_month().format_date(ISO_DATE)",
+        "end_date": "scheduler_cel:now.format_date(ISO_DATE)"
       }
     }
   ]
@@ -226,8 +226,8 @@ On August 18, 2026 this resolves to:
 ```json
 {
   "filters": {
-    "since": "cel:now.add_days(-7).start_of_day().format_date(ISO_DATETIME)",
-    "until": "cel:now.end_of_day().format_date(ISO_DATETIME)"
+    "since": "scheduler_cel:now.add_days(-7).start_of_day().format_date(ISO_DATETIME)",
+    "until": "scheduler_cel:now.end_of_day().format_date(ISO_DATETIME)"
   }
 }
 ```
@@ -237,8 +237,8 @@ On August 18, 2026 this resolves to:
 ```json
 {
   "filters": {
-    "quarter_begin": "cel:now.first_of_quarter().format_date(ISO_DATE)",
-    "quarter_end": "cel:now.last_of_quarter().format_date(ISO_DATE)"
+    "quarter_begin": "scheduler_cel:now.first_of_quarter().format_date(ISO_DATE)",
+    "quarter_end": "scheduler_cel:now.last_of_quarter().format_date(ISO_DATE)"
   }
 }
 ```
@@ -247,14 +247,14 @@ On August 18, 2026 this resolves to:
 
 ```json
 {
-  "reference": "cel:job_id",
-  "tag": "cel:job_id + '_monthly_export'"
+  "reference": "scheduler_cel:job_id",
+  "tag": "scheduler_cel:job_id + '_monthly_export'"
 }
 ```
 
 ### Mixed Static and Templated Fields
 
-Non-`cel:` values pass through unchanged. Only string values with the `cel:` prefix are evaluated.
+Non-`scheduler_cel:` values pass through unchanged. Only string values with the `scheduler_cel:` prefix are evaluated.
 
 ```json
 {
@@ -266,15 +266,15 @@ Non-`cel:` values pass through unchanged. Only string values with the `cel:` pre
       "resource": "instances",
       "filters": {
         "product_id": "rhel-for-x86-els-payg",
-        "beginning": "cel:now.first_of_last_month().format_date(ISO_DATETIME)",
-        "ending": "cel:now.last_of_last_month().end_of_day().format_date(ISO_DATETIME)"
+        "beginning": "scheduler_cel:now.first_of_last_month().format_date(ISO_DATETIME)",
+        "ending": "scheduler_cel:now.last_of_last_month().end_of_day().format_date(ISO_DATETIME)"
       }
     }
   ]
 }
 ```
 
-Numbers, booleans, and objects without `cel:` strings are left as-is.
+Numbers, booleans, and objects without `scheduler_cel:` strings are left as-is.
 
 ---
 
@@ -284,7 +284,7 @@ CEL expressions are validated at two points:
 
 ### API Time (Create / Update / Patch)
 
-When a job is created or modified, all `cel:` expressions in the payload are **compiled but not evaluated**. This catches syntax errors immediately and returns a `400 Bad Request` with details:
+When a job is created or modified, all `scheduler_cel:` expressions in the payload are **compiled but not evaluated**. This catches syntax errors immediately and returns a `400 Bad Request` with details:
 
 ```json
 {
@@ -298,11 +298,11 @@ When a job is created or modified, all `cel:` expressions in the payload are **c
 }
 ```
 
-Payloads with no `cel:` expressions skip validation entirely.
+Payloads with no `scheduler_cel:` expressions skip validation entirely.
 
 ### Execution Time
 
-When the job runs, all `cel:` expressions are evaluated with the current `now` timestamp and `job_id`. If evaluation fails at runtime (e.g., due to a cost limit exceeded), the job execution fails and the error is recorded in the job run history.
+When the job runs, all `scheduler_cel:` expressions are evaluated with the current `now` timestamp and `job_id`. If evaluation fails at runtime (e.g., due to a cost limit exceeded), the job execution fails and the error is recorded in the job run history.
 
 ---
 

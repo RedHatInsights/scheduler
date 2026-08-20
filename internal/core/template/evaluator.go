@@ -10,7 +10,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 )
 
-const celPrefix = "cel:"
+const celPrefix = "scheduler_cel:"
 
 const (
 	maxExprLength   = 1024
@@ -341,13 +341,13 @@ func (e *Evaluator) EvaluateExpr(exprStr string, ctx map[string]any) (any, error
 	return out.Value(), nil
 }
 
-// exprVisitor is called for each cel: expression found during payload traversal.
-// It receives the expression body (without the "cel:" prefix) and returns the
+// exprVisitor is called for each scheduler_cel: expression found during payload traversal.
+// It receives the expression body (without the "scheduler_cel:" prefix) and returns the
 // replacement value (or the zero value if only validating) and an error.
 type exprVisitor func(expr string) (any, error)
 
 // walkPayload recursively traverses map/list data structures, calling visitor
-// for each cel:-prefixed string. Used by both ProcessPayload and ValidatePayload.
+// for each scheduler_cel:-prefixed string. Used by both ProcessPayload and ValidatePayload.
 func (e *Evaluator) walkPayload(data any, visitor exprVisitor, depth int, evalCount *int) (any, error) {
 	if depth > maxPayloadDepth {
 		return nil, fmt.Errorf("payload nesting depth exceeds maximum of %d", maxPayloadDepth)
@@ -396,7 +396,7 @@ func (e *Evaluator) walkPayload(data any, visitor exprVisitor, depth int, evalCo
 }
 
 // ProcessPayload recursively traverses map/list data structures, replacing
-// cel:-prefixed expression strings with evaluated dynamic values.
+// scheduler_cel:-prefixed expression strings with evaluated dynamic values.
 func (e *Evaluator) ProcessPayload(data any, ctx map[string]any) (any, error) {
 	evalCount := 0
 	return e.walkPayload(data, func(expr string) (any, error) {
@@ -405,7 +405,7 @@ func (e *Evaluator) ProcessPayload(data any, ctx map[string]any) (any, error) {
 }
 
 // ValidatePayload recursively walks a payload structure and compiles any
-// cel: expressions without evaluating them. This is intended for API-time
+// scheduler_cel: expressions without evaluating them. This is intended for API-time
 // validation when users create or update jobs, so that malformed expressions
 // are rejected early. It enforces expression length, nesting depth, and eval
 // count limits. The runtime cost limit (maxEvalCost) is only enforced during

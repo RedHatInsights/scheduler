@@ -712,7 +712,7 @@ type JobCompletionNotifier interface {
 
 ## Payload Templating
 
-Job payloads support dynamic values via [CEL (Common Expression Language)](https://cel.dev/) expressions. Any string value prefixed with `cel:` is evaluated at execution time; all other values pass through unchanged.
+Job payloads support dynamic values via [CEL (Common Expression Language)](https://cel.dev/) expressions. Any string value prefixed with `scheduler_cel:` is evaluated at execution time; all other values pass through unchanged.
 
 **Architecture:**
 
@@ -738,9 +738,9 @@ Job payloads support dynamic values via [CEL (Common Expression Language)](https
 
 **Two-phase design:**
 
-1. **API time (validation)** — When a job is created or updated, all `cel:` expressions are compiled but not evaluated. Syntax errors return `400 Bad Request` immediately.
+1. **API time (validation)** — When a job is created or updated, all `scheduler_cel:` expressions are compiled but not evaluated. Syntax errors return `400 Bad Request` immediately.
 
-2. **Execution time (resolution)** — When the job runs, `cel:` expressions are evaluated with the current UTC time as `now` and the job's UUID as `job_id`. The resolved payload is then passed to the executor.
+2. **Execution time (resolution)** — When the job runs, `scheduler_cel:` expressions are evaluated with the current UTC time as `now` and the job's UUID as `job_id`. The resolved payload is then passed to the executor.
 
 **Integration points:**
 

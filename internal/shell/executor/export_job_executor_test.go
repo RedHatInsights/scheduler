@@ -324,8 +324,8 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 				"application": "advisor",
 				"resource":    "recommendations",
 				"filters": map[string]interface{}{
-					"start_date": "cel:now.first_of_last_month().format_date('2006-01-02')",
-					"end_date":   "cel:now.last_of_last_month().format_date('2006-01-02')",
+					"start_date": "scheduler_cel:now.first_of_last_month().format_date('2006-01-02')",
+					"end_date":   "scheduler_cel:now.last_of_last_month().format_date('2006-01-02')",
 				},
 			},
 		},
@@ -349,7 +349,7 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	// Verify the captured request body has resolved dates (not cel: prefixes)
+	// Verify the captured request body has resolved dates (not scheduler_cel: prefixes)
 	if capturedBody == nil {
 		t.Fatal("Expected captured request body")
 	}
@@ -359,7 +359,7 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 		t.Fatalf("Failed to parse captured body: %v", err)
 	}
 
-	// The sources should contain resolved dates, not cel: expressions
+	// The sources should contain resolved dates, not scheduler_cel: expressions
 	sources := sentReq["sources"].([]interface{})
 	source := sources[0].(map[string]interface{})
 	filters := source["filters"].(map[string]interface{})
@@ -367,11 +367,11 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 	startDate := filters["start_date"].(string)
 	endDate := filters["end_date"].(string)
 
-	// Dates should be in YYYY-MM-DD format and NOT start with "cel:"
-	if strings.HasPrefix(startDate, "cel:") {
+	// Dates should be in YYYY-MM-DD format and NOT start with "scheduler_cel:"
+	if strings.HasPrefix(startDate, "scheduler_cel:") {
 		t.Errorf("start_date was not resolved: %s", startDate)
 	}
-	if strings.HasPrefix(endDate, "cel:") {
+	if strings.HasPrefix(endDate, "scheduler_cel:") {
 		t.Errorf("end_date was not resolved: %s", endDate)
 	}
 	// Basic format check
@@ -390,7 +390,7 @@ func TestExportJobExecutor_InvalidTemplate(t *testing.T) {
 				"application": "advisor",
 				"resource":    "recommendations",
 				"filters": map[string]interface{}{
-					"start_date": "cel:invalid_func()",
+					"start_date": "scheduler_cel:invalid_func()",
 				},
 			},
 		},
