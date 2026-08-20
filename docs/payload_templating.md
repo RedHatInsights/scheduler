@@ -320,3 +320,25 @@ The CEL evaluator enforces four limits to prevent abuse:
 These limits apply to both validation (API time) and evaluation (execution time).
 
 The CEL environment is sandboxed: expressions can only access the declared context variables (`now`, `job_id`) and the provided date functions. There is no access to the filesystem, network, environment variables, or any other system resources.
+
+---
+
+## Limitations & Future Work
+
+### In-band prefix, no escape mechanism
+
+Templating is triggered by an **in-band marker**: any payload string starting with `scheduler_cel:` is treated as an expression. There is currently **no escape mechanism** — a payload value that legitimately needs to *start with* the literal text `scheduler_cel:` cannot be passed through unchanged, because the scheduler will strip the prefix and try to evaluate the remainder.
+
+The `scheduler_`-namespaced prefix (rather than a bare `cel:`) was chosen specifically to make this collision unlikely — in particular, to avoid clashing with downstream services that may themselves consume `cel:`-prefixed values. It reduces the probability of a collision but does not eliminate the ambiguity between "data" and "template."
+
+When a collision does occur, it fails safely rather than silently: an expression that can't compile against the scheduler's CEL environment is rejected at API time with a `400 Bad Request`, so a colliding value surfaces as a validation error rather than corrupted downstream data.
+
+### Planned: out-of-band `templated_fields`
+
+If in-band collisions become a real problem, the planned mitigation is an **out-of-band** templating approach that removes the ambiguity entirely:
+
+- Add an optional `templated_fields` map to the job (field name → CEL expression, with **no** prefix on the values), stored alongside the payload.
+- At execution time, if `templated_fields` is populated, resolve only those named fields and treat the `payload` as pure, untouched data — so a payload value that happens to start with `scheduler_cel:` (or any other sentinel) passes through verbatim.
+- If `templated_fields` is empty, fall back to the existing `scheduler_cel:` prefix scanning.
+
+This is **additive and non-breaking**: existing jobs using the prefix convention continue to work unchanged, while new jobs can opt into the collision-free approach. One open design question is addressing **nested** fields — a flat field-name map only covers top-level keys, so path syntax (e.g. `sources.0.start_date`) would be needed to reach the arbitrary nesting the prefix approach already supports.
