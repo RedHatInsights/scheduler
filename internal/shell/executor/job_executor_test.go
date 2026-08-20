@@ -55,7 +55,6 @@ func TestExportCompletionNotificationStructure(t *testing.T) {
 		ExportID:    "export-123",
 		JobID:       "job-456",
 		OrgID:       "org-789",
-		AccountID:   "account-123",
 		Status:      "complete",
 		DownloadURL: "https://example.com/exports/export-123",
 		ErrorMsg:    "",

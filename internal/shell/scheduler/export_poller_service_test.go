@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"insights-scheduler/internal/clients/polling"
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/shell/executor"
@@ -258,6 +259,117 @@ func TestExportPollerService_TimesOutOldRuns(t *testing.T) {
 	}
 	if updated.ErrorMessage == nil || *updated.ErrorMessage != "Execution timeout - exceeded maximum duration" {
 		t.Errorf("Expected timeout error message, got %v", updated.ErrorMessage)
+	}
+}
+
+func TestExportPollerService_TimeoutIncrementsMetric(t *testing.T) {
+	runRepo := newMockJobRunRepo()
+	jobRepo := newMockJobRepo()
+	notifier := &testNotifier{}
+	tracker := executor.NewFailureTracker(jobRepo, notifier, 3)
+
+	job := domain.NewJob("Test", "org-1", "user-1", "0 * * * *", "UTC", domain.PayloadExport, nil)
+	jobRepo.Save(job)
+
+	run := domain.NewJobRun(job.ID)
+	run = run.WithExternalJob("export-old", "export")
+	run.StartTime = time.Now().Add(-31 * time.Minute)
+	runRepo.Save(run)
+
+	svc := NewExportPollerService(
+		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
+		notifier, tracker, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
+	)
+
+	before := testutil.ToFloat64(ExportPollTimeoutsTotal)
+
+	svc.scanAndProcess(context.Background())
+	svc.activePolls.Wait()
+
+	after := testutil.ToFloat64(ExportPollTimeoutsTotal)
+	if delta := after - before; delta != 1 {
+		t.Errorf("Expected poll_timeouts_total to increment by 1, got delta %v", delta)
+	}
+}
+
+func TestExportPollerService_InFlightGauge(t *testing.T) {
+	runRepo := newMockJobRunRepo()
+	jobRepo := newMockJobRepo()
+
+	job := domain.NewJob("Test", "org-1", "user-1", "0 * * * *", "UTC", domain.PayloadExport, nil)
+	jobRepo.Save(job)
+
+	svc := NewExportPollerService(
+		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
+		&testNotifier{}, nil, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
+	)
+
+	// No in-flight runs -> gauge should read 0.
+	svc.scanAndProcess(context.Background())
+	svc.activePolls.Wait()
+	if v := testutil.ToFloat64(ExportInFlightRuns); v != 0 {
+		t.Errorf("Expected in-flight gauge 0 with no runs, got %v", v)
+	}
+
+	// One in-flight (timed-out) run -> gauge is set to 1 synchronously during the scan.
+	run := domain.NewJobRun(job.ID)
+	run = run.WithExternalJob("export-1", "export")
+	run.StartTime = time.Now().Add(-31 * time.Minute)
+	runRepo.Save(run)
+
+	svc.scanAndProcess(context.Background())
+	svc.activePolls.Wait()
+	if v := testutil.ToFloat64(ExportInFlightRuns); v != 1 {
+		t.Errorf("Expected in-flight gauge 1 with one run, got %v", v)
+	}
+}
+
+func TestExportErrorMessage(t *testing.T) {
+	if got := exportErrorMessage(""); got != defaultExportErrorMsg {
+		t.Errorf("empty error should map to default %q, got %q", defaultExportErrorMsg, got)
+	}
+	if got := exportErrorMessage("real failure"); got != "real failure" {
+		t.Errorf("non-empty error should pass through, got %q", got)
+	}
+}
+
+func TestExportPollerService_TimeoutSendsNotification(t *testing.T) {
+	runRepo := newMockJobRunRepo()
+	jobRepo := newMockJobRepo()
+	notifier := &testNotifier{}
+	tracker := executor.NewFailureTracker(jobRepo, notifier, 3)
+
+	job := domain.NewJob("Test", "org-1", "user-1", "0 * * * *", "UTC", domain.PayloadExport, nil)
+	jobRepo.Save(job)
+
+	run := domain.NewJobRun(job.ID)
+	run = run.WithExternalJob("export-old", "export")
+	run.StartTime = time.Now().Add(-31 * time.Minute) // older than 30 min threshold
+	runRepo.Save(run)
+
+	svc := NewExportPollerService(
+		runRepo, jobRepo, nil, &mockUserValidator{header: "hdr"},
+		notifier, tracker, nil, 100*time.Millisecond, 30*time.Minute, 10, testLogger(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	svc.Start(ctx)
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	if len(notifier.completeCalls) != 1 {
+		t.Fatalf("Expected 1 completion notification on timeout, got %d", len(notifier.completeCalls))
+	}
+	n := notifier.completeCalls[0]
+	if n.Status != string(polling.StatusFailed) {
+		t.Errorf("Expected notification status=failed, got %s", n.Status)
+	}
+	if n.ErrorMsg != exportTimeoutErrorMsg {
+		t.Errorf("Expected timeout error message in notification, got %q", n.ErrorMsg)
+	}
+	if n.ExportID != "export-old" {
+		t.Errorf("Expected export ID in notification, got %q", n.ExportID)
 	}
 }
 

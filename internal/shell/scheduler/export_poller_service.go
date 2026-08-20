@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -18,7 +18,24 @@ import (
 const (
 	exportPollLockPrefix = "scheduler:export-poll:"
 	exportPollLockTTL    = 30 * time.Second
+
+	// exportTimeoutErrorMsg is the failure message used when an in-flight export
+	// exceeds the configured max age and is timed out by the poller.
+	exportTimeoutErrorMsg = "Execution timeout - exceeded maximum duration"
+
+	// defaultExportErrorMsg is used when the export service reports a failure
+	// without a specific error message.
+	defaultExportErrorMsg = "Export processing failed"
 )
+
+// exportErrorMessage returns a non-empty failure message, applying a default
+// when the export service did not supply one.
+func exportErrorMessage(raw string) string {
+	if raw == "" {
+		return defaultExportErrorMsg
+	}
+	return raw
+}
 
 // ExportPollerService runs a continuous background loop that scans for
 // in-flight export jobs and checks their status. When an export reaches
@@ -125,6 +142,10 @@ func (s *ExportPollerService) scanAndProcess(ctx context.Context) {
 		exportRuns = append(exportRuns, run)
 	}
 
+	// Publish current in-flight volume every scan, including zero, so the gauge
+	// drops back down once runs drain rather than sticking at the last non-zero.
+	ExportInFlightRuns.Set(float64(len(exportRuns)))
+
 	if len(exportRuns) == 0 {
 		return
 	}
@@ -216,19 +237,20 @@ func (s *ExportPollerService) completeRun(
 	logger *slog.Logger,
 ) {
 	externalJobID := *run.ExternalJobID
+	isComplete := status.Status == polling.StatusComplete
 
-	if status.Status == polling.StatusComplete {
+	// Computed once and reused for the run record and failure tracking so they
+	// never disagree — status.Error can be empty on the failure path.
+	failureMsg := exportErrorMessage(status.Error)
+
+	if isComplete {
 		downloadURL := s.exportClient.GetExportDownloadURL(externalJobID)
 		result := domain.ExportResult{ExportID: externalJobID, URL: downloadURL}
 		run = run.WithCompleted(domain.ResultTypeExport, result)
 		logger.Info("Export completed", slog.String("download_url", downloadURL))
 	} else {
-		errorMsg := status.Error
-		if errorMsg == "" {
-			errorMsg = "Export processing failed"
-		}
-		run = run.WithFailed(errorMsg)
-		logger.Warn("Export failed", slog.String("error", errorMsg))
+		run = run.WithFailed(failureMsg)
+		logger.Warn("Export failed", slog.String("error", failureMsg))
 	}
 
 	if err := s.runRepo.Save(run); err != nil {
@@ -239,10 +261,10 @@ func (s *ExportPollerService) completeRun(
 	s.sendNotification(ctx, externalJobID, job, status, logger)
 
 	if s.failureTracker != nil {
-		if status.Status == polling.StatusComplete {
+		if isComplete {
 			s.failureTracker.TrackSuccess(job, logger)
 		} else {
-			s.failureTracker.TrackFailure(job, fmt.Errorf("%s", status.Error), logger)
+			s.failureTracker.TrackFailure(job, errors.New(failureMsg), logger)
 		}
 	}
 }
@@ -259,19 +281,18 @@ func (s *ExportPollerService) sendNotification(
 	}
 
 	downloadURL := ""
-	errorMsg := status.Error
+	errorMsg := ""
 
 	if status.Status == polling.StatusComplete {
 		downloadURL = s.exportClient.GetExportDownloadURL(exportID)
-	} else if errorMsg == "" {
-		errorMsg = "Export processing failed"
+	} else {
+		errorMsg = exportErrorMessage(status.Error)
 	}
 
 	notification := &executor.ExportCompletionNotification{
 		ExportID:    exportID,
 		JobID:       job.ID,
 		JobName:     job.Name,
-		AccountID:   "",
 		OrgID:       job.OrgID,
 		Status:      string(status.Status),
 		DownloadURL: downloadURL,
@@ -286,11 +307,16 @@ func (s *ExportPollerService) sendNotification(
 }
 
 func (s *ExportPollerService) markAsTimedOut(ctx context.Context, run domain.JobRun) {
-	logger := s.logger.With(
+	logAttrs := []any{
 		slog.String("run_id", run.ID),
 		slog.String("job_id", run.JobID),
 		slog.Duration("age", time.Since(run.StartTime)),
-	)
+		slog.Duration("max_age", s.maxAge),
+	}
+	if run.ExternalJobID != nil {
+		logAttrs = append(logAttrs, slog.String("export_id", *run.ExternalJobID))
+	}
+	logger := s.logger.With(logAttrs...)
 
 	if s.lock != nil {
 		lockKey := exportPollLockPrefix + run.ID
@@ -316,20 +342,41 @@ func (s *ExportPollerService) markAsTimedOut(ctx context.Context, run domain.Job
 		return
 	}
 
-	logger.Warn("Export job run timed out, marking as failed")
+	// Load the job so org/user context is available for logging, notification,
+	// and failure tracking.
+	job, err := s.jobRepo.FindByID(currentRun.JobID)
+	if err != nil {
+		logger.Error("Failed to load job for timeout handling", slog.Any("error", err))
+		return
+	}
+	logger = logger.With(
+		slog.String("org_id", job.OrgID),
+		slog.String("user_id", job.UserID),
+	)
 
-	currentRun = currentRun.WithFailed("Execution timeout - exceeded maximum duration")
+	logger.Warn("Export job run timed out, marking as failed",
+		slog.String("timeout_error", exportTimeoutErrorMsg))
+
+	currentRun = currentRun.WithFailed(exportTimeoutErrorMsg)
 	if err := s.runRepo.Save(currentRun); err != nil {
 		logger.Error("Failed to save timed out job run", slog.Any("error", err))
 		return
 	}
 
-	if s.failureTracker != nil {
-		job, err := s.jobRepo.FindByID(currentRun.JobID)
-		if err != nil {
-			logger.Error("Failed to load job for timeout failure tracking", slog.Any("error", err))
-			return
+	ExportPollTimeoutsTotal.Inc()
+
+	// Notify the user that their export timed out, mirroring completeRun's normal
+	// failure path so a timeout isn't silently swallowed.
+	if currentRun.ExternalJobID != nil {
+		timeoutStatus := &polling.StatusResponse{
+			ID:     *currentRun.ExternalJobID,
+			Status: polling.StatusFailed,
+			Error:  exportTimeoutErrorMsg,
 		}
-		s.failureTracker.TrackFailure(job, fmt.Errorf("execution timeout - exceeded maximum duration"), logger)
+		s.sendNotification(ctx, *currentRun.ExternalJobID, job, timeoutStatus, logger)
+	}
+
+	if s.failureTracker != nil {
+		s.failureTracker.TrackFailure(job, errors.New(exportTimeoutErrorMsg), logger)
 	}
 }

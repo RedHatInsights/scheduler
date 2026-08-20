@@ -2,7 +2,6 @@ package export
 
 import (
 	"context"
-	"fmt"
 
 	"insights-scheduler/internal/clients/polling"
 )
@@ -41,14 +40,10 @@ func (p *ExportPoller) GetStatus(ctx context.Context, jobID string) (*polling.St
 		jobStatus = polling.StatusPending
 	}
 
-	// Extract error message if available
+	// Extract error message if available, aggregating across all failed sources.
 	errorMsg := ""
-	if status.Status == StatusFailed && len(status.Sources) > 0 {
-		if status.Sources[0].Message != nil {
-			errorMsg = *status.Sources[0].Message
-		} else if status.Sources[0].Error != nil {
-			errorMsg = fmt.Sprintf("source error code: %d", *status.Sources[0].Error)
-		}
+	if status.Status == StatusFailed {
+		errorMsg = ExtractSourceErrors(status.Sources)
 	}
 
 	return &polling.StatusResponse{

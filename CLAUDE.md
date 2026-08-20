@@ -143,6 +143,8 @@ Jobs support four payload types:
 - Default: `30m`
 - Description: Maximum time an export run can remain in-flight before it is timed out and marked as failed. Increase this for long-running exports.
 - Example: `SCHEDULER_EXPORT_POLL_MAX_AGE=2h`
+- Note: Timeout detection is polled every `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL`, so a run is actually timed out up to one scan interval after it exceeds the max age.
+- Monitoring: `scheduler_export_poll_timeouts_total` (counter) counts export runs that exceeded the max age and were marked failed — alert on a rising rate. `scheduler_export_in_flight_runs` (gauge) reports the number of in-flight export runs seen in the most recent scan; watch it against `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS`. Timeouts are also logged at WARN with `job_id`, `org_id`, `user_id`, `export_id`, `age`, and `max_age`. (Distinct from `scheduler_redis_jobs_timed_out_total`, which tracks the separate job kick-off execution timeout.)
 
 **Maximum Concurrent Export Polls**:
 - Variable: `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS`

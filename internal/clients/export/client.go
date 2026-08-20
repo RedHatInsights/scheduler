@@ -297,29 +297,3 @@ func ExtractSourceErrors(sources []SourceStatus) string {
 	}
 	return strings.Join(errors, "; ")
 }
-
-// WaitForExportCompletion polls an export until it's complete or failed
-func (c *Client) WaitForExportCompletion(ctx context.Context, exportID string, identityHeader string, maxRetries int, pollInterval time.Duration) (*ExportStatusResponse, error) {
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		status, err := c.GetExportStatus(ctx, exportID, identityHeader)
-		if err != nil {
-			return nil, fmt.Errorf("export %s: failed to get status: %w", exportID, err)
-		}
-
-		switch status.Status {
-		case StatusComplete:
-			return status, nil
-		case StatusFailed:
-			return status, fmt.Errorf("export %s failed: %s", exportID, ExtractSourceErrors(status.Sources))
-		case StatusPending, StatusRunning, StatusPartial:
-			// Continue waiting
-			if attempt < maxRetries-1 {
-				time.Sleep(pollInterval)
-			}
-		default:
-			return status, fmt.Errorf("export %s: unknown status: %s", exportID, status.Status)
-		}
-	}
-
-	return nil, fmt.Errorf("export %s: did not complete after %d polling attempts", exportID, maxRetries)
-}
