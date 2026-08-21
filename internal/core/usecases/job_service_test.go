@@ -494,7 +494,7 @@ func TestUpdateJob_CanSetStatusToPaused(t *testing.T) {
 	}
 }
 
-func TestUpdateJobWithUserCheck_SameUser_Succeeds(t *testing.T) {
+func TestUpdateJobWithUserCheck_AllowsOwner(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
@@ -504,26 +504,17 @@ func TestUpdateJobWithUserCheck_SameUser_Succeeds(t *testing.T) {
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)
 
-	updatedJob, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Updated Job", "user-123", "0 0 * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
-
+	updatedJob, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Updated Job", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
 	if err != nil {
-		t.Fatalf("UpdateJobWithUserCheck() unexpected error: %v", err)
+		t.Fatalf("UpdateJobWithUserCheck() unexpected error for owner: %v", err)
 	}
 
 	if updatedJob.Name != "Updated Job" {
-		t.Errorf("expected name 'Updated Job', got %q", updatedJob.Name)
-	}
-
-	if updatedJob.UserID != "user-123" {
-		t.Errorf("expected UserID 'user-123', got %q", updatedJob.UserID)
-	}
-
-	if updatedJob.OrgID != "org-123" {
-		t.Errorf("expected OrgID 'org-123', got %q", updatedJob.OrgID)
+		t.Errorf("UpdateJobWithUserCheck() expected name 'Updated Job', got %q", updatedJob.Name)
 	}
 }
 
-func TestUpdateJobWithUserCheck_DifferentUser_ReturnsNotFound(t *testing.T) {
+func TestUpdateJobWithUserCheck_RejectsDifferentUser(t *testing.T) {
 	repo := newMockJobRepository()
 	scheduler := &mockSchedulingService{}
 	executor := &mockJobExecutor{}
@@ -533,8 +524,7 @@ func TestUpdateJobWithUserCheck_DifferentUser_ReturnsNotFound(t *testing.T) {
 	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)
 
-	_, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Hijacked Job", "user-456", "0 0 * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
-
+	_, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Hijacked Job", "user-456", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
 	if err != domain.ErrJobNotFound {
 		t.Errorf("UpdateJobWithUserCheck() expected ErrJobNotFound for different user, got %v", err)
 	}

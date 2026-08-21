@@ -203,7 +203,7 @@ func printExportStatus(status *export.ExportStatusResponse) {
 		for i, source := range status.Sources {
 			fmt.Printf("    Source %d (%s/%s): %s\n", i, source.Application, source.Resource, source.Status)
 			if source.Error != nil {
-				fmt.Printf("      Error: %d\n", *source.Error)
+				fmt.Printf("      Error code: %d\n", *source.Error)
 			}
 			if source.Message != nil {
 				fmt.Printf("      Message: %s\n", *source.Message)

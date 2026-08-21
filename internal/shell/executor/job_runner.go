@@ -12,6 +12,9 @@ import (
 // JobRunner is different from ports.JobExecutor:
 //   - JobRunner: Runs the job and returns typed results (the athlete)
 //   - JobExecutor: Orchestrates execution with cross-cutting concerns (the coach)
+//
+// The jobRunID parameter allows runners to save intermediate state (e.g., external job IDs)
+// for resumable operations after pod restarts. It may be empty for legacy callers.
 type JobRunner interface {
-	Execute(job domain.Job, logger *slog.Logger) (result interface{}, resultType domain.ResultType, err error)
+	Execute(job domain.Job, jobRunID string, logger *slog.Logger) (result interface{}, resultType domain.ResultType, err error)
 }

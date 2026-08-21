@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -20,13 +21,17 @@ import (
 
 // RedisScheduler manages job scheduling using Redis for persistence
 type RedisScheduler struct {
-	client       *redis.Client
-	executor     ports.JobExecutor
-	jobRepo      JobRepository
-	parser       cron.Parser
-	ctx          context.Context
-	cancel       context.CancelFunc
-	pollInterval time.Duration
+	client              *redis.Client
+	executor            ports.JobExecutor
+	jobRepo             JobRepository
+	parser              cron.Parser
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	pollInterval        time.Duration
+	maxConcurrentJobs   int
+	jobExecutionTimeout time.Duration
+	workerSemaphore     chan struct{}  // Buffered channel for worker pool
+	activeJobsWg        sync.WaitGroup // Tracks in-flight jobs for graceful shutdown
 }
 
 // JobRepository provides access to job storage
@@ -65,7 +70,14 @@ const (
 )
 
 // NewRedisScheduler creates a new Redis-based scheduler
-func NewRedisScheduler(redisCfg config.RedisConfig, executor ports.JobExecutor, jobRepo JobRepository, pollInterval time.Duration) (*RedisScheduler, error) {
+func NewRedisScheduler(
+	redisCfg config.RedisConfig,
+	executor ports.JobExecutor,
+	jobRepo JobRepository,
+	pollInterval time.Duration,
+	maxConcurrentJobs int,
+	jobExecutionTimeout time.Duration,
+) (*RedisScheduler, error) {
 	opts := &redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", redisCfg.Host, redisCfg.Port),
 		Password: redisCfg.Password,
@@ -97,14 +109,26 @@ func NewRedisScheduler(redisCfg config.RedisConfig, executor ports.JobExecutor, 
 		pollInterval = 10 * time.Second
 	}
 
+	if maxConcurrentJobs <= 0 {
+		maxConcurrentJobs = 10 // sensible default
+	}
+
+	if jobExecutionTimeout == 0 {
+		jobExecutionTimeout = 2 * time.Minute
+	}
+
 	return &RedisScheduler{
-		client:       client,
-		executor:     executor,
-		jobRepo:      jobRepo,
-		parser:       cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
-		ctx:          ctx,
-		cancel:       cancel,
-		pollInterval: pollInterval,
+		client:              client,
+		executor:            executor,
+		jobRepo:             jobRepo,
+		parser:              cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
+		ctx:                 ctx,
+		cancel:              cancel,
+		pollInterval:        pollInterval,
+		maxConcurrentJobs:   maxConcurrentJobs,
+		jobExecutionTimeout: jobExecutionTimeout,
+		workerSemaphore:     make(chan struct{}, maxConcurrentJobs),
+		activeJobsWg:        sync.WaitGroup{},
 	}, nil
 }
 
@@ -161,11 +185,30 @@ func (s *RedisScheduler) Start() {
 func (s *RedisScheduler) Stop() {
 	log.Println("[RedisScheduler] Stopping scheduler")
 	s.cancel()
+
+	// Wait for in-flight jobs with timeout
+	done := make(chan struct{})
+	go func() {
+		s.activeJobsWg.Wait()
+		close(done)
+	}()
+
+	// Use a reasonable timeout for graceful shutdown
+	shutdownTimeout := 5 * time.Second
+	select {
+	case <-done:
+		log.Println("[RedisScheduler] All in-flight jobs completed")
+	case <-time.After(shutdownTimeout):
+		log.Printf("[RedisScheduler] Warning: Graceful shutdown timeout after %s, some jobs may still be running", shutdownTimeout)
+	}
 }
 
 // ScheduleJob adds or updates a job in the Redis schedule
 func (s *RedisScheduler) ScheduleJob(job domain.Job) error {
-	if job.Status != domain.StatusScheduled {
+	// "failed" is treated as active for backward compatibility with rows persisted
+	// before failures stopped flipping the job-level status; such jobs retry and heal
+	// back to "scheduled" on their next successful run.
+	if job.Status != domain.StatusScheduled && job.Status != domain.StatusFailed {
 		log.Printf("[RedisScheduler] Skipping job %s - status is %s", job.ID, job.Status)
 		return nil
 	}
@@ -298,18 +341,42 @@ func (s *RedisScheduler) processDueJobs() {
 		return
 	}
 
-	log.Printf("[RedisScheduler] Found %d jobs due for execution", len(results))
+	log.Printf("[RedisScheduler] Found %d jobs due for execution (concurrent dispatch)", len(results))
 
+	// Dispatch jobs concurrently with worker pool limiting
 	for _, jobID := range results {
-		s.executeJob(jobID)
+		jobID := jobID // Capture loop variable for goroutine
+
+		s.activeJobsWg.Add(1)
+		go func() {
+			defer s.activeJobsWg.Done()
+
+			// Acquire worker slot (blocks if pool is full)
+			s.workerSemaphore <- struct{}{}
+			defer func() { <-s.workerSemaphore }()
+
+			// Execute with timeout context to guard against hung services
+			ctx, cancel := context.WithTimeout(s.ctx, s.jobExecutionTimeout)
+			defer cancel()
+
+			s.executeJobWithContext(ctx, jobID)
+		}()
 	}
 }
 
 // executeJob executes a single job and reschedules it
-func (s *RedisScheduler) executeJob(jobID string) {
+func (s *RedisScheduler) executeJobWithContext(ctx context.Context, jobID string) {
+	// Increment concurrent jobs gauge
+	ConcurrentJobsGauge.Inc()
+	defer ConcurrentJobsGauge.Dec()
+
+	// Update worker pool utilization
+	utilized := float64(len(s.workerSemaphore)) / float64(s.maxConcurrentJobs) * 100
+	WorkerPoolUtilization.Set(utilized)
+
 	// Try to acquire lock
 	lockKey := jobLockKeyPrefix + jobID
-	locked, err := s.client.SetNX(s.ctx, lockKey, "locked", lockTTL).Result()
+	locked, err := s.client.SetNX(ctx, lockKey, "locked", lockTTL).Result()
 	if err != nil {
 		log.Printf("[RedisScheduler] Error acquiring lock for job %s: %v", jobID, err)
 		return
@@ -320,16 +387,21 @@ func (s *RedisScheduler) executeJob(jobID string) {
 		return
 	}
 
-	// Ensure lock is released
-	defer s.client.Del(s.ctx, lockKey)
+	// Ensure lock is released even during shutdown
+	// Use background context because s.ctx may be cancelled during graceful shutdown
+	defer func() {
+		if err := s.client.Del(context.Background(), lockKey).Err(); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to release lock for job %s: %v", jobID, err)
+		}
+	}()
 
 	// Get job data
 	jobKey := jobDataKeyPrefix + jobID
-	jobData, err := s.client.Get(s.ctx, jobKey).Result()
+	jobData, err := s.client.Get(ctx, jobKey).Result()
 	if err == redis.Nil {
 		// Job was deleted, remove from schedule
 		log.Printf("[RedisScheduler] Job %s not found, removing from schedule", jobID)
-		s.client.ZRem(s.ctx, scheduledJobsKey, jobID)
+		s.client.ZRem(ctx, scheduledJobsKey, jobID)
 		return
 	} else if err != nil {
 		log.Printf("[RedisScheduler] Error fetching job %s: %v", jobID, err)
@@ -348,17 +420,58 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	now := time.Now()
 	scheduledJob.Job = scheduledJob.Job.WithLastRunAt(now)
 
-	// Execute the job (with job run ID if this is an immediate execution)
-	if scheduledJob.JobRunID != "" {
-		log.Printf("[RedisScheduler] Executing job %s with pre-created job run %s", jobID, scheduledJob.JobRunID)
-		if err := s.executor.ExecuteWithJobRun(scheduledJob.Job, scheduledJob.JobRunID); err != nil {
-			log.Printf("[RedisScheduler] Error executing job %s: %v", jobID, err)
+	// Execute the job with timeout awareness
+	var execErr error
+	executionComplete := make(chan error, 1)
+
+	go func() {
+		if scheduledJob.JobRunID != "" {
+			log.Printf("[RedisScheduler] Executing job %s with pre-created job run %s", jobID, scheduledJob.JobRunID)
+			executionComplete <- s.executor.ExecuteWithJobRun(scheduledJob.Job, scheduledJob.JobRunID)
+		} else {
+			log.Printf("[RedisScheduler] Executing job %s", jobID)
+			executionComplete <- s.executor.Execute(scheduledJob.Job)
 		}
-	} else {
-		log.Printf("[RedisScheduler] Executing job %s", jobID)
-		if err := s.executor.Execute(scheduledJob.Job); err != nil {
-			log.Printf("[RedisScheduler] Error executing job %s: %v", jobID, err)
+	}()
+
+	// Wait for execution or timeout
+	timedOut := false
+	select {
+	case execErr = <-executionComplete:
+		if execErr != nil {
+			log.Printf("[RedisScheduler] Error executing job %s: %v", jobID, execErr)
 		}
+	case <-ctx.Done():
+		JobsTimedOutTotal.Inc()
+		log.Printf("[RedisScheduler] Job %s execution timeout after %s, waiting for executor to finish...", jobID, s.jobExecutionTimeout)
+		timedOut = true
+		execErr = fmt.Errorf("job execution timeout after %s", s.jobExecutionTimeout)
+
+		// CRITICAL: Wait for executor goroutine to complete to prevent double execution.
+		// Even though the job timed out, we must hold the lock until the executor finishes,
+		// otherwise another worker can pick up the rescheduled job while this executor is still running.
+		gracePeriod := 30 * time.Second
+		select {
+		case <-executionComplete:
+			log.Printf("[RedisScheduler] Job %s executor completed after timeout", jobID)
+		case <-time.After(gracePeriod):
+			log.Printf("[RedisScheduler] Job %s executor still running after %s grace period, lock will be released",
+				jobID, gracePeriod)
+			// Executor is still running, but we can't wait forever. Lock will be released when we return.
+			// The executor will eventually finish, but might conflict with a rescheduled instance.
+		}
+	}
+
+	// For timed-out jobs, do not reschedule - treat as a failure
+	if timedOut {
+		log.Printf("[RedisScheduler] Job %s timed out, removing from schedule (will not reschedule)", jobID)
+		if err := s.client.ZRem(s.ctx, scheduledJobsKey, jobID).Err(); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to remove timed-out job %s from schedule: %v", jobID, err)
+		}
+		if err := s.client.Del(s.ctx, jobKey).Err(); err != nil {
+			log.Printf("[RedisScheduler] Warning: Failed to remove timed-out job data for %s: %v", jobID, err)
+		}
+		return
 	}
 
 	// Reload the job from the database to get updated status/failure tracking
@@ -367,6 +480,23 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	if s.jobRepo != nil {
 		reloadedJob, err := s.jobRepo.FindByID(jobID)
 		if err != nil {
+			// Check if job was deleted (race condition: deleted while executing)
+			if err == domain.ErrJobNotFound {
+				log.Printf("[RedisScheduler] Job %s was deleted during execution, removing from schedule", jobID)
+
+				// Remove from Redis sorted set
+				if err := s.client.ZRem(s.ctx, scheduledJobsKey, jobID).Err(); err != nil {
+					log.Printf("[RedisScheduler] Warning: Failed to remove deleted job %s from schedule: %v", jobID, err)
+				}
+
+				// Remove job data from Redis
+				if err := s.client.Del(s.ctx, jobKey).Err(); err != nil {
+					log.Printf("[RedisScheduler] Warning: Failed to remove deleted job data for %s: %v", jobID, err)
+				}
+
+				return // Job was deleted, do not reschedule
+			}
+
 			log.Printf("[RedisScheduler] Warning: Failed to reload job %s from database: %v", jobID, err)
 			updatedJob = scheduledJob.Job // Fallback to the job we had
 		} else {
@@ -408,8 +538,27 @@ func (s *RedisScheduler) executeJob(jobID string) {
 	scheduledJob.LastUpdate = time.Now()
 	scheduledJob.JobRunID = "" // Clear the job run ID after execution (it was for immediate execution only)
 
-	// Use the reloaded job (with updated failure tracking) for rescheduling
-	scheduledJob.Job = updatedJob.WithNextRunAt(nextRun)
+	// Use the reloaded job (with updated failure tracking) for rescheduling.
+	// Re-apply last_run_at since the reload may return a stale value — export
+	// jobs skip FailureTracker.TrackSuccess, so nobody persists last_run_at
+	// between our in-memory set (line 349) and the reload.
+	scheduledJob.Job = updatedJob.WithLastRunAt(now).WithNextRunAt(nextRun)
+
+	// Double-check that job wasn't paused during execution (race condition prevention)
+	// Reload one more time right before saving to ensure we don't overwrite a pause
+	if s.jobRepo != nil {
+		finalCheck, err := s.jobRepo.FindByID(jobID)
+		if err == nil && finalCheck.Status == domain.StatusPaused {
+			log.Printf("[RedisScheduler] Job %s was paused during execution, removing from schedule", jobID)
+			if err := s.client.ZRem(s.ctx, scheduledJobsKey, jobID).Err(); err != nil {
+				log.Printf("[RedisScheduler] Warning: Failed to remove paused job %s from schedule: %v", jobID, err)
+			}
+			if err := s.client.Del(s.ctx, jobKey).Err(); err != nil {
+				log.Printf("[RedisScheduler] Warning: Failed to remove paused job data for %s: %v", jobID, err)
+			}
+			return
+		}
+	}
 
 	// Persist updated job to PostgreSQL (if repository is available)
 	if s.jobRepo != nil {
@@ -417,8 +566,16 @@ func (s *RedisScheduler) executeJob(jobID string) {
 			log.Printf("[RedisScheduler] Warning: Failed to save job %s to database: %v", jobID, err)
 			// Continue with Redis update even if database save fails
 		} else {
+			lastRunStr := "<nil>"
+			if scheduledJob.Job.LastRunAt != nil {
+				lastRunStr = scheduledJob.Job.LastRunAt.Format(time.RFC3339)
+			}
+			nextRunStr := "<nil>"
+			if scheduledJob.Job.NextRunAt != nil {
+				nextRunStr = scheduledJob.Job.NextRunAt.Format(time.RFC3339)
+			}
 			log.Printf("[RedisScheduler] Saved job %s to database with last_run_at=%s, next_run_at=%s",
-				jobID, scheduledJob.Job.LastRunAt.Format(time.RFC3339), scheduledJob.Job.NextRunAt.Format(time.RFC3339))
+				jobID, lastRunStr, nextRunStr)
 		}
 	}
 
@@ -487,4 +644,10 @@ func (s *RedisScheduler) TryAcquireLeader(ttl time.Duration) (bool, error) {
 func (s *RedisScheduler) Close() error {
 	s.Stop()
 	return s.client.Close()
+}
+
+// GetRedisClient returns the underlying Redis client for use by other components
+// (e.g., distributed locking, polling recovery)
+func (s *RedisScheduler) GetRedisClient() *redis.Client {
+	return s.client
 }

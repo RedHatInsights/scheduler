@@ -23,6 +23,7 @@ The Insights Scheduler is a job scheduling service built using Go and following 
 - **Multiple job types**: Message processing, HTTP requests, command execution, export service integration
 - **Persistence**: PostgreSQL (production) or SQLite (local development)
 - **Distributed scheduling**: Redis-based coordination for multi-worker deployments
+- **Concurrent job execution**: Configurable worker pools with timeout protection
 - **Horizontal scaling**: Stateless API and Worker pods with rolling updates
 - **Zero-downtime deployments**: No missed jobs during rolling updates
 - **Job run history**: Complete audit trail of all job executions with structured results
@@ -365,6 +366,14 @@ Worker Pod (polling every 10 seconds, configurable via SCHEDULER_REDIS_POLL_INTE
 └───────┬───────┘
         │
         ▼
+┌───────────────────────────────────────┐
+│  Concurrent Dispatch (Worker Pool)   │
+│  - Default: 10 concurrent jobs       │
+│  - Configurable: MAX_CONCURRENT_JOBS │
+│  - Per-job timeout: 2 minutes        │
+└───────┬───────────────────────────────┘
+        │
+        ▼ (for each job, in parallel)
 ┌───────────────┐
 │  Acquire Lock │  SET scheduler:lock:{id} 1 NX EX 300
 │  (distributed)│
@@ -372,7 +381,7 @@ Worker Pod (polling every 10 seconds, configurable via SCHEDULER_REDIS_POLL_INTE
         │
         ▼ (if lock acquired)
 ┌───────────────┐
-│  Execute Job  │  jobExecutor.Execute(job)
+│  Execute Job  │  jobExecutor.Execute(job) with timeout context
 └───────┬───────┘
         │
         ▼
@@ -470,8 +479,10 @@ scaleDown:
 
 **Worker Pods**:
 - Each pod: 200m CPU, 256Mi memory (request)
-- Each pod executes ~10 concurrent jobs
-- For 500 concurrent jobs: need ~50 pods
+- Each pod executes up to 10 concurrent jobs (default, configurable via `SCHEDULER_MAX_CONCURRENT_JOBS`)
+- Worker pool size should consider database connection limits (default max: 25 per pod)
+- For 500 concurrent jobs with default pool size (10): need ~50 pods
+- Pool size can be tuned based on job characteristics and downstream service capacity
 
 ## Reliability and Resilience
 
@@ -780,6 +791,20 @@ scheduler_job_execution_delay_seconds
   - Histogram of (execution_time - scheduled_time)
   - Should remain under 15 seconds during deployment
 
+# Concurrent execution health
+scheduler_redis_concurrent_jobs
+  - Current number of jobs executing across all workers
+  - Spikes indicate long-running jobs or backlog
+
+scheduler_redis_worker_pool_utilization_percent
+  - Percentage of worker pool slots in use
+  - Sustained >90% indicates need to scale workers or increase pool size
+
+scheduler_jobs_timed_out_total
+  - Jobs exceeding SCHEDULER_JOB_EXECUTION_TIMEOUT
+  - Should be <1% in normal operation
+  - High rate indicates downstream service issues
+
 # Lock acquisition failures
 scheduler_lock_acquisition_failures_total
   - Should remain at 0 during healthy deployment
@@ -823,6 +848,10 @@ ENABLE_PERIODIC_SYNC=true
 
 # Shutdown timeout for workers (5 minutes)
 SHUTDOWN_TIMEOUT=300s
+
+# Concurrent execution configuration
+SCHEDULER_MAX_CONCURRENT_JOBS=10     # Worker pool size (default: 10)
+SCHEDULER_JOB_EXECUTION_TIMEOUT=2m   # Per-job timeout (default: 2m)
 
 # Export job polling configuration
 EXPORT_SERVICE_POLL_INTERVAL=5s
@@ -901,6 +930,11 @@ All pods expose `/metrics` on port 8080:
 # Job execution metrics
 scheduler_jobs_executed_total{status="success|failure"}
 scheduler_job_execution_duration_seconds
+scheduler_jobs_timed_out_total                    # Jobs exceeding execution timeout
+
+# Concurrent execution metrics
+scheduler_redis_concurrent_jobs                   # Current number of jobs executing
+scheduler_redis_worker_pool_utilization_percent   # Worker pool usage (0-100)
 
 # Scheduler metrics
 scheduler_jobs_scheduled_count

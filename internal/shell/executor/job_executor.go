@@ -62,23 +62,27 @@ func (e *DefaultJobExecutor) Execute(job domain.Job) error {
 		execErr = fmt.Errorf("no runner found for payload type: %s", job.Type)
 		logger.Error("No runner found for payload type", slog.String("type", string(job.Type)))
 	} else {
-		result, resultType, execErr = runner.Execute(job, logger)
+		result, resultType, execErr = runner.Execute(job, jobRun.ID, logger)
 	}
 
-	// Update the job run record
+	// Update the job run record.
+	// For ResultTypePending the runner already saved external job state;
+	// the run stays "running" and the ExportPollerService completes it later.
 	if e.runRepo != nil && jobRun.ID != "" {
 		if execErr != nil {
 			jobRun = jobRun.WithFailed(execErr.Error())
 			logger.Error("Job execution failed", slog.Any("error", execErr))
-		} else {
+			if err := e.runRepo.Save(jobRun); err != nil {
+				logger.Error("Failed to update job run record", slog.Any("error", err))
+			}
+		} else if resultType != domain.ResultTypePending {
 			jobRun = jobRun.WithCompleted(resultType, result)
 			logger.Info("Job execution completed", slog.String("status", string(jobRun.Status)))
-		}
-
-		if err := e.runRepo.Save(jobRun); err != nil {
-			logger.Error("Failed to update job run record", slog.Any("error", err))
+			if err := e.runRepo.Save(jobRun); err != nil {
+				logger.Error("Failed to update job run record", slog.Any("error", err))
+			}
 		} else {
-			logger.Debug("Updated job run", slog.String("status", string(jobRun.Status)))
+			logger.Info("Job kicked off async operation, polling will complete it")
 		}
 	}
 
@@ -125,23 +129,27 @@ func (e *DefaultJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) 
 		execErr = fmt.Errorf("no runner found for payload type: %s", job.Type)
 		logger.Error("No runner found for payload type", slog.String("type", string(job.Type)))
 	} else {
-		result, resultType, execErr = runner.Execute(job, logger)
+		result, resultType, execErr = runner.Execute(job, jobRun.ID, logger)
 	}
 
-	// Update the job run record
+	// Update the job run record.
+	// For ResultTypePending the runner already saved external job state;
+	// the run stays "running" and the ExportPollerService completes it later.
 	if e.runRepo != nil && jobRun.ID != "" {
 		if execErr != nil {
 			jobRun = jobRun.WithFailed(execErr.Error())
 			logger.Error("Job execution failed", slog.Any("error", execErr))
-		} else {
+			if err := e.runRepo.Save(jobRun); err != nil {
+				logger.Error("Failed to update job run record", slog.Any("error", err))
+			}
+		} else if resultType != domain.ResultTypePending {
 			jobRun = jobRun.WithCompleted(resultType, result)
 			logger.Info("Job execution completed", slog.String("status", string(jobRun.Status)))
-		}
-
-		if err := e.runRepo.Save(jobRun); err != nil {
-			logger.Error("Failed to update job run record", slog.Any("error", err))
+			if err := e.runRepo.Save(jobRun); err != nil {
+				logger.Error("Failed to update job run record", slog.Any("error", err))
+			}
 		} else {
-			logger.Debug("Updated job run", slog.String("status", string(jobRun.Status)))
+			logger.Info("Job kicked off async operation, polling will complete it")
 		}
 	}
 

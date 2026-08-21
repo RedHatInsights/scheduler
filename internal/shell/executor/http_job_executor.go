@@ -15,7 +15,7 @@ func NewHTTPJobExecutor() *HTTPJobExecutor {
 }
 
 // Execute executes an HTTP request job
-func (e *HTTPJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interface{}, domain.ResultType, error) {
+func (e *HTTPJobExecutor) Execute(job domain.Job, jobRunID string, logger *slog.Logger) (interface{}, domain.ResultType, error) {
 	// Cast payload to map[string]interface{}
 	payloadMap, ok := job.Payload.(map[string]interface{})
 	if !ok {
