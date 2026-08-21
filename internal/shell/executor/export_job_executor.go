@@ -10,26 +10,29 @@ import (
 	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/identity"
 )
 
 // ExportJobExecutor handles export payload type jobs
 type ExportJobExecutor struct {
-	exportClient  *export.Client
-	notifier      JobCompletionNotifier
-	userValidator identity.UserValidator
-	config        *config.Config
+	exportClient    *export.Client
+	notifier        JobCompletionNotifier
+	userValidator   identity.UserValidator
+	config          *config.Config
+	payloadResolver ports.PayloadResolver
 }
 
 // NewExportJobExecutor creates a new ExportJobExecutor
-func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidator, notifier JobCompletionNotifier) *ExportJobExecutor {
+func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidator, notifier JobCompletionNotifier, payloadResolver ports.PayloadResolver) *ExportJobExecutor {
 	exportClient := export.NewClient(cfg.ExportService.BaseURL, cfg.ExportService.PublicBaseURL)
 
 	return &ExportJobExecutor{
-		exportClient:  exportClient,
-		notifier:      notifier,
-		userValidator: userValidator,
-		config:        cfg,
+		exportClient:    exportClient,
+		notifier:        notifier,
+		userValidator:   userValidator,
+		config:          cfg,
+		payloadResolver: payloadResolver,
 	}
 }
 
@@ -70,9 +73,24 @@ func (e *ExportJobExecutor) Execute(job domain.Job, logger *slog.Logger) (interf
 		return nil, domain.ResultTypeExport, fmt.Errorf("failed to verify user: %w", err)
 	}
 
+	// Resolve CEL expressions in the payload
+	resolvedPayload := job.Payload
+	if e.payloadResolver != nil {
+		evalCtx := map[string]any{
+			"now":    time.Now().UTC(),
+			"job_id": job.ID,
+		}
+		resolved, err := e.payloadResolver.ProcessPayload(job.Payload, evalCtx)
+		if err != nil {
+			logger.Error("Failed to resolve payload templates", slog.Any("error", err))
+			return nil, domain.ResultTypeExport, fmt.Errorf("failed to resolve payload templates: %w", err)
+		}
+		resolvedPayload = resolved
+	}
+
 	// Marshal the payload to JSON then unmarshal into ExportRequest
 	// This preserves the payload structure exactly as provided
-	payloadJSON, err := json.Marshal(job.Payload)
+	payloadJSON, err := json.Marshal(resolvedPayload)
 	if err != nil {
 		logger.Error("Failed to marshal payload", slog.Any("error", err))
 		return nil, domain.ResultTypeExport, fmt.Errorf("failed to marshal payload: %w", err)

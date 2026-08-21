@@ -7,10 +7,11 @@ This document describes the architecture of the Insights Scheduler, covering bot
 1. [Overview](#overview)
 2. [Architecture Patterns](#architecture-patterns)
 3. [Deployment Models](#deployment-models)
-4. [Data Flow](#data-flow)
-5. [Scaling Strategy](#scaling-strategy)
-6. [Reliability and Resilience](#reliability-and-resilience)
-7. [Zero-Downtime Deployments](#zero-downtime-deployments)
+4. [Payload Templating](#payload-templating)
+5. [Data Flow](#data-flow)
+6. [Scaling Strategy](#scaling-strategy)
+7. [Reliability and Resilience](#reliability-and-resilience)
+8. [Zero-Downtime Deployments](#zero-downtime-deployments)
 
 ## Overview
 
@@ -28,6 +29,7 @@ The Insights Scheduler is a job scheduling service built using Go and following 
 - **User-based authorization**: User-scoped access control via X-Rh-Identity header
 - **Dual persistence**: Redis + PostgreSQL ensure job state survives failures
 - **Auto-pause on failures**: Jobs automatically pause after N consecutive failures (configurable)
+- **Payload templating**: CEL-based dynamic expressions in job payloads (see [Payload Templating](payload_templating.md))
 - **Structured logging**: CloudWatch-compatible JSON logging with context fields
 - **Metrics**: Prometheus metrics for monitoring job execution and system health
 
@@ -49,7 +51,11 @@ internal/
 │   │   ├── job_service.go          # Core job operations
 │   │   ├── authorized_job_service.go  # Identity-aware operations
 │   │   ├── scheduler_job_service.go   # Scheduler-specific operations
-│   │   └── executor.go             # Job execution interface
+│   │   ├── executor.go             # Job execution interface
+│   │   └── template.go             # PayloadValidator / PayloadResolver interfaces
+│   ├── template/                   # CEL payload templating engine
+│   │   ├── evaluator.go            # CEL environment, date functions, expression eval
+│   │   └── evaluator_test.go       # Comprehensive template tests
 │   └── usecases/                   # Business logic
 │       ├── job_service.go          # Job CRUD operations
 │       ├── job_run_service.go      # Job run management
@@ -256,6 +262,48 @@ docker build -f Dockerfile.worker -t scheduler-worker:latest .
 # Deploy to Kubernetes
 kubectl apply -k k8s/
 ```
+
+## Payload Templating
+
+Job payloads support dynamic values via [CEL (Common Expression Language)](https://cel.dev/) expressions. Any string value prefixed with `scheduler_cel:` is evaluated at execution time; all other values pass through unchanged.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    CEL Evaluator                        │
+│                (internal/core/template/)                │
+│                                                         │
+│  Implements:  ports.PayloadValidator                    │
+│               ports.PayloadResolver                     │
+│                                                         │
+│  Environment: now (timestamp), job_id (string)          │
+│  Functions:   add_days, add_months, start_of_day,       │
+│               end_of_day, first_of_month, last_of_month,│
+│               first_of_last_month, last_of_last_month,  │
+│               first_of_week, last_of_week,              │
+│               first_of_quarter, last_of_quarter,        │
+│               format_date                               │
+│  Constants:   ISO_DATE, ISO_DATETIME, ISO_8601,         │
+│               US_DATE, EU_DATE, YEAR_MONTH, etc.        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Two-phase design:**
+
+1. **API time (validation)** — When a job is created or updated, all `scheduler_cel:` expressions are compiled but not evaluated. Syntax errors return `400 Bad Request` immediately.
+
+2. **Execution time (resolution)** — When the job runs, `scheduler_cel:` expressions are evaluated with the current UTC time as `now` and the job's UUID as `job_id`. The resolved payload is then passed to the executor.
+
+**Integration points:**
+
+- `DefaultJobService` receives a `PayloadValidator` and validates on create/update/patch
+- `ExportJobExecutor` receives a `PayloadResolver` and resolves before marshaling the export request
+- Both are the same `Evaluator` instance, created once at startup and injected via DI
+
+**Security:** Expression length, evaluation cost, nesting depth, and expression count are all capped. The CEL sandbox has no access to I/O or system resources.
+
+For the full function reference, format constants, and usage examples, see **[docs/payload_templating.md](payload_templating.md)**.
 
 ## Data Flow
 

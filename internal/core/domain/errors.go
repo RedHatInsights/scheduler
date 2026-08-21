@@ -14,4 +14,5 @@ var (
 	ErrJobNotPaused            = errors.New("job is not paused")
 	ErrJobRunNotFound          = errors.New("job run not found")
 	ErrInvalidRunStatus        = errors.New("invalid job run status")
+	ErrInvalidPayloadTemplate  = errors.New("payload contains invalid CEL expression")
 )
