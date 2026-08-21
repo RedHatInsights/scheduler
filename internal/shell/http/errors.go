@@ -95,6 +95,14 @@ func errorBadRequest() ErrorObject {
 	}
 }
 
+func errorInvalidPayloadTemplate(err error) ErrorObject {
+	return ErrorObject{
+		Status: "400",
+		Title:  "Invalid Payload Template",
+		Detail: err.Error(),
+	}
+}
+
 func errorInternalServer() ErrorObject {
 	return ErrorObject{
 		Status: "500",

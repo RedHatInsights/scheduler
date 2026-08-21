@@ -43,6 +43,7 @@ import (
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/ports"
+	"insights-scheduler/internal/core/template"
 	"insights-scheduler/internal/core/usecases"
 	"insights-scheduler/internal/identity"
 	"insights-scheduler/internal/shell/executor"
@@ -325,12 +326,18 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
 	}
 
+	// Initialize CEL template evaluator (created once, shared by executor and service)
+	celEvaluator, err := template.NewEvaluator()
+	if err != nil {
+		log.Fatalf("Failed to initialize CEL evaluator: %v", err)
+	}
+
 	// Initialize payload-specific job runners
 	runners := map[domain.PayloadType]executor.JobRunner{
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
-		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, runRepo),
+		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, runRepo, celEvaluator),
 	}
 
 	// Initialize job executor with map of runners
@@ -348,7 +355,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Create functional core service
-	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures)
+	coreJobService := usecases.NewJobService(repo, schedulingService, jobExecutor, cfg.Scheduler.MaxConsecutiveFailures, celEvaluator)
 	jobRunService := usecases.NewJobRunService(runRepo, repo)
 
 	// Set job run repository on core service
@@ -483,9 +490,15 @@ func runAPI(cmd *cobra.Command, args []string) {
 	}
 	dummyExecutor := executor.NewJobExecutor(dummyRunners, jobRunRepo, baseLogger)
 
+	// Initialize CEL template evaluator for API-time payload validation
+	celEvaluator, err := template.NewEvaluator()
+	if err != nil {
+		log.Fatalf("[API] Failed to initialize CEL evaluator: %v", err)
+	}
+
 	// Initialize scheduling service
 	schedService := usecases.NewDefaultSchedulingService()
-	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor, cfg.Scheduler.MaxConsecutiveFailures)
+	coreJobService := usecases.NewJobService(jobRepo, schedService, dummyExecutor, cfg.Scheduler.MaxConsecutiveFailures, celEvaluator)
 
 	// Set job run repository on core service
 	coreJobService.SetJobRunRepository(jobRunRepo)
@@ -627,12 +640,18 @@ func runWorker(cmd *cobra.Command, args []string) {
 		log.Fatalf("Unsupported JOB_COMPLETION_NOTIFIER_IMPL type: %s", cfg.JobCompletionNotifierImpl)
 	}
 
+	// Initialize CEL template evaluator (created once, shared by executor)
+	celEvaluator, err := template.NewEvaluator()
+	if err != nil {
+		log.Fatalf("[WORKER] Failed to initialize CEL evaluator: %v", err)
+	}
+
 	// Initialize job runners (worker actually executes jobs)
 	runners := map[domain.PayloadType]executor.JobRunner{
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
-		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, jobRunRepo),
+		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, jobRunRepo, celEvaluator),
 	}
 	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 

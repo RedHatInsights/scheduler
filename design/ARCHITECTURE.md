@@ -9,10 +9,11 @@
 6. [Data Persistence](#data-persistence)
 7. [Job Scheduler](#job-scheduler)
 8. [Job Executor System](#job-executor-system)
-9. [External Integrations](#external-integrations)
-10. [Configuration Management](#configuration-management)
-11. [Security and Multi-Tenancy](#security-and-multi-tenancy)
-12. [Deployment](#deployment)
+9. [Payload Templating](#payload-templating)
+10. [External Integrations](#external-integrations)
+11. [Configuration Management](#configuration-management)
+12. [Security and Multi-Tenancy](#security-and-multi-tenancy)
+13. [Deployment](#deployment)
 
 ---
 
@@ -111,6 +112,11 @@ scheduler/
 │   │   │   ├── job.go
 │   │   │   ├── job_run.go
 │   │   │   └── errors.go
+│   │   ├── ports/               # Interface definitions
+│   │   │   └── template.go      # PayloadValidator / PayloadResolver
+│   │   ├── template/            # CEL payload templating
+│   │   │   ├── evaluator.go     # CEL environment and expression eval
+│   │   │   └── evaluator_test.go
 │   │   └── usecases/            # Business logic
 │   │       ├── job_service.go
 │   │       ├── job_run_service.go
@@ -704,6 +710,50 @@ type JobCompletionNotifier interface {
 
 ---
 
+## Payload Templating
+
+Job payloads support dynamic values via [CEL (Common Expression Language)](https://cel.dev/) expressions. Any string value prefixed with `scheduler_cel:` is evaluated at execution time; all other values pass through unchanged.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    CEL Evaluator                        │
+│                (internal/core/template/)                │
+│                                                         │
+│  Implements:  ports.PayloadValidator                    │
+│               ports.PayloadResolver                     │
+│                                                         │
+│  Environment: now (timestamp), job_id (string)          │
+│  Functions:   add_days, add_months, start_of_day,       │
+│               end_of_day, first_of_month, last_of_month,│
+│               first_of_last_month, last_of_last_month,  │
+│               first_of_week, last_of_week,              │
+│               first_of_quarter, last_of_quarter,        │
+│               format_date                               │
+│  Constants:   ISO_DATE, ISO_DATETIME, ISO_8601,         │
+│               US_DATE, EU_DATE, YEAR_MONTH, etc.        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Two-phase design:**
+
+1. **API time (validation)** — When a job is created or updated, all `scheduler_cel:` expressions are compiled but not evaluated. Syntax errors return `400 Bad Request` immediately.
+
+2. **Execution time (resolution)** — When the job runs, `scheduler_cel:` expressions are evaluated with the current UTC time as `now` and the job's UUID as `job_id`. The resolved payload is then passed to the executor.
+
+**Integration points:**
+
+- `DefaultJobService` receives a `PayloadValidator` and validates on create/update/patch
+- `ExportJobExecutor` receives a `PayloadResolver` and resolves before marshaling the export request
+- Both are the same `Evaluator` instance, created once at startup and injected via DI
+
+**Security:** Expression length, evaluation cost, nesting depth, and expression count are all capped. The CEL sandbox has no access to I/O or system resources.
+
+For the full function reference, format constants, and usage examples, see **[docs/payload_templating.md](../docs/payload_templating.md)**.
+
+---
+
 ## External Integrations
 
 ### Export Service Client
@@ -1183,7 +1233,6 @@ ErrInvalidRunStatus        // Invalid run status value
 - **Structured Logging**: Adopt structured logging framework (e.g., logrus, zap)
 - **Tracing**: Distributed tracing with OpenTelemetry
 - **Health Checks**: Kubernetes liveness/readiness probes
-- **Job Templates**: Reusable job templates with variables
 - **Job Chains**: Sequential job execution (workflows)
 
 ### Scalability Considerations

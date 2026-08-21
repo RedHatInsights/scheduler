@@ -10,6 +10,7 @@ import (
 	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
 	"insights-scheduler/internal/identity"
 )
 
@@ -17,10 +18,11 @@ import (
 // It creates the export and saves the external job ID, then returns immediately.
 // Polling for completion is handled by ExportPollerService.
 type ExportJobExecutor struct {
-	exportClient  *export.Client
-	userValidator identity.UserValidator
-	config        *config.Config
-	runRepo       JobRunRepository
+	exportClient    *export.Client
+	userValidator   identity.UserValidator
+	config          *config.Config
+	runRepo         JobRunRepository
+	payloadResolver ports.PayloadResolver
 }
 
 // JobRunRepository defines the minimal interface needed for saving external job IDs
@@ -29,15 +31,18 @@ type JobRunRepository interface {
 	FindByID(id string) (domain.JobRun, error)
 }
 
-// NewExportJobExecutor creates a new ExportJobExecutor
-func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidator, runRepo JobRunRepository) *ExportJobExecutor {
+// NewExportJobExecutor creates a new ExportJobExecutor.
+// payloadResolver resolves CEL templates in the job payload before kick-off;
+// polling, notifications, and failure tracking are handled by ExportPollerService.
+func NewExportJobExecutor(cfg *config.Config, userValidator identity.UserValidator, runRepo JobRunRepository, payloadResolver ports.PayloadResolver) *ExportJobExecutor {
 	exportClient := export.NewClient(cfg.ExportService.BaseURL, cfg.ExportService.PublicBaseURL)
 
 	return &ExportJobExecutor{
-		exportClient:  exportClient,
-		userValidator: userValidator,
-		config:        cfg,
-		runRepo:       runRepo,
+		exportClient:    exportClient,
+		userValidator:   userValidator,
+		config:          cfg,
+		runRepo:         runRepo,
+		payloadResolver: payloadResolver,
 	}
 }
 
@@ -54,7 +59,24 @@ func (e *ExportJobExecutor) Execute(job domain.Job, jobRunID string, logger *slo
 		return nil, domain.ResultTypeExport, fmt.Errorf("failed to verify user: %w", err)
 	}
 
-	payloadJSON, err := json.Marshal(job.Payload)
+	// Resolve CEL expressions in the payload before kick-off
+	resolvedPayload := job.Payload
+	if e.payloadResolver != nil {
+		evalCtx := map[string]any{
+			"now":    time.Now().UTC(),
+			"job_id": job.ID,
+		}
+		resolved, err := e.payloadResolver.ProcessPayload(job.Payload, evalCtx)
+		if err != nil {
+			logger.Error("Failed to resolve payload templates", slog.Any("error", err))
+			return nil, domain.ResultTypeExport, fmt.Errorf("failed to resolve payload templates: %w", err)
+		}
+		resolvedPayload = resolved
+	}
+
+	// Marshal the payload to JSON then unmarshal into ExportRequest
+	// This preserves the payload structure exactly as provided
+	payloadJSON, err := json.Marshal(resolvedPayload)
 	if err != nil {
 		logger.Error("Failed to marshal payload", slog.Any("error", err))
 		return nil, domain.ResultTypeExport, fmt.Errorf("failed to marshal payload: %w", err)

@@ -36,7 +36,7 @@ func TestJobFailureCounterIncrementsOnFailure(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: true}
 
-	service := NewJobService(repo, scheduler, executor, 3)
+	service := NewJobService(repo, scheduler, executor, 3, nil)
 
 	// Create a job
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -78,7 +78,7 @@ func TestExportJobKickoffSuccessDoesNotResetFailures(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: true}
 
-	service := NewJobService(repo, scheduler, executor, 3)
+	service := NewJobService(repo, scheduler, executor, 3, nil)
 
 	// Export jobs defer success tracking to ExportPollerService,
 	// so a successful kick-off should NOT reset the failure counter.
@@ -126,7 +126,7 @@ func TestJobAutoPausesAfterThresholdFailures(t *testing.T) {
 	executor := &failingMockExecutor{shouldFail: true}
 
 	threshold := 3
-	service := NewJobService(repo, scheduler, executor, threshold)
+	service := NewJobService(repo, scheduler, executor, threshold, nil)
 
 	// Create a job
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -177,7 +177,7 @@ func TestJobAutoPauseDisabledWhenThresholdIsZero(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: true}
 
-	service := NewJobService(repo, scheduler, executor, 0) // 0 = disabled
+	service := NewJobService(repo, scheduler, executor, 0, nil) // 0 = disabled
 
 	// Create a job
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -209,7 +209,7 @@ func TestResumeJobResetsFailureCounter(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: true}
 
-	service := NewJobService(repo, scheduler, executor, 3)
+	service := NewJobService(repo, scheduler, executor, 3, nil)
 
 	// Create a job
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -262,7 +262,7 @@ func TestExecuteScheduledJobWithJobRunAutoPauseLogic(t *testing.T) {
 	executor := &failingMockExecutor{shouldFail: true}
 
 	threshold := 2
-	service := NewJobService(repo, scheduler, executor, threshold)
+	service := NewJobService(repo, scheduler, executor, threshold, nil)
 
 	// Create a job
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -303,7 +303,7 @@ func TestAutoPauseClearsNextRunAt(t *testing.T) {
 	executor := &failingMockExecutor{shouldFail: true}
 
 	threshold := 2
-	service := NewJobService(repo, scheduler, executor, threshold)
+	service := NewJobService(repo, scheduler, executor, threshold, nil)
 
 	// Create a job (will have next_run_at set)
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -336,7 +336,7 @@ func TestManualPauseClearsNextRunAt(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: false}
 
-	service := NewJobService(repo, scheduler, executor, 3)
+	service := NewJobService(repo, scheduler, executor, 3, nil)
 
 	// Create a job (will have next_run_at set)
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
@@ -364,7 +364,7 @@ func TestManualAPIRunDoesNotTrackFailures(t *testing.T) {
 	scheduler := &mockSchedulingService{}
 	executor := &failingMockExecutor{shouldFail: true}
 
-	service := NewJobService(repo, scheduler, executor, 3)
+	service := NewJobService(repo, scheduler, executor, 3, nil)
 
 	// Create a job
 	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})

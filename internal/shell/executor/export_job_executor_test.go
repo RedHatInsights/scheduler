@@ -4,17 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/template"
 	"insights-scheduler/internal/identity"
 )
+
+func mustCELEvaluator(t *testing.T) *template.Evaluator {
+	t.Helper()
+	e, err := template.NewEvaluator()
+	if err != nil {
+		t.Fatalf("NewEvaluator() error: %v", err)
+	}
+	return e
+}
 
 type mockJobRunRepo struct {
 	runs      map[string]domain.JobRun
@@ -101,7 +113,7 @@ func TestExportJobExecutor_SuccessfulExportCreation(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
 	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
 	if err != nil {
@@ -116,7 +128,7 @@ func TestExportJobExecutor_SuccessfulExportCreation(t *testing.T) {
 		t.Errorf("Expected nil result for pending exports, got: %v", result)
 	}
 
-	// Verify external job ID was saved
+	// Verify external job ID was saved for the poller to pick up
 	savedRun := runRepo.runs["run-123"]
 	if savedRun.ExternalJobID == nil {
 		t.Fatal("Expected external_job_id to be saved")
@@ -144,7 +156,7 @@ func TestExportJobExecutor_CreateExportFails(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
 	_, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
 	if err == nil {
@@ -171,7 +183,7 @@ func TestExportJobExecutor_IdentityValidationFails(t *testing.T) {
 	}
 
 	validator := &failingUserValidator{err: errors.New("user not found")}
-	executor := NewExportJobExecutor(cfg, validator, runRepo)
+	executor := NewExportJobExecutor(cfg, validator, runRepo, mustCELEvaluator(t))
 	_, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
 	if err == nil {
@@ -205,7 +217,7 @@ func TestExportJobExecutor_InvalidPayload(t *testing.T) {
 		// Missing format and sources
 	})
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
 	_, resultType, err := executor.Execute(invalidJob, "run-123", newTestLogger())
 
 	if err == nil {
@@ -248,10 +260,10 @@ func TestExportJobExecutor_ExternalJobIDSaveFails(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
 	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
-	// FIXED: Now returns error when save fails (prevents orphaned runs)
+	// Returns an error when save fails (prevents orphaned runs)
 	if err == nil {
 		t.Fatal("Expected error when external_job_id save fails")
 	}
@@ -287,7 +299,7 @@ func TestExportJobExecutor_NoJobRunID(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
 	result, resultType, err := executor.Execute(newTestJob(), "", newTestLogger())
 
 	// Should succeed even without job run ID (for backwards compatibility)
@@ -330,7 +342,7 @@ func TestExportJobExecutor_JobRunNotFound(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
 	result, resultType, err := executor.Execute(newTestJob(), "nonexistent-run", newTestLogger())
 
 	// Should fail (cannot find job run to save external_job_id)
@@ -368,7 +380,7 @@ func TestExportJobExecutor_WithNilRunRepo(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil)
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil, mustCELEvaluator(t))
 	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
 	// Should succeed even with nil runRepo
@@ -382,5 +394,122 @@ func TestExportJobExecutor_WithNilRunRepo(t *testing.T) {
 
 	if result != nil {
 		t.Errorf("Expected nil result, got: %v", result)
+	}
+}
+
+// TestExportJobExecutor_TemplatedPayload verifies CEL expressions in the payload
+// are resolved before the export is created (kick-off is fire-and-forget).
+func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
+	// Test server that captures the request body sent to the export service
+	var capturedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == "POST" && r.URL.Path == "/exports" {
+			capturedBody, _ = io.ReadAll(r.Body)
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-template-123",
+				Status: export.StatusPending,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// Job with a CEL-templated payload
+	payload := map[string]interface{}{
+		"name":   "Templated Export",
+		"format": "json",
+		"sources": []interface{}{
+			map[string]interface{}{
+				"application": "advisor",
+				"resource":    "recommendations",
+				"filters": map[string]interface{}{
+					"start_date": "scheduler_cel:now.first_of_last_month().format_date('2006-01-02')",
+					"end_date":   "scheduler_cel:now.last_of_last_month().format_date('2006-01-02')",
+				},
+			},
+		},
+	}
+	job := domain.NewJob("Templated Export Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
+
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: "https://console.example.com/api/export/v1",
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil, mustCELEvaluator(t))
+	_, resultType, err := executor.Execute(job, "", newTestLogger())
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if resultType != domain.ResultTypePending {
+		t.Errorf("Expected ResultTypePending, got: %v", resultType)
+	}
+
+	// The captured request body should have resolved dates, not scheduler_cel: prefixes
+	if capturedBody == nil {
+		t.Fatal("Expected captured request body")
+	}
+
+	var sentReq map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &sentReq); err != nil {
+		t.Fatalf("Failed to parse captured body: %v", err)
+	}
+
+	sources := sentReq["sources"].([]interface{})
+	source := sources[0].(map[string]interface{})
+	filters := source["filters"].(map[string]interface{})
+
+	startDate := filters["start_date"].(string)
+	endDate := filters["end_date"].(string)
+
+	if strings.HasPrefix(startDate, "scheduler_cel:") {
+		t.Errorf("start_date was not resolved: %s", startDate)
+	}
+	if strings.HasPrefix(endDate, "scheduler_cel:") {
+		t.Errorf("end_date was not resolved: %s", endDate)
+	}
+	if len(startDate) != 10 || startDate[4] != '-' || startDate[7] != '-' {
+		t.Errorf("start_date not in YYYY-MM-DD format: %s", startDate)
+	}
+}
+
+// TestExportJobExecutor_InvalidTemplate verifies an invalid CEL expression fails
+// the kick-off with a clear error before any export is created.
+func TestExportJobExecutor_InvalidTemplate(t *testing.T) {
+	payload := map[string]interface{}{
+		"name":   "Bad Template",
+		"format": "json",
+		"sources": []interface{}{
+			map[string]interface{}{
+				"application": "advisor",
+				"resource":    "recommendations",
+				"filters": map[string]interface{}{
+					"start_date": "scheduler_cel:invalid_func()",
+				},
+			},
+		},
+	}
+	job := domain.NewJob("Bad Template Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
+
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       "http://unused",
+			PublicBaseURL: "http://unused",
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil, mustCELEvaluator(t))
+	_, _, err := executor.Execute(job, "", newTestLogger())
+
+	if err == nil {
+		t.Fatal("Expected error for invalid CEL expression")
+	}
+	if !strings.Contains(err.Error(), "payload templates") {
+		t.Errorf("Error should mention payload templates, got: %s", err.Error())
 	}
 }

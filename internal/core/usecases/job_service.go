@@ -50,17 +50,19 @@ type DefaultJobService struct {
 	executor               ports.JobExecutor
 	cronScheduler          CronScheduler
 	maxConsecutiveFailures int
+	payloadValidator       ports.PayloadValidator
 }
 
 // Ensure DefaultJobService implements ports.JobService
 var _ ports.JobService = (*DefaultJobService)(nil)
 
-func NewJobService(repo JobRepository, scheduler SchedulingService, executor ports.JobExecutor, maxConsecutiveFailures int) *DefaultJobService {
+func NewJobService(repo JobRepository, scheduler SchedulingService, executor ports.JobExecutor, maxConsecutiveFailures int, payloadValidator ports.PayloadValidator) *DefaultJobService {
 	return &DefaultJobService{
 		repo:                   repo,
 		scheduler:              scheduler,
 		executor:               executor,
 		maxConsecutiveFailures: maxConsecutiveFailures,
+		payloadValidator:       payloadValidator,
 	}
 }
 
@@ -70,6 +72,16 @@ func (s *DefaultJobService) SetCronScheduler(cronScheduler CronScheduler) {
 
 func (s *DefaultJobService) SetJobRunRepository(runRepo JobRunRepository) {
 	s.runRepo = runRepo
+}
+
+func (s *DefaultJobService) validatePayloadTemplates(payload interface{}) error {
+	if s.payloadValidator == nil {
+		return nil
+	}
+	if err := s.payloadValidator.ValidatePayload(payload); err != nil {
+		return fmt.Errorf("%w: %s", domain.ErrInvalidPayloadTemplate, err.Error())
+	}
+	return nil
 }
 
 // calculateNextRunAt calculates the next run time for a job based on its cron schedule
@@ -141,6 +153,12 @@ func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID st
 		return domain.Job{}, domain.ErrInvalidPayload
 	}
 	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
+
+	// Validate CEL expressions in payload
+	if err := s.validatePayloadTemplates(payload); err != nil {
+		log.Printf("[DEBUG] CreateJob failed - invalid payload template: %v", err)
+		return domain.Job{}, err
+	}
 
 	job := domain.NewJob(name, orgID, userID, domain.Schedule(schedule), timezone, payloadType, payload)
 	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s, timezone: %s", job.ID, job.Status, job.Timezone)
@@ -337,6 +355,11 @@ func (s *DefaultJobService) applyJobUpdate(job domain.Job, name string, orgID st
 		return domain.Job{}, domain.ErrInvalidStatusTransition
 	}
 
+	// Validate CEL expressions in payload
+	if err := s.validatePayloadTemplates(payload); err != nil {
+		return domain.Job{}, err
+	}
+
 	scheduleVal := domain.Schedule(schedule)
 
 	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
@@ -433,6 +456,10 @@ func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string,
 	if v, ok := updates["payload"]; ok {
 		// Payload can be any JSON value (object, array, string, number, etc.)
 		payload = &v
+		// Validate CEL expressions in the new payload
+		if err := s.validatePayloadTemplates(v); err != nil {
+			return domain.Job{}, err
+		}
 	}
 
 	if v, ok := updates["status"]; ok {
@@ -550,6 +577,10 @@ func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string
 	if v, ok := updates["payload"]; ok {
 		// Payload can be any JSON value (object, array, string, number, etc.)
 		payload = &v
+		// Validate CEL expressions in the new payload
+		if err := s.validatePayloadTemplates(v); err != nil {
+			return domain.Job{}, err
+		}
 	}
 
 	if v, ok := updates["status"]; ok {
