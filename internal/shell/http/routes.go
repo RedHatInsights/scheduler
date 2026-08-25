@@ -27,6 +27,11 @@ func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.
 	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
 	api.Use(identity.EnforceIdentity)
 
+	// Require that all API calls are made by human users (not service accounts
+	// or certificates/systems). Must run after EnforceIdentity, which decodes
+	// and validates the x-rh-identity header into the request context.
+	api.Use(EnforceUserIdentity)
+
 	if orgIDGuardCfg.Enabled {
 		api.Use(OrgIDGuardMiddleware(orgIDGuardCfg))
 		baseLogger.Info("Org ID guard enabled", slog.String("allowed_org_ids", strings.Join(orgIDGuardCfg.AllowedOrgIDs, ", ")))
