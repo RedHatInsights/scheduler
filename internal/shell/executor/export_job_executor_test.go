@@ -3,15 +3,14 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
@@ -29,26 +28,41 @@ func mustCELEvaluator(t *testing.T) *template.Evaluator {
 	return e
 }
 
-type recordingNotifier struct {
-	mu            sync.Mutex
-	notifications []*ExportCompletionNotification
+type mockJobRunRepo struct {
+	runs      map[string]domain.JobRun
+	saveError error
+	findError error
 }
 
-func (n *recordingNotifier) JobComplete(_ context.Context, notification *ExportCompletionNotification, _ *slog.Logger) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	n.notifications = append(n.notifications, notification)
+func (m *mockJobRunRepo) Save(run domain.JobRun) error {
+	if m.saveError != nil {
+		return m.saveError
+	}
+	m.runs[run.ID] = run
 	return nil
 }
 
-func (n *recordingNotifier) JobAutoPaused(_ context.Context, _ *JobAutoPausedNotification, _ *slog.Logger) error {
-	return nil
+func (m *mockJobRunRepo) FindByID(id string) (domain.JobRun, error) {
+	if m.findError != nil {
+		return domain.JobRun{}, m.findError
+	}
+	run, ok := m.runs[id]
+	if !ok {
+		return domain.JobRun{}, domain.ErrJobNotFound
+	}
+	return run, nil
 }
 
-func (n *recordingNotifier) getNotifications() []*ExportCompletionNotification {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	return n.notifications
+type failingUserValidator struct {
+	err error
+}
+
+func (f *failingUserValidator) ValidateUser(ctx context.Context, orgID, userID string) (bool, error) {
+	return false, f.err
+}
+
+func (f *failingUserValidator) GenerateIdentityHeader(ctx context.Context, orgID, userID string) (string, error) {
+	return "", f.err
 }
 
 func newTestLogger() *slog.Logger {
@@ -69,22 +83,13 @@ func newTestJob() domain.Job {
 	return domain.NewJob("Test Export Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
 }
 
-func TestExportJobExecutor_SuccessfulExport(t *testing.T) {
-	callCount := 0
+func TestExportJobExecutor_SuccessfulExportCreation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "POST" && r.URL.Path == "/exports" {
+			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-success-123",
+				ID:     "exp-123",
 				Status: export.StatusPending,
-			})
-			return
-		}
-		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/status") {
-			callCount++
-			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-success-123",
-				Status: export.StatusComplete,
 			})
 			return
 		}
@@ -92,207 +97,310 @@ func TestExportJobExecutor_SuccessfulExport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	notifier := &recordingNotifier{}
+	runRepo := &mockJobRunRepo{
+		runs: make(map[string]domain.JobRun),
+	}
+	runRepo.runs["run-123"] = domain.JobRun{
+		ID:     "run-123",
+		JobID:  "job-123",
+		Status: domain.RunStatusRunning,
+	}
+
 	cfg := &config.Config{
 		ExportService: config.ExportServiceConfig{
-			BaseURL:        server.URL,
-			PublicBaseURL:  "https://console.example.com/api/export/v1",
-			PollMaxRetries: 5,
-			PollInterval:   1 * time.Millisecond,
+			BaseURL:       server.URL,
+			PublicBaseURL: "https://console.example.com/api/export/v1",
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
-	result, resultType, err := executor.Execute(newTestJob(), newTestLogger())
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
+	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
-	if resultType != domain.ResultTypeExport {
-		t.Errorf("Expected result type %s, got %s", domain.ResultTypeExport, resultType)
+
+	if resultType != domain.ResultTypePending {
+		t.Errorf("Expected ResultTypePending, got: %v", resultType)
 	}
 
-	exportResult, ok := result.(domain.ExportResult)
-	if !ok {
-		t.Fatalf("Expected ExportResult, got %T", result)
-	}
-	if exportResult.ExportID != "exp-success-123" {
-		t.Errorf("Expected export ID 'exp-success-123', got %s", exportResult.ExportID)
-	}
-	if !strings.Contains(exportResult.URL, "exp-success-123") {
-		t.Errorf("Expected URL to contain export ID, got %s", exportResult.URL)
+	if result != nil {
+		t.Errorf("Expected nil result for pending exports, got: %v", result)
 	}
 
-	notifications := notifier.getNotifications()
-	if len(notifications) != 1 {
-		t.Fatalf("Expected 1 notification, got %d", len(notifications))
+	// Verify external job ID was saved for the poller to pick up
+	savedRun := runRepo.runs["run-123"]
+	if savedRun.ExternalJobID == nil {
+		t.Fatal("Expected external_job_id to be saved")
 	}
-	if notifications[0].Status != "complete" {
-		t.Errorf("Expected notification status 'complete', got %s", notifications[0].Status)
+	if *savedRun.ExternalJobID != "exp-123" {
+		t.Errorf("External job ID = %q, want %q", *savedRun.ExternalJobID, "exp-123")
 	}
-	if notifications[0].DownloadURL == "" {
-		t.Error("Expected non-empty download URL in notification")
-	}
-}
-
-func TestExportJobExecutor_ExportFailed_IncludesExportIDAndSendsNotification(t *testing.T) {
-	sourceMsg := "advisor service unavailable"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == "POST" && r.URL.Path == "/exports" {
-			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-fail-456",
-				Status: export.StatusPending,
-			})
-			return
-		}
-		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/status") {
-			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-fail-456",
-				Status: export.StatusFailed,
-				Sources: []export.SourceStatus{
-					{
-						Application: export.AppAdvisor,
-						Resource:    "recommendations",
-						Status:      "failed",
-						Message:     &sourceMsg,
-					},
-				},
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	notifier := &recordingNotifier{}
-	cfg := &config.Config{
-		ExportService: config.ExportServiceConfig{
-			BaseURL:        server.URL,
-			PublicBaseURL:  server.URL,
-			PollMaxRetries: 3,
-			PollInterval:   1 * time.Millisecond,
-		},
-	}
-
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
-	_, _, err := executor.Execute(newTestJob(), newTestLogger())
-
-	if err == nil {
-		t.Fatal("Expected error for failed export")
-	}
-
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "exp-fail-456") {
-		t.Errorf("Error should contain export ID, got: %s", errMsg)
-	}
-
-	// Should have sent a failure notification
-	notifications := notifier.getNotifications()
-	if len(notifications) != 1 {
-		t.Fatalf("Expected 1 failure notification, got %d", len(notifications))
-	}
-	if notifications[0].Status != "failed" {
-		t.Errorf("Expected notification status 'failed', got %s", notifications[0].Status)
-	}
-	if notifications[0].ExportID != "exp-fail-456" {
-		t.Errorf("Expected notification export ID 'exp-fail-456', got %s", notifications[0].ExportID)
-	}
-	if !strings.Contains(notifications[0].ErrorMsg, "advisor service unavailable") {
-		t.Errorf("Expected notification error message to contain source error, got: %s", notifications[0].ErrorMsg)
-	}
-}
-
-func TestExportJobExecutor_PollTimeout_IncludesExportID(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == "POST" && r.URL.Path == "/exports" {
-			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-timeout-789",
-				Status: export.StatusPending,
-			})
-			return
-		}
-		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/status") {
-			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-timeout-789",
-				Status: export.StatusRunning,
-			})
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	notifier := &recordingNotifier{}
-	cfg := &config.Config{
-		ExportService: config.ExportServiceConfig{
-			BaseURL:        server.URL,
-			PublicBaseURL:  server.URL,
-			PollMaxRetries: 2,
-			PollInterval:   1 * time.Millisecond,
-		},
-	}
-
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
-	_, _, err := executor.Execute(newTestJob(), newTestLogger())
-
-	if err == nil {
-		t.Fatal("Expected error for timed-out export")
-	}
-
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "exp-timeout-789") {
-		t.Errorf("Error should contain export ID, got: %s", errMsg)
-	}
-
-	// No notification should be sent for timeout (no status response returned)
-	notifications := notifier.getNotifications()
-	if len(notifications) != 0 {
-		t.Errorf("Expected 0 notifications for timeout (no status), got %d", len(notifications))
+	if savedRun.ExternalService == nil || *savedRun.ExternalService != "export" {
+		t.Errorf("External service = %v, want 'export'", savedRun.ExternalService)
 	}
 }
 
 func TestExportJobExecutor_CreateExportFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(export.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "name is required",
-		})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Internal server error"}`))
 	}))
 	defer server.Close()
 
-	notifier := &recordingNotifier{}
+	runRepo := &mockJobRunRepo{runs: make(map[string]domain.JobRun)}
 	cfg := &config.Config{
 		ExportService: config.ExportServiceConfig{
-			BaseURL:        server.URL,
-			PublicBaseURL:  server.URL,
-			PollMaxRetries: 3,
-			PollInterval:   1 * time.Millisecond,
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
-	_, _, err := executor.Execute(newTestJob(), newTestLogger())
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
+	_, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
 
 	if err == nil {
-		t.Fatal("Expected error for failed creation")
+		t.Fatal("Expected error when CreateExport fails")
 	}
 
-	if !strings.Contains(err.Error(), "failed to create export") {
-		t.Errorf("Error should mention creation failure, got: %s", err.Error())
-	}
-
-	// No notification for creation failures
-	notifications := notifier.getNotifications()
-	if len(notifications) != 0 {
-		t.Errorf("Expected 0 notifications for creation failure, got %d", len(notifications))
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
 	}
 }
 
+func TestExportJobExecutor_IdentityValidationFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Should not reach export service when identity validation fails")
+	}))
+	defer server.Close()
+
+	runRepo := &mockJobRunRepo{runs: make(map[string]domain.JobRun)}
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
+		},
+	}
+
+	validator := &failingUserValidator{err: errors.New("user not found")}
+	executor := NewExportJobExecutor(cfg, validator, runRepo, mustCELEvaluator(t))
+	_, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
+
+	if err == nil {
+		t.Fatal("Expected error when identity validation fails")
+	}
+
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
+	}
+}
+
+func TestExportJobExecutor_InvalidPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Server will be called but with invalid data
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Invalid request"}`))
+	}))
+	defer server.Close()
+
+	runRepo := &mockJobRunRepo{runs: make(map[string]domain.JobRun)}
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
+		},
+	}
+
+	// Invalid payload - missing required fields for ExportRequest
+	invalidJob := domain.NewJob("Bad Job", "org", "user", "0 0 * * *", "UTC", domain.PayloadExport, map[string]interface{}{
+		"name": "test",
+		// Missing format and sources
+	})
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
+	_, resultType, err := executor.Execute(invalidJob, "run-123", newTestLogger())
+
+	if err == nil {
+		t.Fatal("Expected error with invalid payload")
+	}
+
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
+	}
+}
+
+func TestExportJobExecutor_ExternalJobIDSaveFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/exports" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-456",
+				Status: export.StatusPending,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	runRepo := &mockJobRunRepo{
+		runs:      make(map[string]domain.JobRun),
+		saveError: errors.New("database connection lost"),
+	}
+	runRepo.runs["run-123"] = domain.JobRun{
+		ID:     "run-123",
+		JobID:  "job-123",
+		Status: domain.RunStatusRunning,
+	}
+
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
+	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
+
+	// Returns an error when save fails (prevents orphaned runs)
+	if err == nil {
+		t.Fatal("Expected error when external_job_id save fails")
+	}
+
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result, got: %v", result)
+	}
+}
+
+func TestExportJobExecutor_NoJobRunID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/exports" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-789",
+				Status: export.StatusPending,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	runRepo := &mockJobRunRepo{runs: make(map[string]domain.JobRun)}
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
+	result, resultType, err := executor.Execute(newTestJob(), "", newTestLogger())
+
+	// Should succeed even without job run ID (for backwards compatibility)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if resultType != domain.ResultTypePending {
+		t.Errorf("Expected ResultTypePending, got: %v", resultType)
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result, got: %v", result)
+	}
+}
+
+func TestExportJobExecutor_JobRunNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/exports" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-999",
+				Status: export.StatusPending,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	runRepo := &mockJobRunRepo{
+		runs:      make(map[string]domain.JobRun),
+		findError: domain.ErrJobNotFound,
+	}
+
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), runRepo, mustCELEvaluator(t))
+	result, resultType, err := executor.Execute(newTestJob(), "nonexistent-run", newTestLogger())
+
+	// Should fail (cannot find job run to save external_job_id)
+	if err == nil {
+		t.Fatal("Expected error when job run not found")
+	}
+
+	if resultType != domain.ResultTypeExport {
+		t.Errorf("Expected ResultTypeExport on failure, got: %v", resultType)
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result, got: %v", result)
+	}
+}
+
+func TestExportJobExecutor_WithNilRunRepo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/exports" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(export.ExportStatusResponse{
+				ID:     "exp-nil",
+				Status: export.StatusPending,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		ExportService: config.ExportServiceConfig{
+			BaseURL:       server.URL,
+			PublicBaseURL: server.URL,
+		},
+	}
+
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil, mustCELEvaluator(t))
+	result, resultType, err := executor.Execute(newTestJob(), "run-123", newTestLogger())
+
+	// Should succeed even with nil runRepo
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if resultType != domain.ResultTypePending {
+		t.Errorf("Expected ResultTypePending, got: %v", resultType)
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result, got: %v", result)
+	}
+}
+
+// TestExportJobExecutor_TemplatedPayload verifies CEL expressions in the payload
+// are resolved before the export is created (kick-off is fire-and-forget).
 func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
-	// Create a test server that captures the request body
+	// Test server that captures the request body sent to the export service
 	var capturedBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -304,18 +412,11 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 			})
 			return
 		}
-		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/status") {
-			json.NewEncoder(w).Encode(export.ExportStatusResponse{
-				ID:     "exp-template-123",
-				Status: export.StatusComplete,
-			})
-			return
-		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	// Create job with CEL-templated payload
+	// Job with a CEL-templated payload
 	payload := map[string]interface{}{
 		"name":   "Templated Export",
 		"format": "json",
@@ -332,24 +433,24 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 	}
 	job := domain.NewJob("Templated Export Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
 
-	notifier := &recordingNotifier{}
 	cfg := &config.Config{
 		ExportService: config.ExportServiceConfig{
-			BaseURL:        server.URL,
-			PublicBaseURL:  "https://console.example.com/api/export/v1",
-			PollMaxRetries: 5,
-			PollInterval:   1 * time.Millisecond,
+			BaseURL:       server.URL,
+			PublicBaseURL: "https://console.example.com/api/export/v1",
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
-	_, _, err := executor.Execute(job, newTestLogger())
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil, mustCELEvaluator(t))
+	_, resultType, err := executor.Execute(job, "", newTestLogger())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
+	if resultType != domain.ResultTypePending {
+		t.Errorf("Expected ResultTypePending, got: %v", resultType)
+	}
 
-	// Verify the captured request body has resolved dates (not scheduler_cel: prefixes)
+	// The captured request body should have resolved dates, not scheduler_cel: prefixes
 	if capturedBody == nil {
 		t.Fatal("Expected captured request body")
 	}
@@ -359,7 +460,6 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 		t.Fatalf("Failed to parse captured body: %v", err)
 	}
 
-	// The sources should contain resolved dates, not scheduler_cel: expressions
 	sources := sentReq["sources"].([]interface{})
 	source := sources[0].(map[string]interface{})
 	filters := source["filters"].(map[string]interface{})
@@ -367,21 +467,20 @@ func TestExportJobExecutor_TemplatedPayload(t *testing.T) {
 	startDate := filters["start_date"].(string)
 	endDate := filters["end_date"].(string)
 
-	// Dates should be in YYYY-MM-DD format and NOT start with "scheduler_cel:"
 	if strings.HasPrefix(startDate, "scheduler_cel:") {
 		t.Errorf("start_date was not resolved: %s", startDate)
 	}
 	if strings.HasPrefix(endDate, "scheduler_cel:") {
 		t.Errorf("end_date was not resolved: %s", endDate)
 	}
-	// Basic format check
 	if len(startDate) != 10 || startDate[4] != '-' || startDate[7] != '-' {
 		t.Errorf("start_date not in YYYY-MM-DD format: %s", startDate)
 	}
 }
 
+// TestExportJobExecutor_InvalidTemplate verifies an invalid CEL expression fails
+// the kick-off with a clear error before any export is created.
 func TestExportJobExecutor_InvalidTemplate(t *testing.T) {
-	// Test that invalid CEL expressions produce a clear error
 	payload := map[string]interface{}{
 		"name":   "Bad Template",
 		"format": "json",
@@ -397,7 +496,6 @@ func TestExportJobExecutor_InvalidTemplate(t *testing.T) {
 	}
 	job := domain.NewJob("Bad Template Job", "test-org", "test-user", "0 0 * * *", "UTC", domain.PayloadExport, payload)
 
-	notifier := &recordingNotifier{}
 	cfg := &config.Config{
 		ExportService: config.ExportServiceConfig{
 			BaseURL:       "http://unused",
@@ -405,8 +503,8 @@ func TestExportJobExecutor_InvalidTemplate(t *testing.T) {
 		},
 	}
 
-	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), notifier, mustCELEvaluator(t))
-	_, _, err := executor.Execute(job, newTestLogger())
+	executor := NewExportJobExecutor(cfg, identity.NewFakeUserValidator(), nil, mustCELEvaluator(t))
+	_, _, err := executor.Execute(job, "", newTestLogger())
 
 	if err == nil {
 		t.Fatal("Expected error for invalid CEL expression")

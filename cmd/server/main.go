@@ -39,6 +39,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
+	"insights-scheduler/internal/clients/export"
 	"insights-scheduler/internal/config"
 	"insights-scheduler/internal/core/domain"
 	"insights-scheduler/internal/core/ports"
@@ -336,7 +337,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
-		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier, celEvaluator),
+		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, runRepo, celEvaluator),
 	}
 
 	// Initialize job executor with map of runners
@@ -390,6 +391,16 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Start cron scheduler
 	go cronScheduler.Start(ctx)
+
+	// Start export poller service (no distributed lock in legacy mode)
+	legacyExportClient := export.NewClient(cfg.ExportService.BaseURL, cfg.ExportService.PublicBaseURL)
+	legacyFailureTracker := executor.NewFailureTracker(repo, notifier, cfg.Scheduler.MaxConsecutiveFailures)
+	legacyExportPoller := scheduler.NewExportPollerService(
+		runRepo, repo, legacyExportClient, userValidator, notifier,
+		legacyFailureTracker, nil, cfg.Scheduler.ExportPollScanInterval,
+		cfg.Scheduler.ExportPollMaxAge, cfg.Scheduler.MaxConcurrentExportPolls, baseLogger,
+	)
+	go legacyExportPoller.Start(ctx)
 
 	// Start HTTP server
 	go func() {
@@ -497,7 +508,14 @@ func runAPI(cmd *cobra.Command, args []string) {
 	if cfg.Redis.Enabled {
 		log.Printf("[API] Connecting to Redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
 
-		redisScheduler, err = scheduler.NewRedisScheduler(cfg.Redis, dummyExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
+		redisScheduler, err = scheduler.NewRedisScheduler(
+			cfg.Redis,
+			dummyExecutor,
+			jobRepo,
+			cfg.Scheduler.RedisPollInterval,
+			cfg.Scheduler.MaxConcurrentJobs,
+			cfg.Scheduler.JobExecutionTimeout,
+		)
 		if err != nil {
 			log.Fatalf("[API] Failed to connect to Redis: %v", err)
 		}
@@ -633,7 +651,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 		domain.PayloadMessage:     executor.NewMessageJobExecutor(),
 		domain.PayloadHTTPRequest: executor.NewHTTPJobExecutor(),
 		domain.PayloadCommand:     executor.NewCommandJobExecutor(),
-		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, notifier, celEvaluator),
+		domain.PayloadExport:      executor.NewExportJobExecutor(cfg, userValidator, jobRunRepo, celEvaluator),
 	}
 	baseExecutor := executor.NewJobExecutor(runners, jobRunRepo, baseLogger)
 
@@ -657,7 +675,14 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 	log.Printf("[WORKER] Connecting to Redis at %s:%d", cfg.Redis.Host, cfg.Redis.Port)
 
-	redisScheduler, err := scheduler.NewRedisScheduler(cfg.Redis, jobExecutor, jobRepo, cfg.Scheduler.RedisPollInterval)
+	redisScheduler, err := scheduler.NewRedisScheduler(
+		cfg.Redis,
+		jobExecutor,
+		jobRepo,
+		cfg.Scheduler.RedisPollInterval,
+		cfg.Scheduler.MaxConcurrentJobs,
+		cfg.Scheduler.JobExecutionTimeout,
+	)
 	if err != nil {
 		log.Fatalf("[WORKER] Failed to connect to Redis: %v", err)
 	}
@@ -705,6 +730,29 @@ func runWorker(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Start export poller service (handles all export completion, notifications, and failure tracking)
+	distributedLock := scheduler.NewDistributedLock(redisScheduler.GetRedisClient(), baseLogger)
+	exportClient := export.NewClient(cfg.ExportService.BaseURL, cfg.ExportService.PublicBaseURL)
+	failureTracker := executor.NewFailureTracker(jobRepo, notifier, cfg.Scheduler.MaxConsecutiveFailures)
+	exportPollerCtx, exportPollerCancel := context.WithCancel(context.Background())
+	defer exportPollerCancel()
+
+	exportPollerService := scheduler.NewExportPollerService(
+		jobRunRepo,
+		jobRepo,
+		exportClient,
+		userValidator,
+		notifier,
+		failureTracker,
+		distributedLock,
+		cfg.Scheduler.ExportPollScanInterval,
+		cfg.Scheduler.ExportPollMaxAge,
+		cfg.Scheduler.MaxConcurrentExportPolls,
+		baseLogger,
+	)
+	go exportPollerService.Start(exportPollerCtx)
+	log.Println("[WORKER] Export poller service started")
+
 	// Start Redis scheduler (blocking)
 	log.Println("[WORKER] Starting job execution loop...")
 
@@ -744,6 +792,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 	<-quit
 
 	log.Println("[WORKER] Shutting down worker...")
+	exportPollerCancel()
+	log.Println("[WORKER] Export poller service stopped")
 	redisScheduler.Stop()
 
 	// Wait for in-flight jobs to complete (with timeout)

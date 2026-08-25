@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +43,10 @@ func (m *mockJobRunRepositoryForHandler) FindByUserID(userID string, offset, lim
 }
 
 func (m *mockJobRunRepositoryForHandler) FindAll() ([]domain.JobRun, error) {
+	return nil, nil
+}
+
+func (m *mockJobRunRepositoryForHandler) FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error) {
 	return nil, nil
 }
 

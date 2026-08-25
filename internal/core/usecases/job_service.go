@@ -28,6 +28,7 @@ type JobRunRepository interface {
 	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
 	FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error)
 	FindAll() ([]domain.JobRun, error)
+	FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error)
 	CleanupOldRuns(keepPerJob int) (int64, error)
 }
 
@@ -312,7 +313,6 @@ func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name strin
 		return domain.Job{}, err
 	}
 
-	// Check if job belongs to the same organization
 	if job.OrgID != orgID {
 		return domain.Job{}, domain.ErrJobNotFound
 	}
@@ -734,8 +734,10 @@ func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, erro
 	var finalJob domain.Job
 
 	if execErr != nil {
+		// Manual runs do not count toward consecutive-failure auto-pause, and the job
+		// stays active/scheduled; the failure is captured in the per-run JobRun record.
 		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
-		finalStatus = domain.StatusFailed
+		finalStatus = domain.StatusScheduled
 		finalJob = runningJob.WithStatus(finalStatus)
 	} else {
 		finalStatus = domain.StatusScheduled
@@ -1058,9 +1060,18 @@ func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRun
 				s.cronScheduler.UnscheduleJob(job.ID)
 			}
 		} else {
-			finalStatus = domain.StatusFailed
+			// Below the auto-pause threshold the job stays active and retries on its
+			// next tick. The failure is recorded via ConsecutiveFailures/LastFailedAt
+			// and the per-run JobRun record, not by flipping the job status to "failed".
+			finalStatus = domain.StatusScheduled
 		}
 
+		finalJob = finalJob.WithStatus(finalStatus)
+	} else if job.Type == domain.PayloadExport {
+		// Export success only means kick-off succeeded; the ExportPollerService
+		// handles failure tracking when the export actually completes.
+		finalJob = runningJob
+		finalStatus = domain.StatusScheduled
 		finalJob = finalJob.WithStatus(finalStatus)
 	} else {
 		// Success - reset failure counter

@@ -55,11 +55,13 @@ Handles all side effects and I/O:
 
 **Scheduler** (`internal/shell/scheduler/`):
 - `scheduler.go` - Background goroutine that polls for jobs
+- `export_poller_service.go` - Centralized polling for in-flight export jobs (replaces inline polling)
 - Uses functional core for scheduling decisions
 
 **Executor** (`internal/shell/executor/`):
 - `job_executor.go` - Generic job executor with map-based payload type dispatch
-- `export_job_executor.go` - Export service integration
+- `export_job_executor.go` - Export service integration (fire-and-forget kick-off; polling handled by ExportPollerService)
+- `failure_tracker.go` - Shared consecutive failure tracking logic (used by FailureTrackingExecutor and ExportPollerService)
 - `message_job_executor.go`, `http_job_executor.go`, `command_job_executor.go` - Simulated executors
 - `kafka_notifier.go` - Platform notifications integration
 - Job completion notification system with Kafka support
@@ -128,6 +130,43 @@ Jobs support four payload types:
 - Description: Number of consecutive failures before a job is automatically paused. Set to `0` to disable auto-pause.
 - Example: `MAX_CONSECUTIVE_FAILURES=5`
 - Note: When a job fails N consecutive times, it will be automatically paused and will not run again until manually resumed via the `/jobs/{id}/resume` endpoint. The failure counter resets to 0 after any successful execution or when the job is manually resumed.
+- Job status while retrying: A failed run does **not** flip the job-level status to `failed`. The job stays `scheduled` (i.e. active and retrying) until it reaches the auto-pause threshold, at which point it becomes `paused`. Failure state is tracked via the `consecutive_failures` and `last_failed_at` fields on the job, and the outcome of each individual run is recorded in that run's `JobRun` record. To detect a job that is failing, check `consecutive_failures > 0` / `last_failed_at` or the run history rather than the job status. (The `failed` job status is retained only for backward compatibility with rows written by older versions; such jobs are still treated as active and heal back to `scheduled` on their next success.)
+
+**Export Poll Scan Interval**:
+- Variable: `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL`
+- Default: `10s`
+- Description: How often the ExportPollerService checks for in-flight export runs that need status polling
+- Example: `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL=15s`
+
+**Export Poll Max Age**:
+- Variable: `SCHEDULER_EXPORT_POLL_MAX_AGE`
+- Default: `30m`
+- Description: Maximum time an export run can remain in-flight before it is timed out and marked as failed. Increase this for long-running exports.
+- Example: `SCHEDULER_EXPORT_POLL_MAX_AGE=2h`
+- Note: Timeout detection is polled every `SCHEDULER_EXPORT_POLL_SCAN_INTERVAL`, so a run is actually timed out up to one scan interval after it exceeds the max age.
+- Monitoring: `scheduler_export_poll_timeouts_total` (counter) counts export runs that exceeded the max age and were marked failed — alert on a rising rate. `scheduler_export_in_flight_runs` (gauge) reports the number of in-flight export runs seen in the most recent scan; watch it against `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS`. Timeouts are also logged at WARN with `job_id`, `org_id`, `user_id`, `export_id`, `age`, and `max_age`. (Distinct from `scheduler_redis_jobs_timed_out_total`, which tracks the separate job kick-off execution timeout.)
+
+**Maximum Concurrent Export Polls**:
+- Variable: `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS`
+- Default: `20`
+- Description: Maximum number of export status checks that can run concurrently. Controls scalability of export polling - higher values allow more parallel status checks but increase resource usage.
+- Example: `SCHEDULER_MAX_CONCURRENT_EXPORT_POLLS=50`
+- Tuning: Set based on expected concurrent export volume. Each poll makes identity validation + HTTP request to export service (~200ms total). Default of 20 supports ~100 concurrent exports with 10s scan interval.
+
+**Maximum Concurrent Jobs**:
+- Variable: `SCHEDULER_MAX_CONCURRENT_JOBS`
+- Default: `10`
+- Description: Maximum number of jobs that can execute simultaneously. Prevents resource exhaustion when many jobs are due at the same time.
+- Example: `SCHEDULER_MAX_CONCURRENT_JOBS=20`
+- Tuning: Consider database connection limits (default max: 25) and downstream service capacity. Monitor `scheduler_concurrent_jobs` and `scheduler_worker_pool_utilization` metrics.
+
+**Job Execution Timeout**:
+- Variable: `SCHEDULER_JOB_EXECUTION_TIMEOUT`
+- Default: `2m`
+- Description: Maximum time allowed for a single job's create/execute phase before timing out. Guards against hung identity validation or export service calls.
+- Example: `SCHEDULER_JOB_EXECUTION_TIMEOUT=3m`
+- Note: This timeout applies to the create phase (identity validation + CreateExport call). Export completion polling is handled separately by ExportPollerService with its own timeout.
+- Covers: Identity validation (~1-30s) + CreateExport (~1-30s) + safety margin
 
 **Job Denylist**:
 - Variable: `SCHEDULER_DENYLIST_JOB_IDS`

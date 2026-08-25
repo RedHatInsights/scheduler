@@ -25,9 +25,6 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 	// Create a fake user validator
 	userValidator := identity.NewFakeUserValidator()
 
-	// Create null notifier (test null object pattern)
-	notifier := NewNullJobCompletionNotifier()
-
 	// Create payload-specific runners
 	runners := map[domain.PayloadType]JobRunner{
 		domain.PayloadMessage:     NewMessageJobExecutor(),
@@ -35,7 +32,7 @@ func TestDefaultJobExecutor_ExecuteWithKafka(t *testing.T) {
 		domain.PayloadCommand:     NewCommandJobExecutor(),
 		domain.PayloadExport: func() JobRunner {
 			e, _ := template.NewEvaluator()
-			return NewExportJobExecutor(cfg, userValidator, notifier, e)
+			return NewExportJobExecutor(cfg, userValidator, nil, e)
 		}(),
 	}
 

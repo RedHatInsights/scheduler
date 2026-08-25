@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,15 +58,20 @@ func (m *mockJobExecutor) Wait() {
 
 // Mock JobRepository for testing
 type mockJobRepository struct {
+	mu   sync.RWMutex
 	jobs map[string]domain.Job
 }
 
 func (m *mockJobRepository) Save(job domain.Job) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.jobs[job.ID] = job
 	return nil
 }
 
 func (m *mockJobRepository) FindByID(id string) (domain.Job, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	job, ok := m.jobs[id]
 	if !ok {
 		return domain.Job{}, domain.ErrJobNotFound
@@ -270,7 +276,7 @@ func TestNewRedisScheduler_WithConfig(t *testing.T) {
 	exec := &mockJobExecutor{}
 	repo := &mockJobRepository{jobs: make(map[string]domain.Job)}
 
-	rs, err := NewRedisScheduler(cfg, exec, repo, 10*time.Second)
+	rs, err := NewRedisScheduler(cfg, exec, repo, 10*time.Second, 10, 2*time.Minute)
 	if err != nil {
 		t.Fatalf("NewRedisScheduler() unexpected error: %v", err)
 	}
@@ -299,7 +305,7 @@ func TestNewRedisScheduler_WrongPassword(t *testing.T) {
 		DB:       0,
 	}
 
-	_, err := NewRedisScheduler(cfg, &mockJobExecutor{}, &mockJobRepository{jobs: make(map[string]domain.Job)}, 10*time.Second)
+	_, err := NewRedisScheduler(cfg, &mockJobExecutor{}, &mockJobRepository{jobs: make(map[string]domain.Job)}, 10*time.Second, 10, 2*time.Minute)
 	if err == nil {
 		t.Fatal("Expected error with wrong password, got nil")
 	}
@@ -465,6 +471,150 @@ func TestBuildTLSConfig_PartialClientCert_KeyOnly(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "both cert_file and key_file must be provided") {
 		t.Errorf("Expected partial cert error message, got: %v", err)
+	}
+}
+
+func TestRedisScheduler_ExecuteJob_SetsLastRunAt_ForExportJobs(t *testing.T) {
+	mr, client := setupTestRedis(t)
+	defer mr.Close()
+
+	executor := &mockJobExecutor{}
+	repo := &mockJobRepository{jobs: make(map[string]domain.Job)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheduler := &RedisScheduler{
+		client:       client,
+		executor:     executor,
+		jobRepo:      repo,
+		parser:       getDefaultParser(),
+		ctx:          ctx,
+		cancel:       cancel,
+		pollInterval: 10 * time.Second,
+	}
+
+	job := domain.NewJob("Export Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{
+		"format": "json",
+	})
+
+	// Seed the repo with the job (no last_run_at), simulating what a
+	// FailureTrackingExecutor reload would return for export jobs where
+	// TrackSuccess is skipped.
+	repo.jobs[job.ID] = job
+
+	// Store the job in Redis so executeJob can find it
+	scheduledJob := ScheduledJob{
+		Job:      job,
+		NextRun:  time.Now().Add(-1 * time.Minute),
+		Schedule: string(job.Schedule),
+	}
+	jobData, err := json.Marshal(scheduledJob)
+	if err != nil {
+		t.Fatalf("Failed to marshal scheduled job: %v", err)
+	}
+
+	jobKey := jobDataKeyPrefix + job.ID
+	if err := client.Set(ctx, jobKey, jobData, 0).Err(); err != nil {
+		t.Fatalf("Failed to store job data in Redis: %v", err)
+	}
+	if err := client.ZAdd(ctx, scheduledJobsKey, &redis.Z{
+		Score:  float64(time.Now().Add(-1 * time.Minute).Unix()),
+		Member: job.ID,
+	}).Err(); err != nil {
+		t.Fatalf("Failed to add job to sorted set: %v", err)
+	}
+
+	beforeExec := time.Now()
+	scheduler.executeJobWithContext(ctx, job.ID)
+
+	// Verify last_run_at was persisted to the repository
+	savedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Job not found in repo after execution: %v", err)
+	}
+
+	if savedJob.LastRunAt == nil {
+		t.Fatal("last_run_at should be set after execution, got nil")
+	}
+
+	if savedJob.LastRunAt.Before(beforeExec) {
+		t.Errorf("last_run_at (%s) should be >= execution start time (%s)",
+			savedJob.LastRunAt.Format(time.RFC3339Nano), beforeExec.Format(time.RFC3339Nano))
+	}
+}
+
+func TestRedisScheduler_ExecuteJob_SetsLastRunAt_ForNonExportJobs(t *testing.T) {
+	mr, client := setupTestRedis(t)
+	defer mr.Close()
+
+	repo := &mockJobRepository{jobs: make(map[string]domain.Job)}
+
+	// Simulate what FailureTrackingExecutor.TrackSuccess does for non-export
+	// jobs: it saves the job (with last_run_at intact) to the repo. We need
+	// the executor to update the repo to mimic that behavior.
+	executor := &mockJobExecutor{
+		executeFunc: func(job domain.Job) error {
+			repo.jobs[job.ID] = job.WithStatus(domain.StatusScheduled)
+			return nil
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheduler := &RedisScheduler{
+		client:       client,
+		executor:     executor,
+		jobRepo:      repo,
+		parser:       getDefaultParser(),
+		ctx:          ctx,
+		cancel:       cancel,
+		pollInterval: 10 * time.Second,
+	}
+
+	job := domain.NewJob("Message Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{
+		"body": "hello",
+	})
+
+	repo.jobs[job.ID] = job
+
+	scheduledJob := ScheduledJob{
+		Job:      job,
+		NextRun:  time.Now().Add(-1 * time.Minute),
+		Schedule: string(job.Schedule),
+	}
+	jobData, err := json.Marshal(scheduledJob)
+	if err != nil {
+		t.Fatalf("Failed to marshal scheduled job: %v", err)
+	}
+
+	jobKey := jobDataKeyPrefix + job.ID
+	if err := client.Set(ctx, jobKey, jobData, 0).Err(); err != nil {
+		t.Fatalf("Failed to store job data in Redis: %v", err)
+	}
+	if err := client.ZAdd(ctx, scheduledJobsKey, &redis.Z{
+		Score:  float64(time.Now().Add(-1 * time.Minute).Unix()),
+		Member: job.ID,
+	}).Err(); err != nil {
+		t.Fatalf("Failed to add job to sorted set: %v", err)
+	}
+
+	beforeExec := time.Now()
+	scheduler.executeJobWithContext(ctx, job.ID)
+
+	savedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Job not found in repo after execution: %v", err)
+	}
+
+	if savedJob.LastRunAt == nil {
+		t.Fatal("last_run_at should be set after execution, got nil")
+	}
+
+	if savedJob.LastRunAt.Before(beforeExec) {
+		t.Errorf("last_run_at (%s) should be >= execution start time (%s)",
+			savedJob.LastRunAt.Format(time.RFC3339Nano), beforeExec.Format(time.RFC3339Nano))
 	}
 }
 
