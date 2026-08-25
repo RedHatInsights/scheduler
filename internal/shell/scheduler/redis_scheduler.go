@@ -416,9 +416,39 @@ func (s *RedisScheduler) executeJobWithContext(ctx context.Context, jobID string
 
 	log.Printf("[RedisScheduler] scheduledJob %+v", scheduledJob)
 
+	// Load the authoritative job definition from the database rather than trusting
+	// the copy embedded in the Redis record. Redis only tells us which job is due
+	// and when; the job's identity (org_id/user_id) and payload always come from
+	// the database, so tampering with the Redis record cannot forge identity or
+	// change what actually runs. (The embedded copy is still used only as a
+	// fallback when rescheduling below.)
+	if s.jobRepo == nil {
+		log.Printf("[RedisScheduler] No job repository configured; cannot execute job %s", jobID)
+		return
+	}
+	job, err := s.jobRepo.FindByID(jobID)
+	if err != nil {
+		if err == domain.ErrJobNotFound {
+			log.Printf("[RedisScheduler] Job %s not found in database, removing from schedule", jobID)
+			s.client.ZRem(ctx, scheduledJobsKey, jobID)
+			s.client.Del(ctx, jobKey)
+			return
+		}
+		log.Printf("[RedisScheduler] Error loading job %s from database: %v", jobID, err)
+		return
+	}
+
+	// For regularly-scheduled runs (no pre-created run ID), skip execution if the
+	// job is no longer active — e.g. paused between scheduling and pickup. Explicit
+	// immediate/manual runs (job_run_id set) are honored regardless of status,
+	// matching ScheduleJobImmediately.
+	if scheduledJob.JobRunID == "" && job.Status != domain.StatusScheduled && job.Status != domain.StatusFailed {
+		log.Printf("[RedisScheduler] Job %s no longer active (status=%s), skipping execution", jobID, job.Status)
+		return
+	}
+
 	// Update last_run_at before execution
 	now := time.Now()
-	scheduledJob.Job = scheduledJob.Job.WithLastRunAt(now)
 
 	// Execute the job with timeout awareness
 	var execErr error
@@ -427,10 +457,10 @@ func (s *RedisScheduler) executeJobWithContext(ctx context.Context, jobID string
 	go func() {
 		if scheduledJob.JobRunID != "" {
 			log.Printf("[RedisScheduler] Executing job %s with pre-created job run %s", jobID, scheduledJob.JobRunID)
-			executionComplete <- s.executor.ExecuteWithJobRun(scheduledJob.Job, scheduledJob.JobRunID)
+			executionComplete <- s.executor.ExecuteWithJobRun(job, scheduledJob.JobRunID)
 		} else {
 			log.Printf("[RedisScheduler] Executing job %s", jobID)
-			executionComplete <- s.executor.Execute(scheduledJob.Job)
+			executionComplete <- s.executor.Execute(job)
 		}
 	}()
 
