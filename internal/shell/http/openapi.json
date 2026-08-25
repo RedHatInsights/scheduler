@@ -85,6 +85,18 @@
               "default": 20
             },
             "example": 20
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort jobs by a field, in the form 'field:direction'. Direction is optional and defaults to 'asc'. Allowed fields: name, status, created_at, next_run_at, last_run_at. Defaults to 'created_at:desc'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(name|status|created_at|next_run_at|last_run_at)(:(asc|desc))?$",
+              "default": "created_at:desc"
+            },
+            "example": "name:asc"
           }
         ],
         "responses": {
@@ -530,6 +542,18 @@
               "default": 20
             },
             "example": 20
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort runs by a field, in the form 'field:direction'. Direction is optional and defaults to 'asc'. Allowed fields: start_time, end_time, status, created_at. Defaults to 'start_time:desc'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(start_time|end_time|status|created_at)(:(asc|desc))?$",
+              "default": "start_time:desc"
+            },
+            "example": "start_time:desc"
           }
         ],
         "responses": {
@@ -588,6 +612,18 @@
               "default": 20
             },
             "example": 20
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort runs by a field, in the form 'field:direction'. Direction is optional and defaults to 'asc'. Allowed fields: start_time, end_time, status, created_at. Defaults to 'start_time:desc'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(start_time|end_time|status|created_at)(:(asc|desc))?$",
+              "default": "start_time:desc"
+            },
+            "example": "start_time:desc"
           }
         ],
         "responses": {
@@ -889,6 +925,11 @@
             "format": "uuid",
             "description": "ID of the parent job",
             "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "job_name": {
+            "type": "string",
+            "description": "Name of the parent job",
+            "example": "Daily export job"
           },
           "status": {
             "$ref": "#/components/schemas/JobRunStatus"

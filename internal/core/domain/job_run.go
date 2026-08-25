@@ -17,6 +17,7 @@ const (
 type JobRun struct {
 	ID              string       `json:"id"`
 	JobID           string       `json:"job_id"`
+	JobName         string       `json:"job_name,omitempty"`
 	Status          JobRunStatus `json:"status"`
 	StartTime       time.Time    `json:"start_time"`
 	EndTime         *time.Time   `json:"end_time,omitempty"`

@@ -74,8 +74,8 @@ func (s *JobRunService) GetJobRunWithUserCheck(runID string, ident identity.XRHI
 }
 
 // GetJobRuns retrieves all runs for a specific job
-func (s *JobRunService) GetJobRuns(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
-	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
+func (s *JobRunService) GetJobRuns(jobID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
+	runs, total, err := s.runRepo.FindByJobID(jobID, sort, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -83,7 +83,7 @@ func (s *JobRunService) GetJobRuns(jobID string, offset, limit int) ([]domain.Jo
 }
 
 // GetJobRunsWithOrgCheck retrieves all runs for a job only if it belongs to the specified organization
-func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	// First verify the job exists and belongs to this org
 	job, err := s.jobRepo.FindByID(jobID)
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string, offse
 		return nil, 0, domain.ErrJobNotFound
 	}
 
-	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
+	runs, total, err := s.runRepo.FindByJobID(jobID, sort, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -103,7 +103,7 @@ func (s *JobRunService) GetJobRunsWithOrgCheck(jobID string, orgID string, offse
 }
 
 // GetJobRunsWithUserCheck retrieves all runs for a job only if it belongs to the specified user
-func (s *JobRunService) GetJobRunsWithUserCheck(jobID string, ident identity.XRHID, offset, limit int) ([]domain.JobRun, int, error) {
+func (s *JobRunService) GetJobRunsWithUserCheck(jobID string, ident identity.XRHID, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	// First verify the job exists and belongs to this user
 	job, err := s.jobRepo.FindByID(jobID)
 	if err != nil {
@@ -116,7 +116,7 @@ func (s *JobRunService) GetJobRunsWithUserCheck(jobID string, ident identity.XRH
 		return nil, 0, domain.ErrJobNotFound
 	}
 
-	runs, total, err := s.runRepo.FindByJobID(jobID, offset, limit)
+	runs, total, err := s.runRepo.FindByJobID(jobID, sort, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -157,12 +157,12 @@ func (s *JobRunService) UpdateJobRun(run domain.JobRun) error {
 }
 
 // GetAllRunsForUser retrieves all job runs for a specific user
-func (s *JobRunService) GetAllRunsForUser(ident identity.XRHID, offset, limit int) ([]domain.JobRun, int, error) {
+func (s *JobRunService) GetAllRunsForUser(ident identity.XRHID, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	userID := ident.Identity.User.UserID
 
 	log.Printf("[DEBUG] JobRunService - getting all runs for user_id=%s, offset=%d, limit=%d", userID, offset, limit)
 
-	runs, total, err := s.runRepo.FindByUserID(userID, offset, limit)
+	runs, total, err := s.runRepo.FindByUserID(userID, sort, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}

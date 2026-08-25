@@ -111,6 +111,22 @@ func errorInternalServer() ErrorObject {
 	}
 }
 
+func errorInvalidSort(detail string) ErrorObject {
+	return ErrorObject{
+		Status: "400",
+		Title:  "Invalid Sort Parameter",
+		Detail: detail,
+	}
+}
+
+func errorInvalidStatusFilter(detail string) ErrorObject {
+	return ErrorObject{
+		Status: "400",
+		Title:  "Invalid Status Filter",
+		Detail: detail,
+	}
+}
+
 func errorInvalidUUID(paramName string, value string) ErrorObject {
 	return ErrorObject{
 		Status: "400",

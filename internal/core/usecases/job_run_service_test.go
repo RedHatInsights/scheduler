@@ -27,7 +27,7 @@ func (m *mockJobRunRepository) FindByID(id string) (domain.JobRun, error) {
 	return domain.JobRun{}, domain.ErrJobRunNotFound
 }
 
-func (m *mockJobRunRepository) FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (m *mockJobRunRepository) FindByJobID(jobID string, _ domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	if m.findByJobIDFunc != nil {
 		return m.findByJobIDFunc(jobID, offset, limit)
 	}
@@ -41,7 +41,7 @@ func (m *mockJobRunRepository) FindByJobIDAndOrgID(jobID string, orgID string) (
 	return nil, nil
 }
 
-func (m *mockJobRunRepository) FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (m *mockJobRunRepository) FindByUserID(userID string, _ domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	if m.findByUserIDFunc != nil {
 		return m.findByUserIDFunc(userID, offset, limit)
 	}
@@ -92,7 +92,7 @@ func (m *mockJobRepositoryForRuns) FindByOrgID(orgID string) ([]domain.Job, erro
 	return nil, nil
 }
 
-func (m *mockJobRepositoryForRuns) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+func (m *mockJobRepositoryForRuns) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	return nil, 0, nil
 }
 
@@ -224,7 +224,7 @@ func TestGetJobRunsWithUserCheck_Success(t *testing.T) {
 	service := NewJobRunService(mockRunRepo, mockJobRepo)
 	ident := testIdentity(userID)
 
-	runs, total, err := service.GetJobRunsWithUserCheck(jobID, ident, 0, 10)
+	runs, total, err := service.GetJobRunsWithUserCheck(jobID, ident, domain.DefaultJobRunSort, 0, 10)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -257,7 +257,7 @@ func TestGetJobRunsWithUserCheck_UserMismatch(t *testing.T) {
 	service := NewJobRunService(mockRunRepo, mockJobRepo)
 	ident := testIdentity(requestUserID)
 
-	_, _, err := service.GetJobRunsWithUserCheck(jobID, ident, 0, 10)
+	_, _, err := service.GetJobRunsWithUserCheck(jobID, ident, domain.DefaultJobRunSort, 0, 10)
 	if err != domain.ErrJobNotFound {
 		t.Errorf("Expected ErrJobNotFound, got %v", err)
 	}
@@ -278,7 +278,7 @@ func TestGetJobRunsWithUserCheck_JobNotFound(t *testing.T) {
 	service := NewJobRunService(mockRunRepo, mockJobRepo)
 	ident := testIdentity(userID)
 
-	_, _, err := service.GetJobRunsWithUserCheck(jobID, ident, 0, 10)
+	_, _, err := service.GetJobRunsWithUserCheck(jobID, ident, domain.DefaultJobRunSort, 0, 10)
 	if err != domain.ErrJobNotFound {
 		t.Errorf("Expected ErrJobNotFound, got %v", err)
 	}
@@ -333,7 +333,7 @@ func TestGetAllRunsForUser_Success(t *testing.T) {
 	service := NewJobRunService(mockRunRepo, mockJobRepo)
 	ident := testIdentity(userID)
 
-	runs, total, err := service.GetAllRunsForUser(ident, 0, 10)
+	runs, total, err := service.GetAllRunsForUser(ident, domain.DefaultJobRunSort, 0, 10)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -370,7 +370,7 @@ func TestGetAllRunsForUser_EmptyResult(t *testing.T) {
 	service := NewJobRunService(mockRunRepo, mockJobRepo)
 	ident := testIdentity(userID)
 
-	runs, total, err := service.GetAllRunsForUser(ident, 0, 10)
+	runs, total, err := service.GetAllRunsForUser(ident, domain.DefaultJobRunSort, 0, 10)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -413,7 +413,7 @@ func TestGetAllRunsForUser_Pagination(t *testing.T) {
 	service := NewJobRunService(mockRunRepo, mockJobRepo)
 	ident := testIdentity(userID)
 
-	runs, total, err := service.GetAllRunsForUser(ident, offset, limit)
+	runs, total, err := service.GetAllRunsForUser(ident, domain.DefaultJobRunSort, offset, limit)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

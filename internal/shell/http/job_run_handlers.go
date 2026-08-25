@@ -48,8 +48,15 @@ func (h *JobRunHandler) GetJobRuns(w http.ResponseWriter, r *http.Request) {
 
 	offset, limit := parsePaginationParams(r.URL)
 
+	sort, err := parseSortParam(r.URL, domain.JobRunSortableFields, domain.DefaultJobRunSort)
+	if err != nil {
+		logger.Warn("GetJobRuns failed - invalid sort", slog.Any("error", err))
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidSort(err.Error())})
+		return
+	}
+
 	// Only get runs for jobs belonging to the user
-	runs, total, err := h.jobRunService.GetJobRunsWithUserCheck(jobID, ident, offset, limit)
+	runs, total, err := h.jobRunService.GetJobRunsWithUserCheck(jobID, ident, sort, offset, limit)
 	if err != nil {
 		if err == domain.ErrJobNotFound {
 			logger.Info("Job not found")
@@ -129,8 +136,15 @@ func (h *JobRunHandler) GetAllRuns(w http.ResponseWriter, r *http.Request) {
 
 	offset, limit := parsePaginationParams(r.URL)
 
+	sort, err := parseSortParam(r.URL, domain.JobRunSortableFields, domain.DefaultJobRunSort)
+	if err != nil {
+		logger.Warn("GetAllRuns failed - invalid sort", slog.Any("error", err))
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidSort(err.Error())})
+		return
+	}
+
 	// Get all runs for the authenticated user
-	runs, total, err := h.jobRunService.GetAllRunsForUser(ident, offset, limit)
+	runs, total, err := h.jobRunService.GetAllRunsForUser(ident, sort, offset, limit)
 	if err != nil {
 		logger.Error("Failed to retrieve all runs for user", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})

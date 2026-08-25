@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -127,24 +128,60 @@ func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) 
 	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)
 }
 
-func (r *PostgresJobRepository) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
-	// First get the total count
+func (r *PostgresJobRepository) FindByUserID(userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
+	// Build the shared WHERE clause. All filter values are bound as parameters
+	// ($N placeholders), never concatenated, so there is no injection surface;
+	// the same clause is used for the count and the page so the total matches the
+	// filtered result set.
+	where, args := buildJobFilterWhere(userID, filter)
+
+	// First get the total count of the filtered set.
 	var total int
-	countQuery := `SELECT COUNT(*) FROM jobs WHERE user_id = $1`
-	err := r.db.QueryRow(countQuery, userID).Scan(&total)
-	if err != nil {
+	countQuery := "SELECT COUNT(*) FROM jobs " + where
+	if err := r.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	// Then get the paginated results
-	query := `SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, consecutive_failures, last_failed_at
-	    FROM jobs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-	jobs, err := r.queryJobs(query, userID, limit, offset)
+	// Then get the paginated results. The ORDER BY clause is built exclusively
+	// from allowlisted column literals (see buildOrderByClause), so the sort
+	// input is not an injection vector.
+	orderBy := buildOrderByClause(sort, jobSortColumns, "created_at", "")
+	args = append(args, limit, offset)
+	query := fmt.Sprintf(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, consecutive_failures, last_failed_at
+	    FROM jobs %s %s LIMIT $%d OFFSET $%d`, where, orderBy, len(args)-1, len(args))
+	jobs, err := r.queryJobs(query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	return jobs, total, nil
+}
+
+// buildJobFilterWhere renders the WHERE clause for a user-scoped job query and
+// the ordered argument list backing its $N placeholders. Every dynamic value is
+// a bound parameter; only fixed column names appear in the SQL text.
+func buildJobFilterWhere(userID string, filter domain.JobFilter) (string, []interface{}) {
+	conditions := []string{"user_id = $1"}
+	args := []interface{}{userID}
+
+	if filter.Status != "" {
+		args = append(args, filter.Status)
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
+	}
+	if filter.NameContains != "" {
+		args = append(args, "%"+escapeLikePattern(filter.NameContains)+"%")
+		conditions = append(conditions, fmt.Sprintf("name ILIKE $%d ESCAPE '\\'", len(args)))
+	}
+
+	return "WHERE " + strings.Join(conditions, " AND "), args
+}
+
+// escapeLikePattern escapes the LIKE/ILIKE wildcard metacharacters so a user's
+// substring is matched literally (a '%' or '_' in the search term is treated as
+// text, not a wildcard). Used with an explicit ESCAPE '\' clause.
+func escapeLikePattern(s string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(s)
 }
 
 func (r *PostgresJobRepository) queryJobs(query string, args ...interface{}) ([]domain.Job, error) {

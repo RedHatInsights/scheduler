@@ -27,7 +27,7 @@ func (m *mockJobRunRepositoryForHandler) FindByID(id string) (domain.JobRun, err
 	return domain.JobRun{}, domain.ErrJobRunNotFound
 }
 
-func (m *mockJobRunRepositoryForHandler) FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (m *mockJobRunRepositoryForHandler) FindByJobID(jobID string, _ domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	return nil, 0, nil
 }
 
@@ -35,7 +35,7 @@ func (m *mockJobRunRepositoryForHandler) FindByJobIDAndOrgID(jobID string, orgID
 	return nil, nil
 }
 
-func (m *mockJobRunRepositoryForHandler) FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (m *mockJobRunRepositoryForHandler) FindByUserID(userID string, _ domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	if m.findByUserIDFunc != nil {
 		return m.findByUserIDFunc(userID, offset, limit)
 	}
@@ -69,7 +69,7 @@ func (m *mockJobRepositoryForHandler) FindByOrgID(orgID string) ([]domain.Job, e
 	return nil, nil
 }
 
-func (m *mockJobRepositoryForHandler) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+func (m *mockJobRepositoryForHandler) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	return nil, 0, nil
 }
 
@@ -98,14 +98,16 @@ func TestGetAllRuns_Success(t *testing.T) {
 	userID := "user-123"
 	expectedRuns := []domain.JobRun{
 		{
-			ID:     "run-1",
-			JobID:  "job-1",
-			Status: domain.RunStatusCompleted,
+			ID:      "run-1",
+			JobID:   "job-1",
+			JobName: "First job",
+			Status:  domain.RunStatusCompleted,
 		},
 		{
-			ID:     "run-2",
-			JobID:  "job-2",
-			Status: domain.RunStatusFailed,
+			ID:      "run-2",
+			JobID:   "job-2",
+			JobName: "Second job",
+			Status:  domain.RunStatusFailed,
 		},
 	}
 
@@ -163,6 +165,18 @@ func TestGetAllRuns_Success(t *testing.T) {
 
 	if len(data) != len(expectedRuns) {
 		t.Errorf("Expected %d runs in data, got %d", len(expectedRuns), len(data))
+	}
+
+	// Each run in the response must carry the parent job's name.
+	for i, item := range data {
+		run, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("data[%d] is not an object", i)
+		}
+		gotName, _ := run["job_name"].(string)
+		if gotName != expectedRuns[i].JobName {
+			t.Errorf("data[%d] expected job_name %q, got %q", i, expectedRuns[i].JobName, gotName)
+		}
 	}
 }
 
@@ -299,5 +313,86 @@ func TestGetAllRuns_EmptyResult(t *testing.T) {
 	data := response["data"].([]interface{})
 	if len(data) != 0 {
 		t.Errorf("Expected empty data array, got %d items", len(data))
+	}
+}
+
+func TestGetAllRuns_ValidSortReturns200(t *testing.T) {
+	userID := "user-sort"
+
+	mockRunRepo := &mockJobRunRepositoryForHandler{
+		findByUserIDFunc: func(uid string, offset, limit int) ([]domain.JobRun, int, error) {
+			return []domain.JobRun{{ID: "run-1", JobID: "job-1"}}, 1, nil
+		},
+	}
+	service := usecases.NewJobRunService(mockRunRepo, &mockJobRepositoryForHandler{})
+	handler := NewJobRunHandler(service)
+
+	router := mux.NewRouter()
+	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
+	api.HandleFunc("/runs", handler.GetAllRuns).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/api/scheduler/v1/runs?sort_by=start_time:asc", nil)
+	req = req.WithContext(identity.WithIdentity(req.Context(), testIdentityForHandler(userID)))
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestGetAllRuns_InvalidSortReturns400(t *testing.T) {
+	service := usecases.NewJobRunService(&mockJobRunRepositoryForHandler{}, &mockJobRepositoryForHandler{})
+	handler := NewJobRunHandler(service)
+
+	router := mux.NewRouter()
+	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
+	api.HandleFunc("/runs", handler.GetAllRuns).Methods("GET")
+
+	// "name" is a jobs field, not a valid runs sort field.
+	req := httptest.NewRequest("GET", "/api/scheduler/v1/runs?sort_by=name:asc", nil)
+	req = req.WithContext(identity.WithIdentity(req.Context(), testIdentityForHandler("user-x")))
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	var resp ErrorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse error response: %v", err)
+	}
+	if len(resp.Errors) == 0 || resp.Errors[0].Title != "Invalid Sort Parameter" {
+		t.Fatalf("expected Invalid Sort Parameter error, got %+v", resp.Errors)
+	}
+}
+
+func TestGetJobRuns_InvalidSortReturns400(t *testing.T) {
+	// Invalid sort is rejected before any repository access, so empty mocks suffice.
+	service := usecases.NewJobRunService(&mockJobRunRepositoryForHandler{}, &mockJobRepositoryForHandler{})
+	handler := NewJobRunHandler(service)
+
+	router := mux.NewRouter()
+	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
+	api.HandleFunc("/jobs/{id}/runs", handler.GetJobRuns).Methods("GET")
+
+	jobID := "550e8400-e29b-41d4-a716-446655440000"
+	req := httptest.NewRequest("GET", "/api/scheduler/v1/jobs/"+jobID+"/runs?sort_by=start_time:sideways", nil)
+	req = req.WithContext(identity.WithIdentity(req.Context(), testIdentityForHandler("user-x")))
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	var resp ErrorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse error response: %v", err)
+	}
+	if len(resp.Errors) == 0 || resp.Errors[0].Title != "Invalid Sort Parameter" {
+		t.Fatalf("expected Invalid Sort Parameter error, got %+v", resp.Errors)
 	}
 }

@@ -15,4 +15,6 @@ var (
 	ErrJobRunNotFound          = errors.New("job run not found")
 	ErrInvalidRunStatus        = errors.New("invalid job run status")
 	ErrInvalidPayloadTemplate  = errors.New("payload contains invalid CEL expression")
+	ErrInvalidSort             = errors.New("invalid sort parameter")
+	ErrInvalidStatusFilter     = errors.New("invalid status filter")
 )

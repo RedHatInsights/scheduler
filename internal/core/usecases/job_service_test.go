@@ -187,7 +187,7 @@ func (m *mockJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	return jobs, nil
 }
 
-func (m *mockJobRepository) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+func (m *mockJobRepository) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	jobs := make([]domain.Job, 0)
 	for _, job := range m.jobs {
 		if job.UserID == userID {
