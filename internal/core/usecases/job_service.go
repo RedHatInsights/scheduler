@@ -17,16 +17,16 @@ type JobRepository interface {
 	FindByID(id string) (domain.Job, error)
 	FindAll() ([]domain.Job, error)
 	FindByOrgID(orgID string) ([]domain.Job, error)
-	FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error)
+	FindByUserID(userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error)
 	Delete(id string) error
 }
 
 type JobRunRepository interface {
 	Save(run domain.JobRun) error
 	FindByID(id string) (domain.JobRun, error)
-	FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error)
+	FindByJobID(jobID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error)
 	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
-	FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error)
+	FindByUserID(userID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error)
 	FindAll() ([]domain.JobRun, error)
 	FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error)
 	CleanupOldRuns(keepPerJob int) (int64, error)
@@ -287,24 +287,14 @@ func (s *DefaultJobService) GetJobsByOrgID(ctx context.Context, orgID string, st
 	return filtered[offset:end], total, nil
 }
 
-func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
-	jobs, total, err := s.repo.FindByUserID(userID, offset, limit)
-	if err != nil {
+func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
+	if err := filter.Validate(); err != nil {
 		return nil, 0, err
 	}
-
-	filtered := make([]domain.Job, 0)
-	for _, job := range jobs {
-		if statusFilter != "" && string(job.Status) != statusFilter {
-			continue
-		}
-		if nameFilter != "" && !strings.Contains(strings.ToLower(job.Name), strings.ToLower(nameFilter)) {
-			continue
-		}
-		filtered = append(filtered, job)
-	}
-
-	return filtered, total, nil
+	// Filtering, sorting and pagination are all applied in the repository (SQL) so
+	// that the returned page and its total reflect the filtered result set. Doing
+	// any of these in memory here would only operate on the already-paginated page.
+	return s.repo.FindByUserID(userID, filter, sort, offset, limit)
 }
 
 func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {

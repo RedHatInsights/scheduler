@@ -36,9 +36,9 @@ func (a *AuthorizedJobServiceAdapter) GetJob(ctx context.Context, ident identity
 	return a.core.GetJobWithUserCheck(ctx, id, ident.Identity.User.UserID)
 }
 
-func (a *AuthorizedJobServiceAdapter) ListJobs(ctx context.Context, ident identity.XRHID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
+func (a *AuthorizedJobServiceAdapter) ListJobs(ctx context.Context, ident identity.XRHID, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	// Delegate to core service with user ID from identity
-	return a.core.GetJobsByUserID(ctx, ident.Identity.User.UserID, statusFilter, nameFilter, offset, limit)
+	return a.core.GetJobsByUserID(ctx, ident.Identity.User.UserID, filter, sort, offset, limit)
 }
 
 func (a *AuthorizedJobServiceAdapter) UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {

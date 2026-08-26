@@ -43,7 +43,7 @@ func (r *mockJobRunRepo) FindByID(id string) (domain.JobRun, error) {
 	return run, nil
 }
 
-func (r *mockJobRunRepo) FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (r *mockJobRunRepo) FindByJobID(jobID string, _ domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	return nil, 0, nil
 }
 
@@ -51,7 +51,7 @@ func (r *mockJobRunRepo) FindByJobIDAndOrgID(jobID, orgID string) ([]domain.JobR
 	return nil, nil
 }
 
-func (r *mockJobRunRepo) FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (r *mockJobRunRepo) FindByUserID(userID string, _ domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	return nil, 0, nil
 }
 
@@ -101,7 +101,7 @@ func (r *mockJobRepo) FindAll() ([]domain.Job, error) { return nil, nil }
 
 func (r *mockJobRepo) FindByOrgID(orgID string) ([]domain.Job, error) { return nil, nil }
 
-func (r *mockJobRepo) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+func (r *mockJobRepo) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	return nil, 0, nil
 }
 

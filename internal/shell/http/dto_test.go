@@ -310,6 +310,41 @@ func TestToJobRunResponse(t *testing.T) {
 	}
 }
 
+func TestToJobRunResponseIncludesJobName(t *testing.T) {
+	jobRun := domain.NewJobRun("job-123")
+	jobRun.JobName = "Daily export job"
+
+	response := ToJobRunResponse(jobRun)
+
+	if response.JobName != "Daily export job" {
+		t.Errorf("Expected JobName %q, got %q", "Daily export job", response.JobName)
+	}
+
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+	if !contains(string(jsonBytes), "\"job_name\":\"Daily export job\"") {
+		t.Errorf("JSON should contain job_name field, got: %s", string(jsonBytes))
+	}
+}
+
+func TestToJobRunResponseOmitsEmptyJobName(t *testing.T) {
+	// A run object with no job name (e.g. built on the write path, before it is
+	// read back through a listing) must omit the job_name key entirely.
+	jobRun := domain.NewJobRun("job-123")
+
+	response := ToJobRunResponse(jobRun)
+
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Failed to marshal response to JSON: %v", err)
+	}
+	if contains(string(jsonBytes), "job_name") {
+		t.Errorf("JSON should omit empty job_name field, got: %s", string(jsonBytes))
+	}
+}
+
 func TestToJobRunResponseWithCommandResult(t *testing.T) {
 	// Create a domain JobRun with command result
 	jobRun := domain.NewJobRun("job-456")

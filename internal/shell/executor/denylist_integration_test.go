@@ -50,7 +50,7 @@ func (m *MockJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	return nil, nil
 }
 
-func (m *MockJobRepository) FindByUserID(userID string, offset, limit int) ([]domain.Job, int, error) {
+func (m *MockJobRepository) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	return nil, 0, nil
 }
 

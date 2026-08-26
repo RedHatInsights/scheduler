@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -260,7 +261,7 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	}
 
 	// Test: User 1 should only see their own jobs
-	user1Jobs, total1, err := repo.FindByUserID("user-1", 0, 100)
+	user1Jobs, total1, err := repo.FindByUserID("user-1", domain.JobFilter{}, domain.DefaultJobSort, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find jobs for user-1: %v", err)
 	}
@@ -280,7 +281,7 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	}
 
 	// Test: User 2 should only see their own jobs
-	user2Jobs, total2, err := repo.FindByUserID("user-2", 0, 100)
+	user2Jobs, total2, err := repo.FindByUserID("user-2", domain.JobFilter{}, domain.DefaultJobSort, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find jobs for user-2: %v", err)
 	}
@@ -300,7 +301,7 @@ func TestPostgresJobRepository_UserIsolation(t *testing.T) {
 	}
 
 	// Test: User 3 should see no jobs
-	user3Jobs, total3, err := repo.FindByUserID("user-3", 0, 100)
+	user3Jobs, total3, err := repo.FindByUserID("user-3", domain.JobFilter{}, domain.DefaultJobSort, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find jobs for user-3: %v", err)
 	}
@@ -587,7 +588,7 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 	}
 
 	// Test: FindByJobID should return all runs for the job
-	jobRuns, total, err := runRepo.FindByJobID(job.ID, 0, 100)
+	jobRuns, total, err := runRepo.FindByJobID(job.ID, domain.DefaultJobRunSort, 0, 100)
 	if err != nil {
 		t.Fatalf("Failed to find runs by job ID: %v", err)
 	}
@@ -607,6 +608,13 @@ func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
 		}
 		if jobRuns[2].ID != "10000000-0000-0000-0000-000000000002" {
 			t.Errorf("Expected oldest run last, got %s", jobRuns[2].ID)
+		}
+	}
+
+	// Every run should carry the parent job's name (populated via the jobs join).
+	for _, run := range jobRuns {
+		if run.JobName != job.Name {
+			t.Errorf("Expected run %s job_name %q, got %q", run.ID, job.Name, run.JobName)
 		}
 	}
 
@@ -1002,7 +1010,7 @@ func TestPostgresJobRunRepository_CleanupOldRuns(t *testing.T) {
 	}
 
 	// Verify remaining runs for job1
-	job1Runs, _, err := runRepo.FindByJobID(job1.ID, 0, 10)
+	job1Runs, _, err := runRepo.FindByJobID(job1.ID, domain.DefaultJobRunSort, 0, 10)
 	if err != nil {
 		t.Fatalf("Failed to find job1 runs: %v", err)
 	}
@@ -1020,7 +1028,7 @@ func TestPostgresJobRunRepository_CleanupOldRuns(t *testing.T) {
 	}
 
 	// Verify remaining runs for job2
-	job2Runs, _, err := runRepo.FindByJobID(job2.ID, 0, 10)
+	job2Runs, _, err := runRepo.FindByJobID(job2.ID, domain.DefaultJobRunSort, 0, 10)
 	if err != nil {
 		t.Fatalf("Failed to find job2 runs: %v", err)
 	}
@@ -1070,7 +1078,7 @@ func TestPostgresJobRunRepository_CleanupOldRuns_NoRunsToDelete(t *testing.T) {
 	}
 
 	// Verify all runs still exist
-	runs, _, err := runRepo.FindByJobID(job.ID, 0, 10)
+	runs, _, err := runRepo.FindByJobID(job.ID, domain.DefaultJobRunSort, 0, 10)
 	if err != nil {
 		t.Fatalf("Failed to find runs: %v", err)
 	}
@@ -1155,7 +1163,7 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 	}
 
 	// Test: Get all runs for user-001 (should return 3 runs)
-	user1Runs, total1, err := runRepo.FindByUserID("user-001", 0, 100)
+	user1Runs, total1, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 0, 100)
 	if err != nil {
 		t.Fatalf("FindByUserID failed for user-001: %v", err)
 	}
@@ -1168,16 +1176,21 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 		t.Errorf("Expected 3 runs for user-001, got %d", len(user1Runs))
 	}
 
-	// Verify all runs belong to user-001's jobs
+	// Verify all runs belong to user-001's jobs, and carry the parent job name
+	// resolved via the jobs join.
 	expectedJobIDs := map[string]bool{job1.ID: true, job2.ID: true}
+	expectedJobNames := map[string]string{job1.ID: job1.Name, job2.ID: job2.Name}
 	for _, run := range user1Runs {
 		if !expectedJobIDs[run.JobID] {
 			t.Errorf("Run %s has unexpected job_id %s for user-001", run.ID, run.JobID)
 		}
+		if run.JobName != expectedJobNames[run.JobID] {
+			t.Errorf("Run %s expected job_name %q, got %q", run.ID, expectedJobNames[run.JobID], run.JobName)
+		}
 	}
 
 	// Test: Get all runs for user-002 (should return 1 run)
-	user2Runs, total2, err := runRepo.FindByUserID("user-002", 0, 100)
+	user2Runs, total2, err := runRepo.FindByUserID("user-002", domain.DefaultJobRunSort, 0, 100)
 	if err != nil {
 		t.Fatalf("FindByUserID failed for user-002: %v", err)
 	}
@@ -1195,7 +1208,7 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 	}
 
 	// Test: Pagination - get first page (limit 2)
-	page1Runs, total, err := runRepo.FindByUserID("user-001", 0, 2)
+	page1Runs, total, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 0, 2)
 	if err != nil {
 		t.Fatalf("FindByUserID pagination failed: %v", err)
 	}
@@ -1209,7 +1222,7 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 	}
 
 	// Test: Pagination - get second page (offset 2, limit 2)
-	page2Runs, total, err := runRepo.FindByUserID("user-001", 2, 2)
+	page2Runs, total, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 2, 2)
 	if err != nil {
 		t.Fatalf("FindByUserID pagination page 2 failed: %v", err)
 	}
@@ -1223,7 +1236,7 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 	}
 
 	// Test: User with no runs
-	noRunsUsers, total, err := runRepo.FindByUserID("user-999", 0, 100)
+	noRunsUsers, total, err := runRepo.FindByUserID("user-999", domain.DefaultJobRunSort, 0, 100)
 	if err != nil {
 		t.Fatalf("FindByUserID failed for user with no runs: %v", err)
 	}
@@ -1238,7 +1251,7 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 
 	// Test: Runs are ordered by start_time DESC (most recent first)
 	// The runs should be in reverse order of creation
-	allRuns, _, err := runRepo.FindByUserID("user-001", 0, 100)
+	allRuns, _, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 0, 100)
 	if err != nil {
 		t.Fatalf("FindByUserID failed for ordering test: %v", err)
 	}
@@ -1256,4 +1269,210 @@ func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
 	// Cleanup
 	jobRepo.db.Exec("DELETE FROM job_runs WHERE id::text LIKE '00000000-0000-0000-%'")
 	jobRepo.db.Exec("DELETE FROM jobs WHERE id::text LIKE '00000000-0000-0000-%'")
+}
+
+func TestPostgresJobRepository_FindByUserID_Filtering(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	userID := "user-filter-test"
+
+	mk := func(suffix, name string, status domain.JobStatus) domain.Job {
+		j := domain.NewJob(name, "org-filter", userID, "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+		j.ID = "00000000-0000-0000-0f00-" + suffix
+		j.Status = status
+		return j
+	}
+
+	// 5 scheduled + 3 paused jobs. "report" (case-insensitive) appears in 4 names.
+	jobs := []domain.Job{
+		mk("000000000001", "Daily report", domain.StatusScheduled),
+		mk("000000000002", "Weekly Report", domain.StatusScheduled),
+		mk("000000000003", "Monthly summary", domain.StatusScheduled),
+		mk("000000000004", "Ad-hoc export", domain.StatusScheduled),
+		mk("000000000005", "Nightly report", domain.StatusScheduled),
+		mk("000000000006", "Paused report", domain.StatusPaused),
+		mk("000000000007", "Paused export", domain.StatusPaused),
+		mk("000000000008", "Paused summary", domain.StatusPaused),
+	}
+	for _, j := range jobs {
+		if err := repo.Save(j); err != nil {
+			t.Fatalf("save %s: %v", j.ID, err)
+		}
+	}
+	defer func() {
+		for _, j := range jobs {
+			repo.Delete(j.ID)
+		}
+	}()
+
+	// Status filter must be applied in SQL: total reflects the filtered set and a
+	// small page is still filled from it (regression — filtering used to run in
+	// memory AFTER pagination, which truncated/emptied pages and reported the
+	// unfiltered total).
+	paused := domain.JobFilter{Status: "paused"}
+	page1, total, err := repo.FindByUserID(userID, paused, domain.DefaultJobSort, 0, 2)
+	if err != nil {
+		t.Fatalf("status filter page 1: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("expected filtered total 3, got %d", total)
+	}
+	if len(page1) != 2 {
+		t.Errorf("expected a full page of 2 paused jobs, got %d", len(page1))
+	}
+	for _, j := range page1 {
+		if j.Status != domain.StatusPaused {
+			t.Errorf("job %s has status %s, expected paused", j.ID, j.Status)
+		}
+	}
+
+	page2, total2, err := repo.FindByUserID(userID, paused, domain.DefaultJobSort, 2, 2)
+	if err != nil {
+		t.Fatalf("status filter page 2: %v", err)
+	}
+	if total2 != 3 {
+		t.Errorf("expected filtered total 3 on page 2, got %d", total2)
+	}
+	if len(page2) != 1 {
+		t.Errorf("expected 1 remaining paused job on page 2, got %d", len(page2))
+	}
+
+	// Name filter is a case-insensitive substring match.
+	byName := domain.JobFilter{NameContains: "report"}
+	_, nameTotal, err := repo.FindByUserID(userID, byName, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("name filter: %v", err)
+	}
+	if nameTotal != 4 {
+		t.Errorf("expected 4 jobs matching 'report', got %d", nameTotal)
+	}
+
+	// Combined status + name filters are ANDed.
+	combined := domain.JobFilter{Status: "paused", NameContains: "report"}
+	_, combinedTotal, err := repo.FindByUserID(userID, combined, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("combined filter: %v", err)
+	}
+	if combinedTotal != 1 {
+		t.Errorf("expected 1 paused job matching 'report', got %d", combinedTotal)
+	}
+}
+
+func TestPostgresJobRepository_FindByUserID_NameFilterEscapesWildcards(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	userID := "user-like-escape"
+
+	mk := func(suffix, name string) domain.Job {
+		j := domain.NewJob(name, "org-escape", userID, "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+		j.ID = "00000000-0000-0000-0e00-" + suffix
+		return j
+	}
+	jobs := []domain.Job{
+		mk("000000000001", "50% off"),
+		mk("000000000002", "500 items"),
+	}
+	for _, j := range jobs {
+		if err := repo.Save(j); err != nil {
+			t.Fatalf("save %s: %v", j.ID, err)
+		}
+	}
+	defer func() {
+		for _, j := range jobs {
+			repo.Delete(j.ID)
+		}
+	}()
+
+	// "50%" must be treated literally. With correct escaping only "50% off"
+	// matches; without it the '%' would act as a wildcard and also match
+	// "500 items".
+	filter := domain.JobFilter{NameContains: "50%"}
+	results, total, err := repo.FindByUserID(userID, filter, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("name filter with wildcard char: %v", err)
+	}
+	if total != 1 || len(results) != 1 {
+		t.Fatalf("expected exactly 1 literal match for '50%%', got total=%d len=%d", total, len(results))
+	}
+	if results[0].Name != "50% off" {
+		t.Errorf("expected '50%% off', got %q", results[0].Name)
+	}
+}
+
+func TestPostgresJobRunRepository_FindInFlightExternalRuns(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	job := domain.NewJob("Poller Job", "org-poll", "user-poll", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job.ID = "00000000-0000-0000-0abc-000000000001"
+	if err := jobRepo.Save(job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+	defer jobRepo.Delete(job.ID)
+
+	extID := "ext-abc-123"
+	extSvc := "export-service"
+
+	// In-flight external run — should be returned.
+	inflight := domain.NewJobRun(job.ID)
+	inflight.ID = "00000000-0000-0000-0abc-1a0000000001"
+	inflight.Status = domain.RunStatusRunning
+	inflight.ExternalJobID = &extID
+	inflight.ExternalService = &extSvc
+
+	// Running but not external — excluded (no external_job_id).
+	runningLocal := domain.NewJobRun(job.ID)
+	runningLocal.ID = "00000000-0000-0000-0abc-1a0000000002"
+	runningLocal.Status = domain.RunStatusRunning
+
+	// External but already completed — excluded (status != running).
+	doneExternal := domain.NewJobRun(job.ID)
+	doneExternal.ID = "00000000-0000-0000-0abc-1a0000000003"
+	doneExternal.Status = domain.RunStatusCompleted
+	doneExternal.ExternalJobID = &extID
+	doneExternal.ExternalService = &extSvc
+
+	for _, run := range []domain.JobRun{inflight, runningLocal, doneExternal} {
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("save run %s: %v", run.ID, err)
+		}
+	}
+
+	runs, err := runRepo.FindInFlightExternalRuns(context.Background())
+	if err != nil {
+		t.Fatalf("FindInFlightExternalRuns: %v", err)
+	}
+
+	// Global query, so assert on membership rather than exact count.
+	found := map[string]domain.JobRun{}
+	for _, r := range runs {
+		found[r.ID] = r
+	}
+
+	got, ok := found[inflight.ID]
+	if !ok {
+		t.Fatalf("expected in-flight external run %s to be returned", inflight.ID)
+	}
+	if got.ExternalJobID == nil || *got.ExternalJobID != extID {
+		t.Errorf("expected external_job_id %q, got %v", extID, got.ExternalJobID)
+	}
+	if got.ExternalService == nil || *got.ExternalService != extSvc {
+		t.Errorf("expected external_service %q, got %v", extSvc, got.ExternalService)
+	}
+	// This path uses the job_name-free scanner (no jobs join), so JobName is empty
+	// even though the parent job has a name.
+	if got.JobName != "" {
+		t.Errorf("expected empty JobName from the join-free poller query, got %q", got.JobName)
+	}
+
+	if _, ok := found[runningLocal.ID]; ok {
+		t.Errorf("running non-external run %s must not be returned", runningLocal.ID)
+	}
+	if _, ok := found[doneExternal.ID]; ok {
+		t.Errorf("completed external run %s must not be returned", doneExternal.ID)
+	}
 }

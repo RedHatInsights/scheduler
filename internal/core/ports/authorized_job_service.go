@@ -17,8 +17,8 @@ type AuthorizedJobService interface {
 	// GetJob retrieves a job by ID with authorization check
 	GetJob(ctx context.Context, ident identity.XRHID, id string) (domain.Job, error)
 
-	// ListJobs retrieves all jobs for the identity with optional filtering
-	ListJobs(ctx context.Context, ident identity.XRHID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
+	// ListJobs retrieves all jobs for the identity with optional filtering and sorting
+	ListJobs(ctx context.Context, ident identity.XRHID, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error)
 
 	// UpdateJob updates an existing job with authorization check
 	UpdateJob(ctx context.Context, ident identity.XRHID, id, name, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error)

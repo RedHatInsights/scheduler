@@ -104,12 +104,27 @@ func (h *JobHandler) GetAllJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	statusFilter := r.URL.Query().Get("status")
-	nameFilter := r.URL.Query().Get("name")
+	filter := domain.JobFilter{
+		Status:       r.URL.Query().Get("status"),
+		NameContains: r.URL.Query().Get("name"),
+	}
+	if err := filter.Validate(); err != nil {
+		logger.Warn("GetAllJobs failed - invalid status filter", slog.Any("error", err))
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidStatusFilter(err.Error())})
+		return
+	}
+
 	offset, limit := parsePaginationParams(r.URL)
 
+	sort, err := parseSortParam(r.URL, domain.JobSortableFields, domain.DefaultJobSort)
+	if err != nil {
+		logger.Warn("GetAllJobs failed - invalid sort", slog.Any("error", err))
+		respondWithErrors(w, http.StatusBadRequest, []ErrorObject{errorInvalidSort(err.Error())})
+		return
+	}
+
 	// Service automatically filters by identity
-	jobs, total, err := h.jobService.ListJobs(r.Context(), ident, statusFilter, nameFilter, offset, limit)
+	jobs, total, err := h.jobService.ListJobs(r.Context(), ident, filter, sort, offset, limit)
 	if err != nil {
 		logger.Error("Failed to retrieve jobs", slog.Any("error", err))
 		respondWithErrors(w, http.StatusInternalServerError, []ErrorObject{errorInternalServer()})

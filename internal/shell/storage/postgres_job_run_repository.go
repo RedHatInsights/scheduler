@@ -86,11 +86,12 @@ func (r *PostgresJobRunRepository) Save(run domain.JobRun) error {
 }
 
 func (r *PostgresJobRunRepository) FindByID(id string) (domain.JobRun, error) {
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service FROM job_runs WHERE id = $1`
+	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, j.name
+		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id WHERE jr.id = $1`
 	return r.scanRun(r.db.QueryRow(query, id))
 }
 
-func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (r *PostgresJobRunRepository) FindByJobID(jobID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	// First get the total count
 	var total int
 	countQuery := `SELECT COUNT(*) FROM job_runs WHERE job_id = $1`
@@ -99,9 +100,14 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 		return nil, 0, fmt.Errorf("failed to count job runs: %w", err)
 	}
 
-	// Then get the paginated results
-	query := `SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service
-		FROM job_runs WHERE job_id = $1 ORDER BY start_time DESC LIMIT $2 OFFSET $3`
+	// Then get the paginated results. The jobs join carries j.name onto each run;
+	// because job_runs and jobs share a "status" column, the query aliases
+	// job_runs as "jr" and the ORDER BY column is qualified accordingly. ORDER BY
+	// is built from allowlisted column literals only (see buildOrderByClause).
+	orderBy := buildOrderByClause(sort, jobRunSortColumns, "start_time", "jr")
+	query := fmt.Sprintf(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, j.name
+		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id
+		WHERE jr.job_id = $1 %s LIMIT $2 OFFSET $3`, orderBy)
 	runs, err := r.queryRuns(query, jobID, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -111,12 +117,12 @@ func (r *PostgresJobRunRepository) FindByJobID(jobID string, offset, limit int) 
 }
 
 func (r *PostgresJobRunRepository) FindByJobIDAndOrgID(jobID, orgID string) ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service
+	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, j.name
 		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE jr.job_id = $1 AND j.org_id = $2 ORDER BY jr.start_time DESC`, jobID, orgID)
 }
 
-func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int) ([]domain.JobRun, int, error) {
+func (r *PostgresJobRunRepository) FindByUserID(userID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error) {
 	// First get the total count
 	var total int
 	countQuery := `SELECT COUNT(*) FROM job_runs jr
@@ -127,13 +133,16 @@ func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int
 		return nil, 0, fmt.Errorf("failed to count job runs for user: %w", err)
 	}
 
-	// Then get the paginated results
-	query := `SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service
+	// Then get the paginated results. The joined query aliases job_runs as "jr",
+	// so the ORDER BY column is qualified with that alias. Columns come from the
+	// allowlist only (see buildOrderByClause).
+	orderBy := buildOrderByClause(sort, jobRunSortColumns, "start_time", "jr")
+	query := fmt.Sprintf(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, j.name
 		FROM job_runs jr
 		INNER JOIN jobs j ON jr.job_id = j.id
 		WHERE j.user_id = $1
-		ORDER BY jr.start_time DESC
-		LIMIT $2 OFFSET $3`
+		%s
+		LIMIT $2 OFFSET $3`, orderBy)
 	runs, err := r.queryRuns(query, userID, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -143,32 +152,27 @@ func (r *PostgresJobRunRepository) FindByUserID(userID string, offset, limit int
 }
 
 func (r *PostgresJobRunRepository) FindAll() ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service
-		FROM job_runs ORDER BY start_time DESC`)
+	return r.queryRuns(`SELECT jr.id, jr.job_id, jr.status, jr.start_time, jr.end_time, jr.error_message, jr.result_type, jr.result, jr.external_job_id, jr.external_service, j.name
+		FROM job_runs jr INNER JOIN jobs j ON jr.job_id = j.id ORDER BY jr.start_time DESC`)
 }
 
 // FindInFlightExternalRuns returns running job runs that were handed off to an
 // external service (i.e. have an external_job_id) and therefore need polling.
 // The WHERE clause matches idx_job_runs_status_external_job_id so the scan is
 // index-backed rather than fetching every running run and filtering in Go.
+//
+// This is a hot path (polled on an interval) and its caller does not use
+// JobRun.JobName, so it deliberately avoids the jobs join and uses the
+// job_name-free scanner.
 func (r *PostgresJobRunRepository) FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error) {
-	return r.queryRuns(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service
+	return r.queryRunsWithoutJobName(`SELECT id, job_id, status, start_time, end_time, error_message, result_type, result, external_job_id, external_service
 		FROM job_runs WHERE status = 'running' AND external_job_id IS NOT NULL ORDER BY start_time ASC`)
 }
 
-func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) {
-	var run domain.JobRun
-	var startTimeStr string
-	var endTimeStr, errorMessage, resultType, result *string
-
-	err := row.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result, &run.ExternalJobID, &run.ExternalService)
-	if err == sql.ErrNoRows {
-		return domain.JobRun{}, domain.ErrJobRunNotFound
-	}
-	if err != nil {
-		return domain.JobRun{}, fmt.Errorf("failed to find job run: %w", err)
-	}
-
+// hydrateRun fills the parsed/derived fields of a run from the raw string
+// columns shared by every job_run read query, so the single-row and multi-row
+// scanners (with or without the joined jobs.name) don't duplicate this logic.
+func hydrateRun(run *domain.JobRun, startTimeStr string, endTimeStr, errorMessage, resultType, result *string) error {
 	run.StartTime, _ = time.Parse(time.RFC3339, startTimeStr)
 	if endTimeStr != nil {
 		if t, err := time.Parse(time.RFC3339, *endTimeStr); err == nil {
@@ -187,15 +191,65 @@ func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) 
 	if result != nil {
 		var resultData interface{}
 		if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
-			return domain.JobRun{}, fmt.Errorf("failed to unmarshal result: %w", err)
+			return fmt.Errorf("failed to unmarshal result: %w", err)
 		}
 		run.Result = resultData
 	}
 
+	return nil
+}
+
+func (r *PostgresJobRunRepository) scanRun(row *sql.Row) (domain.JobRun, error) {
+	var run domain.JobRun
+	var startTimeStr, jobName string
+	var endTimeStr, errorMessage, resultType, result *string
+
+	err := row.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result, &run.ExternalJobID, &run.ExternalService, &jobName)
+	if err == sql.ErrNoRows {
+		return domain.JobRun{}, domain.ErrJobRunNotFound
+	}
+	if err != nil {
+		return domain.JobRun{}, fmt.Errorf("failed to find job run: %w", err)
+	}
+
+	run.JobName = jobName
+	if err := hydrateRun(&run, startTimeStr, endTimeStr, errorMessage, resultType, result); err != nil {
+		return domain.JobRun{}, err
+	}
 	return run, nil
 }
 
+// queryRuns scans job_run rows that include the joined jobs.name column (the API
+// read paths). The query's SELECT must end with j.name.
 func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) ([]domain.JobRun, error) {
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query job runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []domain.JobRun
+	for rows.Next() {
+		var run domain.JobRun
+		var startTimeStr, jobName string
+		var endTimeStr, errorMessage, resultType, result *string
+
+		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result, &run.ExternalJobID, &run.ExternalService, &jobName); err != nil {
+			return nil, fmt.Errorf("failed to scan job run: %w", err)
+		}
+		run.JobName = jobName
+		if err := hydrateRun(&run, startTimeStr, endTimeStr, errorMessage, resultType, result); err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+// queryRunsWithoutJobName scans job_run rows that do NOT include the joined
+// jobs.name column. It lets hot, internal callers (e.g. the export poller) skip
+// the jobs join entirely, since they don't use JobRun.JobName.
+func (r *PostgresJobRunRepository) queryRunsWithoutJobName(query string, args ...interface{}) ([]domain.JobRun, error) {
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query job runs: %w", err)
@@ -211,29 +265,9 @@ func (r *PostgresJobRunRepository) queryRuns(query string, args ...interface{}) 
 		if err := rows.Scan(&run.ID, &run.JobID, &run.Status, &startTimeStr, &endTimeStr, &errorMessage, &resultType, &result, &run.ExternalJobID, &run.ExternalService); err != nil {
 			return nil, fmt.Errorf("failed to scan job run: %w", err)
 		}
-		run.StartTime, _ = time.Parse(time.RFC3339, startTimeStr)
-		if endTimeStr != nil {
-			if t, err := time.Parse(time.RFC3339, *endTimeStr); err == nil {
-				run.EndTime = &t
-			}
+		if err := hydrateRun(&run, startTimeStr, endTimeStr, errorMessage, resultType, result); err != nil {
+			return nil, err
 		}
-		run.ErrorMessage = errorMessage
-
-		// Parse result_type
-		if resultType != nil {
-			rt := domain.ResultType(*resultType)
-			run.ResultType = &rt
-		}
-
-		// Unmarshal Result from JSON if present
-		if result != nil {
-			var resultData interface{}
-			if err := json.Unmarshal([]byte(*result), &resultData); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal result: %w", err)
-			}
-			run.Result = resultData
-		}
-
 		runs = append(runs, run)
 	}
 	return runs, rows.Err()

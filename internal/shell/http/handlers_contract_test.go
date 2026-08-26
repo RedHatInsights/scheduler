@@ -40,9 +40,9 @@ func (m *mockAuthorizedJobService) GetJob(ctx context.Context, ident identity.XR
 	return domain.Job{}, nil
 }
 
-func (m *mockAuthorizedJobService) ListJobs(ctx context.Context, ident identity.XRHID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
+func (m *mockAuthorizedJobService) ListJobs(ctx context.Context, ident identity.XRHID, filter domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
 	if m.listJobsFunc != nil {
-		return m.listJobsFunc(ctx, ident, statusFilter, nameFilter, offset, limit)
+		return m.listJobsFunc(ctx, ident, filter.Status, filter.NameContains, offset, limit)
 	}
 	return nil, 0, nil
 }

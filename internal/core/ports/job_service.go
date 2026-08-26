@@ -22,8 +22,8 @@ type JobService interface {
 	// GetJobWithOrgCheck retrieves a job by ID with organization authorization check
 	GetJobWithOrgCheck(ctx context.Context, id, orgID string) (domain.Job, error)
 
-	// GetJobsByUserID retrieves all jobs for a specific user with optional filtering
-	GetJobsByUserID(ctx context.Context, userID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
+	// GetJobsByUserID retrieves all jobs for a specific user with optional filtering and sorting
+	GetJobsByUserID(ctx context.Context, userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error)
 
 	// GetJobsByOrgID retrieves all jobs for a specific organization with optional filtering
 	GetJobsByOrgID(ctx context.Context, orgID, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error)
