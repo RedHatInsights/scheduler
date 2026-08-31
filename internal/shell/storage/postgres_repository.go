@@ -133,10 +133,11 @@ func (r *PostgresJobRepository) FindScheduledNearDue(lookahead time.Duration) ([
 		FROM jobs
 		WHERE status = 'scheduled'
 		  AND next_run_at IS NOT NULL
-		  AND next_run_at <= NOW() + $1
+		  AND next_run_at <= NOW() + ($1 || ' seconds')::INTERVAL
 		ORDER BY next_run_at ASC`
 
-	return r.queryJobs(query, lookahead)
+	lookaheadSeconds := int(lookahead.Seconds())
+	return r.queryJobs(query, lookaheadSeconds)
 }
 
 func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
