@@ -79,6 +79,26 @@ func (m *mockJobRepository) FindByID(id string) (domain.Job, error) {
 	return job, nil
 }
 
+func (m *mockJobRepository) FindAll() ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (m *mockJobRepository) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (m *mockJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (m *mockJobRepository) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
+	return nil, 0, nil
+}
+
+func (m *mockJobRepository) Delete(id string) error {
+	return nil
+}
+
 // setupTestRedis creates a test Redis instance using miniredis
 func setupTestRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 	mr := miniredis.RunT(t)

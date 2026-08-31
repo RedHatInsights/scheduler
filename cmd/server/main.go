@@ -715,16 +715,19 @@ func runWorker(cmd *cobra.Command, args []string) {
 			// This worker is the leader, perform sync
 			log.Println("[WORKER] Elected as sync leader, performing database sync")
 
-			allJobs, err := jobRepo.FindAll()
+			lookahead := cfg.Scheduler.SyncLookaheadWindow
+			nearDueJobs, err := jobRepo.FindScheduledNearDue(lookahead)
 			if err != nil {
-				log.Printf("[WORKER] WARNING: Failed to load jobs from Postgres: %v", err)
+				log.Printf("[WORKER] WARNING: Failed to load near-due jobs from Postgres: %v", err)
 			} else {
-				log.Printf("[WORKER] Loaded %d jobs from Postgres, syncing to Redis...", len(allJobs))
-				if err := redisScheduler.SyncJobsFromDB(allJobs); err != nil {
+				log.Printf("[WORKER] Loaded %d jobs due within %s, syncing to Redis...",
+					len(nearDueJobs), lookahead)
+				if err := redisScheduler.SyncJobsFromDB(nearDueJobs); err != nil {
 					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
 				} else {
 					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis", count)
+					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis (lookahead: %s)",
+						count, lookahead)
 				}
 			}
 		}
@@ -769,10 +772,11 @@ func runWorker(cmd *cobra.Command, args []string) {
 			defer ticker.Stop()
 
 			for range ticker.C {
-				log.Println("[WORKER] Performing periodic sync from Postgres to Redis")
-				jobs, err := jobRepo.FindAll()
+				lookahead := cfg.Scheduler.SyncLookaheadWindow
+				log.Printf("[WORKER] Performing periodic sync from Postgres to Redis (lookahead: %s)", lookahead)
+				jobs, err := jobRepo.FindScheduledNearDue(lookahead)
 				if err != nil {
-					log.Printf("[WORKER] Periodic sync failed to load jobs: %v", err)
+					log.Printf("[WORKER] Periodic sync failed to load near-due jobs: %v", err)
 					continue
 				}
 
@@ -780,7 +784,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 					log.Printf("[WORKER] Periodic sync failed: %v", err)
 				} else {
 					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis", count)
+					log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis (loaded %d near-due jobs)",
+						count, len(jobs))
 				}
 			}
 		}()

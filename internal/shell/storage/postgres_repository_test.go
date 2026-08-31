@@ -1476,3 +1476,169 @@ func TestPostgresJobRunRepository_FindInFlightExternalRuns(t *testing.T) {
 		t.Errorf("completed external run %s must not be returned", doneExternal.ID)
 	}
 }
+
+func TestPostgresJobRepository_FindScheduledNearDue(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	now := time.Now().UTC()
+	lookahead := 2 * time.Hour
+
+	// Test data:
+	// 1. Job due in 30 minutes (within lookahead) - SHOULD BE INCLUDED
+	job1 := domain.NewJob(
+		"Job due in 30 min",
+		"test-org-123",
+		"test-user-123",
+		"*/15 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job1.ID = "00000000-0000-0000-0000-000000000101"
+	nextRun1 := now.Add(30 * time.Minute)
+	job1 = job1.WithNextRunAt(nextRun1).WithStatus(domain.StatusScheduled)
+
+	// 2. Job due in 1 hour (within lookahead) - SHOULD BE INCLUDED
+	job2 := domain.NewJob(
+		"Job due in 1 hour",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job2.ID = "00000000-0000-0000-0000-000000000102"
+	nextRun2 := now.Add(1 * time.Hour)
+	job2 = job2.WithNextRunAt(nextRun2).WithStatus(domain.StatusScheduled)
+
+	// 3. Job due in 3 hours (outside lookahead) - SHOULD BE EXCLUDED
+	job3 := domain.NewJob(
+		"Job due in 3 hours",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job3.ID = "00000000-0000-0000-0000-000000000103"
+	nextRun3 := now.Add(3 * time.Hour)
+	job3 = job3.WithNextRunAt(nextRun3).WithStatus(domain.StatusScheduled)
+
+	// 4. Job with NULL next_run_at - SHOULD BE EXCLUDED
+	job4 := domain.NewJob(
+		"Job with no next run",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job4.ID = "00000000-0000-0000-0000-000000000104"
+	job4 = job4.WithStatus(domain.StatusScheduled)
+
+	// 5. Job that is paused (not scheduled) - SHOULD BE EXCLUDED
+	job5 := domain.NewJob(
+		"Paused job",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job5.ID = "00000000-0000-0000-0000-000000000105"
+	nextRun5 := now.Add(30 * time.Minute)
+	job5 = job5.WithNextRunAt(nextRun5).WithStatus(domain.StatusPaused)
+
+	// 6. Job due NOW (edge case, within lookahead) - SHOULD BE INCLUDED
+	job6 := domain.NewJob(
+		"Job due now",
+		"test-org-123",
+		"test-user-123",
+		"* * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job6.ID = "00000000-0000-0000-0000-000000000106"
+	job6 = job6.WithNextRunAt(now).WithStatus(domain.StatusScheduled)
+
+	// Save all test jobs
+	for _, job := range []domain.Job{job1, job2, job3, job4, job5, job6} {
+		if err := repo.Save(job); err != nil {
+			t.Fatalf("Failed to save test job %s: %v", job.ID, err)
+		}
+	}
+
+	// Execute the query
+	nearDueJobs, err := repo.FindScheduledNearDue(lookahead)
+	if err != nil {
+		t.Fatalf("FindScheduledNearDue failed: %v", err)
+	}
+
+	// Verify results
+	// Should return jobs 1, 2, and 6 (due within 2 hours and scheduled)
+	expectedCount := 3
+	if len(nearDueJobs) != expectedCount {
+		t.Errorf("Expected %d near-due jobs, got %d", expectedCount, len(nearDueJobs))
+		for i, job := range nearDueJobs {
+			t.Logf("  [%d] %s - next_run_at: %v", i, job.ID, job.NextRunAt)
+		}
+	}
+
+	// Verify the jobs are the correct ones
+	foundIDs := make(map[string]bool)
+	for _, job := range nearDueJobs {
+		foundIDs[job.ID] = true
+	}
+
+	if !foundIDs[job1.ID] {
+		t.Errorf("Expected job1 (due in 30 min) to be included")
+	}
+	if !foundIDs[job2.ID] {
+		t.Errorf("Expected job2 (due in 1 hour) to be included")
+	}
+	if !foundIDs[job6.ID] {
+		t.Errorf("Expected job6 (due now) to be included")
+	}
+
+	// Verify exclusions
+	if foundIDs[job3.ID] {
+		t.Errorf("Job3 (due in 3 hours) should NOT be included")
+	}
+	if foundIDs[job4.ID] {
+		t.Errorf("Job4 (NULL next_run_at) should NOT be included")
+	}
+	if foundIDs[job5.ID] {
+		t.Errorf("Job5 (paused) should NOT be included")
+	}
+
+	// Verify sort order (next_run_at ASC - earliest due first)
+	if len(nearDueJobs) >= 2 {
+		for i := 0; i < len(nearDueJobs)-1; i++ {
+			if nearDueJobs[i].NextRunAt == nil || nearDueJobs[i+1].NextRunAt == nil {
+				t.Errorf("Jobs should have next_run_at set")
+				continue
+			}
+			if nearDueJobs[i].NextRunAt.After(*nearDueJobs[i+1].NextRunAt) {
+				t.Errorf("Jobs not sorted by next_run_at ASC: job[%d] (%v) > job[%d] (%v)",
+					i, nearDueJobs[i].NextRunAt,
+					i+1, nearDueJobs[i+1].NextRunAt)
+			}
+		}
+
+		// The first job should be job6 (due now)
+		if nearDueJobs[0].ID != job6.ID {
+			t.Errorf("First job should be job6 (due now), got %s", nearDueJobs[0].ID)
+		}
+	}
+
+	// Clean up test data
+	for _, job := range []domain.Job{job1, job2, job3, job4, job5, job6} {
+		repo.db.Exec("DELETE FROM jobs WHERE id = $1", job.ID)
+	}
+}

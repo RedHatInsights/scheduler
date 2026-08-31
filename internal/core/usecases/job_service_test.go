@@ -177,6 +177,10 @@ func (m *mockJobRepository) FindAll() ([]domain.Job, error) {
 	return jobs, nil
 }
 
+func (m *mockJobRepository) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
+	return nil, nil
+}
+
 func (m *mockJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	jobs := make([]domain.Job, 0)
 	for _, job := range m.jobs {

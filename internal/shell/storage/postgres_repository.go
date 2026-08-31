@@ -123,6 +123,22 @@ func (r *PostgresJobRepository) FindAll() ([]domain.Job, error) {
 		FROM jobs ORDER BY created_at DESC`)
 }
 
+// FindScheduledNearDue returns scheduled jobs with next_run_at within the lookahead window,
+// sorted by next_run_at ascending (earliest due first).
+func (r *PostgresJobRepository) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
+	query := `
+		SELECT id, name, org_id, user_id, schedule, timezone,
+		       payload_type, payload_details, status, last_run_at,
+		       next_run_at, consecutive_failures, last_failed_at
+		FROM jobs
+		WHERE status = 'scheduled'
+		  AND next_run_at IS NOT NULL
+		  AND next_run_at <= NOW() + $1
+		ORDER BY next_run_at ASC`
+
+	return r.queryJobs(query, lookahead)
+}
+
 func (r *PostgresJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
 	return r.queryJobs(`SELECT id, name, org_id, user_id, schedule, timezone, payload_type, payload_details, status, last_run_at, next_run_at, consecutive_failures, last_failed_at
 	    FROM jobs WHERE org_id = $1 ORDER BY created_at DESC`, orgID)

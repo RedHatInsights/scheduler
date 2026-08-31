@@ -124,6 +124,14 @@ Jobs support four payload types:
 - Description: How often workers sync jobs from PostgreSQL to Redis (requires `ENABLE_PERIODIC_SYNC=true`)
 - Example: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=30m`
 
+**Database to Redis Sync Lookahead Window**:
+- Variable: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW`
+- Default: `2h`
+- Description: Time window for syncing near-due jobs from PostgreSQL to Redis. Only jobs with `next_run_at` within this window are loaded during sync operations.
+- Example: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW=4h`
+- Tuning: Should be >= 2x `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` when periodic sync is enabled to avoid gaps. Larger values increase sync time but provide more buffer for worker restarts.
+- Performance: With default 2h window, a 10,000-job system might only sync 100 near-due jobs, reducing startup time from 30s to <1s.
+
 **Auto-Pause on Consecutive Failures**:
 - Variable: `MAX_CONSECUTIVE_FAILURES`
 - Default: `3`
