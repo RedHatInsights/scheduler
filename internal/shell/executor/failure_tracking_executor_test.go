@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"insights-scheduler/internal/core/domain"
 )
@@ -56,6 +57,10 @@ func (r *mockJobRepo) FindAll() ([]domain.Job, error) {
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+func (r *mockJobRepo) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
+	return nil, nil
 }
 
 func (r *mockJobRepo) FindByOrgID(orgID string) ([]domain.Job, error) {
