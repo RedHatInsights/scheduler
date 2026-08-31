@@ -140,6 +140,7 @@ type SchedulerConfig struct {
 	GracefulShutdownTimeout  time.Duration `mapstructure:"graceful_shutdown_timeout" json:"graceful_shutdown_timeout"`
 	RedisPollInterval        time.Duration `mapstructure:"redis_poll_interval" json:"redis_poll_interval"`
 	DBToRedisSyncInterval    time.Duration `mapstructure:"db_to_redis_sync_interval" json:"db_to_redis_sync_interval"`
+	SyncLookaheadWindow      time.Duration `mapstructure:"sync_lookahead_window" json:"sync_lookahead_window"`
 	ExportPollScanInterval   time.Duration `mapstructure:"export_poll_scan_interval" json:"export_poll_scan_interval"`
 	ExportPollMaxAge         time.Duration `mapstructure:"export_poll_max_age" json:"export_poll_max_age"`
 	MaxConcurrentExportPolls int           `mapstructure:"max_concurrent_export_polls" json:"max_concurrent_export_polls"`
@@ -320,6 +321,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.graceful_shutdown_timeout", 30*time.Second)
 	v.SetDefault("scheduler.redis_poll_interval", 10*time.Second)
 	v.SetDefault("scheduler.db_to_redis_sync_interval", 1*time.Hour)
+	v.SetDefault("scheduler.sync_lookahead_window", 2*time.Hour)
 	v.SetDefault("scheduler.enable_periodic_sync", false)
 	v.SetDefault("scheduler.job_run_retention_count", 10)
 	v.SetDefault("scheduler.max_consecutive_failures", 3)
@@ -443,6 +445,7 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("scheduler.graceful_shutdown_timeout", "SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT")
 	_ = v.BindEnv("scheduler.redis_poll_interval", "SCHEDULER_REDIS_POLL_INTERVAL")
 	_ = v.BindEnv("scheduler.db_to_redis_sync_interval", "SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL")
+	_ = v.BindEnv("scheduler.sync_lookahead_window", "SCHEDULER_SYNC_LOOKAHEAD_WINDOW")
 	_ = v.BindEnv("scheduler.enable_periodic_sync", "ENABLE_PERIODIC_SYNC")
 	_ = v.BindEnv("scheduler.job_run_retention_count", "JOB_RUN_RETENTION_COUNT")
 	_ = v.BindEnv("scheduler.max_consecutive_failures", "MAX_CONSECUTIVE_FAILURES")
@@ -754,6 +757,17 @@ func (c *Config) Validate() error {
 	// Validate parsec configuration (only when it is the selected user validator)
 	if c.UserValidatorImpl == "parsec" && c.Parsec.BaseURL == "" {
 		return fmt.Errorf("parsec base URL is required when USER_VALIDATOR_IMPL=parsec")
+	}
+
+	// Validate scheduler lookahead window (warning only)
+	if c.Scheduler.EnablePeriodicSync {
+		minLookahead := 2 * c.Scheduler.DBToRedisSyncInterval
+		if c.Scheduler.SyncLookaheadWindow < minLookahead {
+			fmt.Printf("WARNING: SCHEDULER_SYNC_LOOKAHEAD_WINDOW (%s) should be >= 2x SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL (%s) to avoid gaps. Recommended: %s\n",
+				c.Scheduler.SyncLookaheadWindow,
+				c.Scheduler.DBToRedisSyncInterval,
+				minLookahead)
+		}
 	}
 
 	return nil
