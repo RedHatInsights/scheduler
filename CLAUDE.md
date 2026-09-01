@@ -216,7 +216,10 @@ Jobs support four payload types:
 
 ### User Validation
 
-- `USER_VALIDATOR_IMPL`: Implementation to use (`fake`, `bop`, `3scale`)
+- `USER_VALIDATOR_IMPL`: Implementation to use (`fake`, `bop`, `3scale`, `parsec`)
 - `BOP_URL`: Back Office Portal API URL
 - `BOP_API_TOKEN`: BOP authentication token
 - `THREESCALE_URL`: 3scale validation service URL
+- `PARSEC_URL`: parsec token-exchange service URL (default: `http://parsec-service:8080`). Required when `USER_VALIDATOR_IMPL=parsec`.
+- `PARSEC_TIMEOUT`: Timeout for parsec token-exchange requests (default: `5s`)
+  - The `parsec` validator reconstructs `x-rh-identity` at job-execution time by calling parsec's RFC 8693 token-exchange endpoint (`POST /v1/token`) with an unsigned-JSON subject token carrying the stored `user_id` (namespaced as `redhat:user:sso:<user_id>`). parsec enriches the identity from BOP and returns a base64 `x-rh-identity` envelope, which the scheduler validates (`org_id`/`user_id` match) and passes through. No caller credentials are sent (Phase-1: access control via network policy).

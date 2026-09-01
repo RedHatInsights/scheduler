@@ -834,6 +834,12 @@ func createUserValidator(cfg *config.Config) identity.UserValidator {
 			cfg.Bop.ClientID,
 			cfg.Bop.InsightsEnv,
 		)
+	case "parsec":
+		log.Println("Initializing Parsec User Validator")
+		userValidator = identity.NewParsecUserValidator(
+			cfg.Parsec.BaseURL,
+			cfg.Parsec.Timeout,
+		)
 	case "fake":
 		log.Println("Initializing FAKE User Validator")
 		userValidator = identity.NewFakeUserValidator()
