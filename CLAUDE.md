@@ -134,13 +134,16 @@ The scheduler uses PostgreSQL as the source of truth and Redis as a fast, distri
 
 **When**: On a configurable interval (default: 1 hour) if `ENABLE_PERIODIC_SYNC=true`  
 **Purpose**: Catch jobs that become near-due between worker restarts, or recover if API pods fail to update Redis  
-**Mechanism**: Each worker independently performs sync (no leader election)
+**Mechanism**: Leader election via Redis (same as startup sync) to prevent redundant DB queries
 
 **How it works**:
 1. Timer fires every `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL`
-2. Loads near-due jobs: `FindScheduledNearDue(SCHEDULER_SYNC_LOOKAHEAD_WINDOW)`
-3. Syncs to Redis via `SyncJobsFromDB()`
-4. Records same metrics with `operation="periodic"` label
+2. Each worker attempts leader election via `TryAcquireLeader(5 * time.Minute)`
+3. Only the elected leader performs sync:
+   - Loads near-due jobs: `FindScheduledNearDue(SCHEDULER_SYNC_LOOKAHEAD_WINDOW)`
+   - Syncs to Redis via `SyncJobsFromDB()`
+   - Records metrics with `operation="periodic"` label
+4. Non-leader workers skip and wait for next interval
 
 **When to enable**: If workers restart infrequently (e.g., weekly deploys) or you want extra resilience against missed Redis updates.
 
