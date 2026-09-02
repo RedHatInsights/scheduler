@@ -715,19 +715,28 @@ func runWorker(cmd *cobra.Command, args []string) {
 			// This worker is the leader, perform sync
 			log.Println("[WORKER] Elected as sync leader, performing database sync")
 
+			syncStart := time.Now()
 			lookahead := cfg.Scheduler.SyncLookaheadWindow
 			nearDueJobs, err := jobRepo.FindScheduledNearDue(lookahead)
 			if err != nil {
 				log.Printf("[WORKER] WARNING: Failed to load near-due jobs from Postgres: %v", err)
+				scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
 			} else {
 				log.Printf("[WORKER] Loaded %d jobs due within %s, syncing to Redis...",
 					len(nearDueJobs), lookahead)
+				scheduler.DBSyncJobsLoaded.Observe(float64(len(nearDueJobs)))
+
 				if err := redisScheduler.SyncJobsFromDB(nearDueJobs); err != nil {
 					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+					scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
 				} else {
+					syncDuration := time.Since(syncStart).Seconds()
+					scheduler.DBSyncDuration.Observe(syncDuration)
+					scheduler.DBSyncTotal.WithLabelValues("startup", "success").Inc()
+
 					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis (lookahead: %s)",
-						count, lookahead)
+					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis (lookahead: %s, duration: %.2fs)",
+						count, lookahead, syncDuration)
 				}
 			}
 		}
@@ -772,20 +781,29 @@ func runWorker(cmd *cobra.Command, args []string) {
 			defer ticker.Stop()
 
 			for range ticker.C {
+				syncStart := time.Now()
 				lookahead := cfg.Scheduler.SyncLookaheadWindow
 				log.Printf("[WORKER] Performing periodic sync from Postgres to Redis (lookahead: %s)", lookahead)
 				jobs, err := jobRepo.FindScheduledNearDue(lookahead)
 				if err != nil {
 					log.Printf("[WORKER] Periodic sync failed to load near-due jobs: %v", err)
+					scheduler.DBSyncTotal.WithLabelValues("periodic", "error").Inc()
 					continue
 				}
 
+				scheduler.DBSyncJobsLoaded.Observe(float64(len(jobs)))
+
 				if err := redisScheduler.SyncJobsFromDB(jobs); err != nil {
 					log.Printf("[WORKER] Periodic sync failed: %v", err)
+					scheduler.DBSyncTotal.WithLabelValues("periodic", "error").Inc()
 				} else {
+					syncDuration := time.Since(syncStart).Seconds()
+					scheduler.DBSyncDuration.Observe(syncDuration)
+					scheduler.DBSyncTotal.WithLabelValues("periodic", "success").Inc()
+
 					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis (loaded %d near-due jobs)",
-						count, len(jobs))
+					log.Printf("[WORKER] Periodic sync complete. %d jobs in Redis (loaded %d near-due jobs, duration: %.2fs)",
+						count, len(jobs), syncDuration)
 				}
 			}
 		}()
