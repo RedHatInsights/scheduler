@@ -691,53 +691,43 @@ func runWorker(cmd *cobra.Command, args []string) {
 	log.Println("[WORKER] Connected to Redis successfully")
 
 	// On startup, sync jobs from Postgres to Redis (for resilience)
-	// This ensures Redis has all scheduled jobs even after Redis restart
+	// This ensures Redis has current job state even after worker/Redis restarts
 	// Use leader election to prevent thundering herd (only one worker syncs)
-	log.Println("[WORKER] Checking if database sync is needed...")
+	// Sync is idempotent and safe to run on every startup
+	log.Println("[WORKER] Attempting to acquire sync leader lock...")
 
-	// First, check if Redis already has jobs
-	jobCount, err := redisScheduler.GetScheduledJobCount()
+	isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
 	if err != nil {
-		log.Printf("[WORKER] WARNING: Failed to check Redis job count: %v", err)
-	} else if jobCount > 0 {
-		log.Printf("[WORKER] Redis already has %d jobs, skipping sync", jobCount)
+		log.Printf("[WORKER] WARNING: Failed to acquire leader lock: %v", err)
+		log.Println("[WORKER] Continuing without sync...")
+	} else if !isLeader {
+		log.Println("[WORKER] Another worker is performing startup sync, skipping...")
 	} else {
-		// Redis is empty, try to become sync leader
-		log.Println("[WORKER] Redis is empty, attempting to acquire sync leader lock...")
+		// This worker is the leader, perform sync
+		log.Println("[WORKER] Elected as sync leader, performing database sync")
 
-		isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
+		syncStart := time.Now()
+		lookahead := cfg.Scheduler.SyncLookaheadWindow
+		nearDueJobs, err := jobRepo.FindScheduledNearDue(lookahead)
 		if err != nil {
-			log.Printf("[WORKER] WARNING: Failed to acquire leader lock: %v", err)
-			log.Println("[WORKER] Continuing without sync...")
-		} else if !isLeader {
-			log.Println("[WORKER] Another worker is syncing, skipping...")
+			log.Printf("[WORKER] WARNING: Failed to load near-due jobs from Postgres: %v", err)
+			scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
 		} else {
-			// This worker is the leader, perform sync
-			log.Println("[WORKER] Elected as sync leader, performing database sync")
+			log.Printf("[WORKER] Loaded %d jobs due within %s, syncing to Redis...",
+				len(nearDueJobs), lookahead)
+			scheduler.DBSyncJobsLoaded.Observe(float64(len(nearDueJobs)))
 
-			syncStart := time.Now()
-			lookahead := cfg.Scheduler.SyncLookaheadWindow
-			nearDueJobs, err := jobRepo.FindScheduledNearDue(lookahead)
-			if err != nil {
-				log.Printf("[WORKER] WARNING: Failed to load near-due jobs from Postgres: %v", err)
+			if err := redisScheduler.SyncJobsFromDB(nearDueJobs); err != nil {
+				log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
 				scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
 			} else {
-				log.Printf("[WORKER] Loaded %d jobs due within %s, syncing to Redis...",
-					len(nearDueJobs), lookahead)
-				scheduler.DBSyncJobsLoaded.Observe(float64(len(nearDueJobs)))
+				syncDuration := time.Since(syncStart).Seconds()
+				scheduler.DBSyncDuration.Observe(syncDuration)
+				scheduler.DBSyncTotal.WithLabelValues("startup", "success").Inc()
 
-				if err := redisScheduler.SyncJobsFromDB(nearDueJobs); err != nil {
-					log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
-					scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
-				} else {
-					syncDuration := time.Since(syncStart).Seconds()
-					scheduler.DBSyncDuration.Observe(syncDuration)
-					scheduler.DBSyncTotal.WithLabelValues("startup", "success").Inc()
-
-					count, _ := redisScheduler.GetScheduledJobCount()
-					log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis (lookahead: %s, duration: %.2fs)",
-						count, lookahead, syncDuration)
-				}
+				count, _ := redisScheduler.GetScheduledJobCount()
+				log.Printf("[WORKER] Sync complete. %d jobs scheduled in Redis (lookahead: %s, duration: %.2fs)",
+					count, lookahead, syncDuration)
 			}
 		}
 	}
