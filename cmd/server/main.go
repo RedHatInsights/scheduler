@@ -763,6 +763,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 	// Optional: Periodic re-sync from Postgres to catch any missed updates
 	// This is a safety mechanism in case API pods fail to update Redis
+	// Uses leader election to prevent all workers from syncing simultaneously
 	if cfg.Scheduler.EnablePeriodicSync {
 		syncInterval := cfg.Scheduler.DBToRedisSyncInterval
 		log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
@@ -771,6 +772,19 @@ func runWorker(cmd *cobra.Command, args []string) {
 			defer ticker.Stop()
 
 			for range ticker.C {
+				// Try to become sync leader (prevents redundant syncs across all workers)
+				isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
+				if err != nil {
+					log.Printf("[WORKER] Periodic sync: failed to acquire leader lock: %v", err)
+					continue
+				}
+				if !isLeader {
+					log.Println("[WORKER] Periodic sync: another worker is performing sync, skipping")
+					continue
+				}
+
+				// This worker is the leader, perform periodic sync
+				log.Println("[WORKER] Periodic sync: elected as leader")
 				syncStart := time.Now()
 				lookahead := cfg.Scheduler.SyncLookaheadWindow
 				log.Printf("[WORKER] Performing periodic sync from Postgres to Redis (lookahead: %s)", lookahead)
