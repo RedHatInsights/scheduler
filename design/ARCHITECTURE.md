@@ -484,12 +484,14 @@ Redis Data Structures:
    - Atomic `SET NX` operation ensures only one worker acquires lock
 
 3. **Startup Sync:**
-   - Worker checks if Redis has jobs: `ZCARD scheduler:jobs:scheduled`
-   - If empty: attempt leader election via `SETNX scheduler:sync:leader`
+   - Runs on **every worker startup** (not just when Redis is empty)
+   - Attempt leader election via `SETNX scheduler:sync:leader` (5-minute TTL)
    - Leader loads near-due jobs from PostgreSQL → Redis (lookahead window optimization)
    - Uses `FindScheduledNearDue(lookahead)` instead of `FindAll()` for performance
    - Window: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW` (default: 2h)
-   - Non-leaders skip sync (leader already populated Redis)
+   - Non-leaders skip sync and start polling immediately
+   - **Idempotent**: Safe to run on every startup, refreshes Redis with current DB state
+   - Records metrics: `scheduler_db_sync_duration_seconds`, `scheduler_db_sync_jobs_loaded`, `scheduler_db_sync_operations_total{operation="startup"}`
    - Performance: 10,000-job system syncs ~100 jobs in <1s vs all 10,000 in ~30s
 
 4. **Periodic Sync** (optional, hourly)
