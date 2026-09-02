@@ -627,18 +627,26 @@ deployments:
    - Persisted to disk (RDB + AOF)
    - External service - survives pod restarts
 
-**Startup Sync Process** (`cmd/server/main.go:575-612`):
+**Startup Sync Process** (`cmd/server/main.go:~696-738`):
 
 ```go
-// Worker startup sequence
-1. Check if Redis has jobs (ZCARD scheduler:jobs:scheduled)
-2. If Redis is empty:
-   - Attempt leader election (SETNX scheduler:sync:leader)
-   - If elected: Load near-due jobs from PostgreSQL (within lookahead window, default 2h)
-   - Sync PostgreSQL → Redis (ZADD for each scheduled job)
+// Worker startup sequence (runs on EVERY startup, not just when Redis is empty)
+1. Attempt leader election (SETNX scheduler:sync:leader, 5-minute TTL)
+   - Only one worker becomes sync leader
+   - Other workers skip sync and start polling immediately
+2. If elected leader:
+   - Load near-due jobs from PostgreSQL (within lookahead window, default 2h)
+   - Sync PostgreSQL → Redis via SyncJobsFromDB() (ZADD for each scheduled job)
    - Optimization: Only syncs jobs due within SCHEDULER_SYNC_LOOKAHEAD_WINDOW
-3. Start polling loop
+   - Records metrics: scheduler_db_sync_duration_seconds, scheduler_db_sync_jobs_loaded
+3. All workers start polling loop
 ```
+
+**Why sync on every startup** (not just when Redis is empty):
+- **Idempotent operation**: `SyncJobsFromDB` uses Redis SET/ZADD which safely overwrite existing jobs
+- **Refresh stale data**: Jobs updated in PostgreSQL get refreshed in Redis
+- **Recover from partial failures**: If previous sync only loaded some jobs, this completes the sync
+- **Simple and reliable**: No need to detect "is Redis out of date" - just sync and ensure consistency
 
 **Periodic Sync** (enabled via `ENABLE_PERIODIC_SYNC=true`):
 - Hourly sync from PostgreSQL → Redis (near-due jobs only)
@@ -985,6 +993,11 @@ scheduler_redis_worker_pool_utilization_percent   # Worker pool usage (0-100)
 # Scheduler metrics
 scheduler_jobs_scheduled_count
 scheduler_lock_acquisition_failures_total
+
+# Database to Redis sync metrics
+scheduler_db_sync_duration_seconds                    # Histogram: sync operation duration
+scheduler_db_sync_jobs_loaded                         # Histogram: jobs loaded per sync
+scheduler_db_sync_operations_total{operation,status}  # Counter: startup/periodic syncs by outcome
 
 # Database metrics
 scheduler_db_queries_total{operation="select|insert|update"}
