@@ -497,9 +497,11 @@ Redis Data Structures:
 4. **Periodic Sync** (optional, hourly)
    - Environment: `ENABLE_PERIODIC_SYNC=true`
    - Interval: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` (default: 1h)
+   - **Uses leader election**: Only one worker syncs per interval (prevents redundant DB queries)
    - Syncs near-due jobs from PostgreSQL → Redis (not all jobs)
    - Safety mechanism for Redis failures or race conditions
    - Self-healing: Refills Redis as lookahead window advances
+   - Efficiency: With 20 workers, only 1 queries DB per hour (not all 20)
 
 **Benefits:**
 - Horizontal scaling (multiple workers)

@@ -650,10 +650,12 @@ deployments:
 
 **Periodic Sync** (enabled via `ENABLE_PERIODIC_SYNC=true`):
 - Hourly sync from PostgreSQL → Redis (near-due jobs only)
+- Uses leader election to prevent redundant syncs (only one worker syncs per interval)
 - Uses lookahead window (default 2h) to load only jobs due soon
 - Safety mechanism for Redis failures or missed updates
-- Runs in background goroutine
+- Runs in background goroutine with timer-triggered leader election
 - Performance: 10,000-job system syncs ~100 near-due jobs instead of all 10,000
+- Efficiency: With 20 workers, only 1 worker queries DB per hour (not all 20)
 
 ### Lookahead Window Optimization
 
