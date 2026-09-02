@@ -258,13 +258,13 @@ func (s *ExportPollerService) completeRun(
 		return
 	}
 
-	s.sendNotification(ctx, externalJobID, job, status, logger)
+	s.sendNotification(ctx, externalJobID, job, status, run.ID, logger)
 
 	if s.failureTracker != nil {
 		if isComplete {
 			s.failureTracker.TrackSuccess(job, logger)
 		} else {
-			s.failureTracker.TrackFailure(job, errors.New(failureMsg), logger)
+			s.failureTracker.TrackFailure(job, errors.New(failureMsg), run.ID, logger)
 		}
 	}
 }
@@ -274,6 +274,7 @@ func (s *ExportPollerService) sendNotification(
 	exportID string,
 	job domain.Job,
 	status *polling.StatusResponse,
+	runID string,
 	logger *slog.Logger,
 ) {
 	if s.notifier == nil {
@@ -297,6 +298,8 @@ func (s *ExportPollerService) sendNotification(
 		Status:      string(status.Status),
 		DownloadURL: downloadURL,
 		ErrorMsg:    errorMsg,
+		RunID:       runID,
+		NextRunAt:   job.NextRunAt,
 	}
 
 	if err := s.notifier.JobComplete(ctx, notification, logger); err != nil {
@@ -373,10 +376,10 @@ func (s *ExportPollerService) markAsTimedOut(ctx context.Context, run domain.Job
 			Status: polling.StatusFailed,
 			Error:  exportTimeoutErrorMsg,
 		}
-		s.sendNotification(ctx, *currentRun.ExternalJobID, job, timeoutStatus, logger)
+		s.sendNotification(ctx, *currentRun.ExternalJobID, job, timeoutStatus, currentRun.ID, logger)
 	}
 
 	if s.failureTracker != nil {
-		s.failureTracker.TrackFailure(job, errors.New(exportTimeoutErrorMsg), logger)
+		s.failureTracker.TrackFailure(job, errors.New(exportTimeoutErrorMsg), currentRun.ID, logger)
 	}
 }

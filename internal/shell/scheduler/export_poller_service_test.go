@@ -340,6 +340,8 @@ func TestExportPollerService_TimeoutSendsNotification(t *testing.T) {
 	tracker := executor.NewFailureTracker(jobRepo, notifier, 3)
 
 	job := domain.NewJob("Test", "org-1", "user-1", "0 * * * *", "UTC", domain.PayloadExport, nil)
+	nextRun := time.Now().Add(1 * time.Hour)
+	job = job.WithNextRunAt(nextRun)
 	jobRepo.Save(job)
 
 	run := domain.NewJobRun(job.ID)
@@ -370,6 +372,12 @@ func TestExportPollerService_TimeoutSendsNotification(t *testing.T) {
 	}
 	if n.ExportID != "export-old" {
 		t.Errorf("Expected export ID in notification, got %q", n.ExportID)
+	}
+	if n.RunID != run.ID {
+		t.Errorf("Expected run_id=%s in notification, got %s", run.ID, n.RunID)
+	}
+	if n.NextRunAt == nil {
+		t.Error("Expected next_run_at to be set for scheduled job")
 	}
 }
 

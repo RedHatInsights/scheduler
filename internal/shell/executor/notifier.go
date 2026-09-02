@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"log/slog"
+	"time"
 )
 
 // ExportCompletionNotification contains the data for an export completion notification
@@ -14,6 +15,8 @@ type ExportCompletionNotification struct {
 	Status      string
 	DownloadURL string
 	ErrorMsg    string
+	RunID       string
+	NextRunAt   *time.Time
 }
 
 // JobAutoPausedNotification contains the data for a job auto-pause notification
@@ -24,6 +27,8 @@ type JobAutoPausedNotification struct {
 	UserID              string
 	ConsecutiveFailures int
 	ErrorMsg            string
+	RunID               string
+	NextRunAt           *time.Time
 }
 
 // JobCompletionNotifier defines the interface for sending job completion notifications

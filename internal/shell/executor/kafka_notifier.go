@@ -132,17 +132,26 @@ func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Cont
 // buildPlatformNotification creates a platform notification message from an export completion notification
 func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification, messageID string) *NotificationMessage {
 	context := map[string]interface{}{
-		"export_id":     notification.ExportID,
-		"job_id":        notification.JobID,
-		"job_name":      notification.JobName,
-		"status":        notification.Status,
-		"error_message": notification.ErrorMsg,
-		"download_url":  notification.DownloadURL,
+		"export_id":    notification.ExportID,
+		"job_id":       notification.JobID,
+		"job_name":     notification.JobName,
+		"status":       notification.Status,
+		"download_url": notification.DownloadURL,
 	}
 
 	// Add error message if present
 	if notification.ErrorMsg != "" {
 		context["error_message"] = notification.ErrorMsg
+	}
+
+	// Add run_id if present
+	if notification.RunID != "" {
+		context["run_id"] = notification.RunID
+	}
+
+	// Add next_run_at as RFC3339 string if present
+	if notification.NextRunAt != nil {
+		context["next_run_at"] = notification.NextRunAt.UTC().Format(time.RFC3339)
 	}
 
 	// Determine event type based on status
@@ -177,6 +186,16 @@ func (n *NotificationsBasedJobCompletionNotifier) buildAutoPausedPlatformNotific
 	// Add error message if present
 	if notification.ErrorMsg != "" {
 		context["error_message"] = notification.ErrorMsg
+	}
+
+	// Add run_id if present
+	if notification.RunID != "" {
+		context["run_id"] = notification.RunID
+	}
+
+	// Add next_run_at as RFC3339 string if present
+	if notification.NextRunAt != nil {
+		context["next_run_at"] = notification.NextRunAt.UTC().Format(time.RFC3339)
 	}
 
 	return &NotificationMessage{
