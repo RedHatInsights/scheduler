@@ -50,7 +50,7 @@ func (e *FailureTrackingExecutor) executeWithTracking(job domain.Job, jobRunID s
 
 	if e.tracker != nil {
 		if execErr != nil {
-			e.tracker.TrackFailure(job, execErr, logger)
+			e.tracker.TrackFailure(job, execErr, jobRunID, logger)
 		} else if job.Type != domain.PayloadExport {
 			// Export success tracking is handled by ExportPollerService
 			// when the export actually completes.

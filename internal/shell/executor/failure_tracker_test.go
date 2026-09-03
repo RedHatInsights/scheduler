@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -41,7 +42,7 @@ func TestFailureTracker_TrackFailure_BelowThreshold(t *testing.T) {
 	job := domain.NewJob("Test Job", "org-123", "user-456", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)
 
-	tracker.TrackFailure(job, errors.New("something broke"), logger)
+	tracker.TrackFailure(job, errors.New("something broke"), "run-123", logger)
 
 	updated, _ := repo.FindByID(job.ID)
 	if updated.ConsecutiveFailures != 1 {
@@ -67,9 +68,9 @@ func TestFailureTracker_TrackFailure_ReachesThreshold(t *testing.T) {
 	job := domain.NewJob("Test Job", "org-123", "user-456", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
 	repo.Save(job)
 
-	tracker.TrackFailure(job, errors.New("fail 1"), logger)
+	tracker.TrackFailure(job, errors.New("fail 1"), "run-1", logger)
 	job, _ = repo.FindByID(job.ID)
-	tracker.TrackFailure(job, errors.New("fail 2"), logger)
+	tracker.TrackFailure(job, errors.New("fail 2"), "run-2", logger)
 
 	updated, _ := repo.FindByID(job.ID)
 	if updated.ConsecutiveFailures != 2 {
@@ -84,6 +85,12 @@ func TestFailureTracker_TrackFailure_ReachesThreshold(t *testing.T) {
 	if notifier.jobAutoPausedCalls[0].ConsecutiveFailures != 2 {
 		t.Errorf("Expected 2 consecutive failures in notification, got %d", notifier.jobAutoPausedCalls[0].ConsecutiveFailures)
 	}
+	if notifier.jobAutoPausedCalls[0].RunID != "run-2" {
+		t.Errorf("Expected run_id 'run-2' in notification, got %s", notifier.jobAutoPausedCalls[0].RunID)
+	}
+	if notifier.jobAutoPausedCalls[0].NextRunAt != nil {
+		t.Errorf("Expected next_run_at to be nil for paused job, got %v", notifier.jobAutoPausedCalls[0].NextRunAt)
+	}
 }
 
 func TestFailureTracker_TrackFailure_ThresholdDisabled(t *testing.T) {
@@ -96,7 +103,7 @@ func TestFailureTracker_TrackFailure_ThresholdDisabled(t *testing.T) {
 	repo.Save(job)
 
 	for i := 0; i < 10; i++ {
-		tracker.TrackFailure(job, errors.New("fail"), logger)
+		tracker.TrackFailure(job, errors.New("fail"), fmt.Sprintf("run-%d", i), logger)
 		job, _ = repo.FindByID(job.ID)
 	}
 

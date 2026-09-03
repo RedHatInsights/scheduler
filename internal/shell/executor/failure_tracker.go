@@ -37,7 +37,7 @@ func (t *FailureTracker) TrackSuccess(job domain.Job, logger *slog.Logger) {
 	}
 }
 
-func (t *FailureTracker) TrackFailure(job domain.Job, execErr error, logger *slog.Logger) {
+func (t *FailureTracker) TrackFailure(job domain.Job, execErr error, runID string, logger *slog.Logger) {
 	updatedJob := job.WithFailuresIncremented(time.Now().UTC())
 
 	JobsConsecutiveFailures.Observe(float64(updatedJob.ConsecutiveFailures))
@@ -67,12 +67,12 @@ func (t *FailureTracker) TrackFailure(job domain.Job, execErr error, logger *slo
 			slog.Int("consecutive_failures", updatedJob.ConsecutiveFailures))
 
 		if wasAutoPaused && t.notifier != nil {
-			t.sendAutoPausedNotification(updatedJob, execErr, logger)
+			t.sendAutoPausedNotification(updatedJob, execErr, runID, logger)
 		}
 	}
 }
 
-func (t *FailureTracker) sendAutoPausedNotification(job domain.Job, lastError error, logger *slog.Logger) {
+func (t *FailureTracker) sendAutoPausedNotification(job domain.Job, lastError error, runID string, logger *slog.Logger) {
 	errorMsg := ""
 	if lastError != nil {
 		errorMsg = lastError.Error()
@@ -85,6 +85,8 @@ func (t *FailureTracker) sendAutoPausedNotification(job domain.Job, lastError er
 		UserID:              job.UserID,
 		ConsecutiveFailures: job.ConsecutiveFailures,
 		ErrorMsg:            errorMsg,
+		RunID:               runID,
+		NextRunAt:           job.NextRunAt,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
