@@ -230,7 +230,7 @@ go run cmd/server/main.go
    - Acquire distributed locks to prevent duplicates
    - Execute jobs via job executor framework
    - Write job run history to Postgres
-   - Periodic sync from Postgres → Redis (hourly)
+   - Periodic sync from Postgres → Redis (hourly, near-due jobs only within lookahead window)
    - Stateless, scale based on job execution volume
    - Port: 8080 (metrics)
 
@@ -512,8 +512,8 @@ scaleDown:
 - ❌ **New job schedules not updated** (API writes fail)
 
 **Recovery**:
-1. Workers perform hourly sync: Postgres → Redis
-2. On startup, all workers sync from Postgres
+1. Workers perform hourly sync: Postgres → Redis (near-due jobs within lookahead window, default 2h)
+2. On startup, all workers sync near-due jobs from Postgres (lookahead window optimization)
 3. Redis persistence (RDB + AOF) restores schedule after restart
 
 **Mitigation**:
@@ -627,22 +627,78 @@ deployments:
    - Persisted to disk (RDB + AOF)
    - External service - survives pod restarts
 
-**Startup Sync Process** (`cmd/server/main.go:575-612`):
+**Startup Sync Process** (`cmd/server/main.go:~696-738`):
 
 ```go
-// Worker startup sequence
-1. Check if Redis has jobs (ZCARD scheduler:jobs:scheduled)
-2. If Redis is empty:
-   - Attempt leader election (SETNX scheduler:sync:leader)
-   - If elected: Load all jobs from PostgreSQL
-   - Sync PostgreSQL → Redis (ZADD for each scheduled job)
-3. Start polling loop
+// Worker startup sequence (runs on EVERY startup, not just when Redis is empty)
+1. Attempt leader election (SETNX scheduler:sync:leader, 5-minute TTL)
+   - Only one worker becomes sync leader
+   - Other workers skip sync and start polling immediately
+2. If elected leader:
+   - Load near-due jobs from PostgreSQL (within lookahead window, default 2h)
+   - Sync PostgreSQL → Redis via SyncJobsFromDB() (ZADD for each scheduled job)
+   - Optimization: Only syncs jobs due within SCHEDULER_SYNC_LOOKAHEAD_WINDOW
+   - Records metrics: scheduler_db_sync_duration_seconds, scheduler_db_sync_jobs_loaded
+3. All workers start polling loop
 ```
 
+**Why sync on every startup** (not just when Redis is empty):
+- **Idempotent operation**: `SyncJobsFromDB` uses Redis SET/ZADD which safely overwrite existing jobs
+- **Refresh stale data**: Jobs updated in PostgreSQL get refreshed in Redis
+- **Recover from partial failures**: If previous sync only loaded some jobs, this completes the sync
+- **Simple and reliable**: No need to detect "is Redis out of date" - just sync and ensure consistency
+
 **Periodic Sync** (enabled via `ENABLE_PERIODIC_SYNC=true`):
-- Hourly sync from PostgreSQL → Redis
+- Hourly sync from PostgreSQL → Redis (near-due jobs only)
+- Uses leader election to prevent redundant syncs (only one worker syncs per interval)
+- Uses lookahead window (default 2h) to load only jobs due soon
 - Safety mechanism for Redis failures or missed updates
-- Runs in background goroutine
+- Runs in background goroutine with timer-triggered leader election
+- Performance: 10,000-job system syncs ~100 near-due jobs instead of all 10,000
+- Efficiency: With 20 workers, only 1 worker queries DB per hour (not all 20)
+
+### Lookahead Window Optimization
+
+**Problem**: Loading all jobs during sync is slow and memory-intensive:
+- Single query loads all rows (no chunking)
+- All jobs loaded into memory simultaneously
+- 10,000 jobs = ~30s startup time, large memory spike
+- Syncs jobs due months/years in the future (wasted work)
+
+**Solution**: Only sync jobs due within a configurable lookahead window (default: 2h)
+
+**Query** (`FindScheduledNearDue`):
+```sql
+SELECT ... FROM jobs
+WHERE status = 'scheduled'
+  AND next_run_at IS NOT NULL
+  AND next_run_at <= NOW() + $lookahead_window
+ORDER BY next_run_at ASC  -- Earliest due first
+```
+
+**Benefits**:
+- **Faster startup**: Load 100 jobs instead of 10,000 (~30s → <1s)
+- **Lower memory**: Redis only holds jobs due soon
+- **Scalability**: Sync time = O(near-due jobs) not O(all jobs)
+- **Self-healing**: Periodic sync naturally "refills" Redis as time advances
+
+**Configuration**:
+- `SCHEDULER_SYNC_LOOKAHEAD_WINDOW` (default: `2h`)
+- Should be ≥ 2× `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` to avoid gaps
+- Validation warning logged if misconfigured
+
+**Example** (10,000 total jobs):
+```
+Startup (t=0):    Load jobs due between now and now+2h → ~100 jobs
+Periodic (t=1h):  Load jobs due between now and now+2h → ~100 jobs (different set)
+Periodic (t=2h):  Load jobs due between now and now+2h → ~100 jobs (refills as window advances)
+```
+
+**Edge Cases**:
+- ✅ Jobs created via API → API immediately writes to Redis
+- ✅ Jobs updated via API → API updates Redis
+- ✅ Job far in future becomes near-due → Periodic sync catches it
+- ✅ Manual trigger (`/jobs/{id}/run`) → Uses `ScheduleJobImmediately()`
 
 ### Rolling Deployment Flow
 
@@ -720,8 +776,8 @@ T+195   -          -          -          v1.1 ✓     v1.1 ✓     v1.1 ✓  3 (
    - Result: Jobs delayed but NOT lost
 
 2. **Redis failure during deployment**
-   - Workers sync from PostgreSQL on startup
-   - Periodic sync restores Redis state
+   - Workers sync near-due jobs from PostgreSQL on startup (lookahead window)
+   - Periodic sync restores Redis state (near-due jobs only)
    - Jobs execute once Redis recovers
    - Result: Delayed until Redis returns
 
@@ -912,8 +968,8 @@ The scheduler service prevents missed jobs during deployments through:
 3. **Graceful shutdown**: 5-minute grace period for job completion
 4. **PreStop hooks**: 15-second buffer before SIGTERM
 5. **Dual persistence**: Redis + PostgreSQL ensure job state survival
-6. **Startup sync**: New workers sync from PostgreSQL on startup
-7. **Periodic sync**: Hourly PostgreSQL → Redis safety sync
+6. **Startup sync**: New workers sync near-due jobs from PostgreSQL (lookahead window optimization)
+7. **Periodic sync**: Hourly PostgreSQL → Redis safety sync (near-due jobs only, ~100 vs 10,000)
 8. **Overdue job processing**: Workers process ALL overdue jobs, not just current interval
 9. **Distributed locking**: Prevents duplicate execution across workers
 10. **Timestamp tracking**: Jobs track `last_run_at` and `next_run_at` in both stores
@@ -939,6 +995,11 @@ scheduler_redis_worker_pool_utilization_percent   # Worker pool usage (0-100)
 # Scheduler metrics
 scheduler_jobs_scheduled_count
 scheduler_lock_acquisition_failures_total
+
+# Database to Redis sync metrics
+scheduler_db_sync_duration_seconds                    # Histogram: sync operation duration
+scheduler_db_sync_jobs_loaded                         # Histogram: jobs loaded per sync
+scheduler_db_sync_operations_total{operation,status}  # Counter: startup/periodic syncs by outcome
 
 # Database metrics
 scheduler_db_queries_total{operation="select|insert|update"}
