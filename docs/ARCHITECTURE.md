@@ -346,7 +346,7 @@ The scheduler automatically pauses jobs that fail repeatedly:
 
 **Notifications:**
 - Auto-paused jobs trigger Kafka notification to `platform.notifications.ingress` topic
-- Event type: `job-auto-paused`
+- Event type: `job-failed-paused`
 - Context includes: `job_id`, `consecutive_failures`, `last_error`
 
 **Metrics:**

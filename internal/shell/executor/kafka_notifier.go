@@ -203,7 +203,7 @@ func (n *NotificationsBasedJobCompletionNotifier) buildAutoPausedPlatformNotific
 		Version:     "v1.0.0",
 		Bundle:      NOTIFICATIONS_BUNDLE,
 		Application: NOTIFICATIONS_APP,
-		EventType:   "job-auto-paused",
+		EventType:   "job-failed-paused",
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		OrgID:       notification.OrgID,
 		Context:     context,
