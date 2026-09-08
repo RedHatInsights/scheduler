@@ -689,13 +689,13 @@ type JobCompletionNotifier interface {
 }
 ```
 
-2. **Job Auto-Paused:**
+2. **Job Failed-Paused:**
 ```json
 {
   "version": "v1.2.0",
   "bundle": "rhel",
   "application": "insights-scheduler",
-  "event_type": "job-auto-paused",
+  "event_type": "job-failed-paused",
   "timestamp": "2026-07-01T10:35:00Z",
   "account_id": "",
   "org_id": "000101",
