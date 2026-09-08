@@ -140,9 +140,16 @@
                     "schedule": "0 0 1 * *",
                     "type": "export",
                     "payload": {
-                      "application": "inventory",
-                      "resource": "recommendations",
-                      "format": "json"
+                        "name": "Inventory Sync Export",
+                        "format": "json",
+                        "sources": [
+                            {
+                                "application": "urn:redhat:application:inventory",
+                                "resource": "urn:redhat:application:inventory:export:systems",
+                                "filters": {
+                                }
+                            }
+                        ]
                     }
                   }
                 }
