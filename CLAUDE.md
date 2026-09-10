@@ -102,6 +102,63 @@ Jobs support four payload types:
 - `command` - Command execution (simulated)
 - `export` - Red Hat Insights export service integration (production implementation)
 
+## Database to Redis Sync Architecture
+
+The scheduler uses PostgreSQL as the source of truth and Redis as a fast, distributed scheduling index. Workers sync jobs from PostgreSQL to Redis to ensure consistent state across deployments and Redis restarts.
+
+### Startup Sync (On Every Worker Launch)
+
+**When**: Every time a worker pod starts  
+**Purpose**: Ensure Redis has current job state from the database  
+**Mechanism**: Leader election via Redis to prevent thundering herd
+
+**How it works**:
+1. Worker attempts to acquire a distributed lock via `TryAcquireLeader(5 * time.Minute)`
+2. Only one worker becomes the "sync leader" (others skip and start polling immediately)
+3. Sync leader loads near-due jobs: `FindScheduledNearDue(SCHEDULER_SYNC_LOOKAHEAD_WINDOW)`
+   - Default: Jobs due within next 2 hours
+   - Filters: `status = 'scheduled' AND next_run_at <= NOW() + lookahead`
+   - Sorted by `next_run_at ASC` (earliest due first)
+4. Syncs to Redis via `SyncJobsFromDB()` which calls `ScheduleJob()` for each job
+5. Records metrics: `scheduler_db_sync_duration_seconds`, `scheduler_db_sync_jobs_loaded`, `scheduler_db_sync_operations_total{operation="startup"}`
+
+**Why sync on every startup** (not just when Redis is empty):
+- Refreshes jobs that may have been updated in the database
+- Recovers from partial sync failures
+- Ensures new workers have fresh data even if Redis has stale jobs
+- Safe because `SyncJobsFromDB` is idempotent (uses Redis `SET`/`ZADD` which overwrite)
+
+**Performance**: With default 2h lookahead, a system with 10,000 jobs typically syncs only ~100 near-due jobs in <1 second.
+
+### Periodic Sync (Optional Background Maintenance)
+
+**When**: On a configurable interval (default: 1 hour) if `ENABLE_PERIODIC_SYNC=true`  
+**Purpose**: Catch jobs that become near-due between worker restarts, or recover if API pods fail to update Redis  
+**Mechanism**: Leader election via Redis (same as startup sync) to prevent redundant DB queries
+
+**How it works**:
+1. Timer fires every `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL`
+2. Each worker attempts leader election via `TryAcquireLeader(5 * time.Minute)`
+3. Only the elected leader performs sync:
+   - Loads near-due jobs: `FindScheduledNearDue(SCHEDULER_SYNC_LOOKAHEAD_WINDOW)`
+   - Syncs to Redis via `SyncJobsFromDB()`
+   - Records metrics with `operation="periodic"` label
+4. Non-leader workers skip and wait for next interval
+
+**When to enable**: If workers restart infrequently (e.g., weekly deploys) or you want extra resilience against missed Redis updates.
+
+**Tuning recommendation**: Set `SCHEDULER_SYNC_LOOKAHEAD_WINDOW >= 2x SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` to avoid gaps where jobs enter the lookahead window between syncs.
+
+### Metrics for Monitoring Sync Health
+
+- `scheduler_db_sync_duration_seconds` (histogram) - How long each sync takes
+- `scheduler_db_sync_jobs_loaded` (histogram) - Number of jobs loaded per sync
+- `scheduler_db_sync_operations_total{operation,status}` (counter) - Count of syncs by type (startup/periodic) and outcome (success/error)
+
+**Alert if**: p95 duration > 5s, error rate > 5%, or jobs_loaded unexpectedly high (indicates misconfigured lookahead window).
+
+See [Database Sync Metrics Documentation](docs/db-sync-metrics.md) for detailed monitoring guidance.
+
 ## Environment Variables
 
 ### Scheduler Timing Configuration
@@ -123,6 +180,14 @@ Jobs support four payload types:
 - Default: `1h`
 - Description: How often workers sync jobs from PostgreSQL to Redis (requires `ENABLE_PERIODIC_SYNC=true`)
 - Example: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=30m`
+
+**Database to Redis Sync Lookahead Window**:
+- Variable: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW`
+- Default: `2h`
+- Description: Time window for syncing near-due jobs from PostgreSQL to Redis. Only jobs with `next_run_at` within this window are loaded during sync operations.
+- Example: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW=4h`
+- Tuning: Should be >= 2x `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` when periodic sync is enabled to avoid gaps. Larger values increase sync time but provide more buffer for worker restarts.
+- Performance: With default 2h window, a 10,000-job system might only sync 100 near-due jobs, reducing startup time from 30s to <1s.
 
 **Auto-Pause on Consecutive Failures**:
 - Variable: `MAX_CONSECUTIVE_FAILURES`

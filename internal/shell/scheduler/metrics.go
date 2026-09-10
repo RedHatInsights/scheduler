@@ -47,4 +47,35 @@ var (
 		Name:      "in_flight_runs",
 		Help:      "Number of in-flight export runs observed in the most recent poll scan",
 	})
+
+	// DBSyncDuration tracks how long database to Redis sync operations take.
+	// Use to measure performance improvement from lookahead window optimization
+	// and alert on slow syncs that could delay job execution.
+	DBSyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "scheduler",
+		Subsystem: "db_sync",
+		Name:      "duration_seconds",
+		Help:      "Duration of database to Redis sync operations",
+		Buckets:   prometheus.ExponentialBuckets(0.001, 2, 15), // 1ms to ~16s
+	})
+
+	// DBSyncJobsLoaded tracks the number of jobs loaded from the database during sync.
+	// Use to track correlation between job count and sync duration and monitor
+	// the effectiveness of the lookahead window filter.
+	DBSyncJobsLoaded = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "scheduler",
+		Subsystem: "db_sync",
+		Name:      "jobs_loaded",
+		Help:      "Number of jobs loaded from database during sync",
+		Buckets:   prometheus.ExponentialBuckets(1, 2, 15), // 1 to ~16k jobs
+	})
+
+	// DBSyncTotal counts database sync operations by type and outcome.
+	// Labels: operation (startup, periodic), status (success, error)
+	DBSyncTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "scheduler",
+		Subsystem: "db_sync",
+		Name:      "operations_total",
+		Help:      "Total number of database sync operations",
+	}, []string{"operation", "status"})
 )

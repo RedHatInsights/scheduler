@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
@@ -62,6 +63,10 @@ func (m *mockJobRepositoryForHandler) FindByID(id string) (domain.Job, error) {
 }
 
 func (m *mockJobRepositoryForHandler) FindAll() ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (m *mockJobRepositoryForHandler) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
 	return nil, nil
 }
 

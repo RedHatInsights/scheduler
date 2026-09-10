@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
 
@@ -85,6 +86,10 @@ func (m *mockJobRepositoryForRuns) FindByID(id string) (domain.Job, error) {
 }
 
 func (m *mockJobRepositoryForRuns) FindAll() ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (m *mockJobRepositoryForRuns) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
 	return nil, nil
 }
 
