@@ -24,4 +24,16 @@ var (
 		},
 		[]string{"method", "status"},
 	)
+
+	// ParsecUserValidationDuration tracks the duration of token-exchange calls to parsec.
+	// Its automatically-exported _count series (same labels) doubles as the request total,
+	// so no separate counter is needed.
+	ParsecUserValidationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "scheduler_parsec_user_validation_duration_seconds",
+			Help:    "Duration of calls to parsec for user validation service in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
 )

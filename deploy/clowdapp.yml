@@ -259,6 +259,8 @@ objects:
           value: "-1"
         - name: THREESCALE_URL
           value: ${THREESCALE_URL}
+        - name: PARSEC_URL
+          value: ${PARSEC_URL}
         - name: SCHEDULER_DENYLIST_JOB_IDS
           value: ${SCHEDULER_DENYLIST_JOB_IDS}
 
@@ -363,6 +365,9 @@ parameters:
   required: true
 - name: THREESCALE_URL
   value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
+- name: PARSEC_URL
+  description: parsec token-exchange service URL (used when USER_VALIDATOR_IMPL=parsec)
+  value: http://parsec-service:8080
 
 - name: JOB_COMPLETION_NOTIFIER_IMPL
   value: "notifications"

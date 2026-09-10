@@ -28,6 +28,7 @@ type Config struct {
 	Bop           BopConfig           `mapstructure:"bop" json:"bop"`
 	Scheduler     SchedulerConfig     `mapstructure:"scheduler" json:"scheduler"`
 	ThreeScale    ThreeScaleConfig    `mapstructure:"threescale" json:"threescale"`
+	Parsec        ParsecConfig        `mapstructure:"parsec" json:"parsec"`
 	OrgIDGuard    OrgIDGuardConfig    `mapstructure:"org_id_guard" json:"org_id_guard"`
 
 	UserValidatorImpl         string           `mapstructure:"user_validator_impl" json:"user_validator_impl"`
@@ -155,6 +156,12 @@ type ThreeScaleConfig struct {
 	BaseURL string        `mapstructure:"base_url" json:"base_url"`
 	Timeout time.Duration `mapstructure:"timeout" json:"timeout"`
 	Enabled bool          `mapstructure:"enabled" json:"enabled"`
+}
+
+// ParsecConfig contains parsec token-exchange service settings
+type ParsecConfig struct {
+	BaseURL string        `mapstructure:"base_url" json:"base_url"`
+	Timeout time.Duration `mapstructure:"timeout" json:"timeout"`
 }
 
 // OrgIDGuardConfig restricts API access to a set of allowed org IDs.
@@ -328,6 +335,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("threescale.timeout", 5*time.Second)
 	v.SetDefault("threescale.enabled", true)
 
+	// parsec
+	v.SetDefault("parsec.base_url", "http://parsec-service:8080")
+	v.SetDefault("parsec.timeout", 5*time.Second)
+
 	// Org ID Guard
 	v.SetDefault("org_id_guard.enabled", false)
 	v.SetDefault("org_id_guard.allowed_org_ids", []string{})
@@ -445,6 +456,10 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("threescale.base_url", "THREESCALE_URL")
 	_ = v.BindEnv("threescale.timeout", "THREESCALE_TIMEOUT")
 	_ = v.BindEnv("threescale.enabled", "THREESCALE_ENABLED")
+
+	// parsec
+	_ = v.BindEnv("parsec.base_url", "PARSEC_URL")
+	_ = v.BindEnv("parsec.timeout", "PARSEC_TIMEOUT")
 
 	// Org ID Guard
 	_ = v.BindEnv("org_id_guard.enabled", "ORG_ID_GUARD_ENABLED")
@@ -734,6 +749,11 @@ func (c *Config) Validate() error {
 		if c.ThreeScale.BaseURL == "" {
 			return fmt.Errorf("3scale base URL is required when 3scale is enabled")
 		}
+	}
+
+	// Validate parsec configuration (only when it is the selected user validator)
+	if c.UserValidatorImpl == "parsec" && c.Parsec.BaseURL == "" {
+		return fmt.Errorf("parsec base URL is required when USER_VALIDATOR_IMPL=parsec")
 	}
 
 	return nil
