@@ -110,8 +110,8 @@ func TestBuildAutoPausedPlatformNotification_BaseFields(t *testing.T) {
 
 	msg := n.buildAutoPausedPlatformNotification(notification, "message-9")
 
-	if msg.EventType != "job-auto-paused" {
-		t.Errorf("Expected event type 'job-auto-paused', got %q", msg.EventType)
+	if msg.EventType != "job-failed-paused" {
+		t.Errorf("Expected event type 'job-failed-paused', got %q", msg.EventType)
 	}
 	if msg.Context["consecutive_failures"] != 3 {
 		t.Errorf("Expected consecutive_failures 3, got %v", msg.Context["consecutive_failures"])
