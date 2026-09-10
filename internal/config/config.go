@@ -527,7 +527,7 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 		envRedisHost := os.Getenv("REDIS_HOST")
 		if envRedisHost != "" {
 			fmt.Println("FIXME: pulling redis hostname from env var!  This is a hack!")
-			config.Redis.Host = clowderConfig.InMemoryDb.Hostname
+			config.Redis.Host = envRedisHost
 		}
 
 		envRedisTlsEnabled := os.Getenv("REDIS_TLS_ENABLED")
