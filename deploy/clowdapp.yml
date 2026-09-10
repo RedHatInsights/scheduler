@@ -134,12 +134,6 @@ objects:
           value: ${JOB_COMPLETION_NOTIFIER_IMPL}
         - name: REDIS_ENABLED
           value: "true"
-        - name: REDIS_HOST
-          value: ${REDIS_HOST}
-        - name: REDIS_TLS_ENABLED
-          value: ${REDIS_TLS_ENABLED}
-        - name: REDIS_TLS_INSECURE_SKIP_VERIFY
-          value: ${REDIS_TLS_INSECURE_SKIP_VERIFY}
         - name: ORG_ID_GUARD_ENABLED
           value: ${ORG_ID_GUARD_ENABLED}
         - name: ORG_ID_GUARD_ALLOWED_ORG_IDS
@@ -211,12 +205,6 @@ objects:
           value: 5m
         - name: REDIS_ENABLED
           value: "true"
-        - name: REDIS_HOST
-          value: ${REDIS_HOST}
-        - name: REDIS_TLS_ENABLED
-          value: ${REDIS_TLS_ENABLED}
-        - name: REDIS_TLS_INSECURE_SKIP_VERIFY
-          value: ${REDIS_TLS_INSECURE_SKIP_VERIFY}
         - name: ENABLE_PERIODIC_SYNC
           value: "true"
         - name: SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL
@@ -394,14 +382,4 @@ parameters:
   value: "10"
 - name: SCHEDULER_DENYLIST_JOB_IDS
   description: Comma-separated list of job IDs to deny execution (jobs will be logged but not run)
-  value: ""
-
-- name: REDIS_HOST
-  description: Override Redis hostname (hack for Clowder/app-interface misconfiguration)
-  value: ""
-- name: REDIS_TLS_ENABLED
-  description: Override Redis TLS enabled flag (hack for Clowder/app-interface misconfiguration)
-  value: ""
-- name: REDIS_TLS_INSECURE_SKIP_VERIFY
-  description: Override Redis TLS insecure skip verify flag (hack for Clowder/app-interface misconfiguration)
   value: ""
