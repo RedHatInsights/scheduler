@@ -25,41 +25,41 @@ arches:
     name: gcc-c++
     evr: 16.2.1-2.hum1
     sourcerpm: gcc-16.2.1-2.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libblkid-2.42.2-3.1.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libblkid-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 142203
-    checksum: sha256:aeab8f71ca696d295eb976a4857e366f3c1b9610c1f8592a4ec77154bca9ca1e
+    size: 142325
+    checksum: sha256:02fc85abe66e87a2c3aefc84b7101df2057fd86340617b7e84c7d1abb0106633
     name: libblkid
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libfdisk-2.42.2-3.1.hum1.x86_64.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libfdisk-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 178393
-    checksum: sha256:8cf7a46f7288f90bebb814b7392970c6b287ab2668edc54ef5e86b342b6ddb2a
+    size: 178370
+    checksum: sha256:3405b4bd654cba45c543da14f4b86a89bdd1a1dc898c7b9816bcb3ba982eddf3
     name: libfdisk
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/liblastlog2-2.42.2-3.1.hum1.x86_64.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/liblastlog2-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 30282
-    checksum: sha256:2d7624bcde97c854b1c94ac3c5f6a038a3c11d947e27a863c7f1e002fad74603
+    size: 30576
+    checksum: sha256:521afdac955c29c131c84396c78a69d7cd4e452abf2f781c43764101fc21cae1
     name: liblastlog2
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libmount-2.42.2-3.1.hum1.x86_64.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libmount-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 187099
-    checksum: sha256:55d177a13b96b91164820c86368b04b92163b2ea7982abd9c50c1006b9779e42
+    size: 187878
+    checksum: sha256:060f1c0de0f8f514280df2db317d77488235397686ac8894135300fa3dba3e12
     name: libmount
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libsmartcols-2.42.2-3.1.hum1.x86_64.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libsmartcols-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 95700
-    checksum: sha256:bd8e664cf9b90acdb62e0fed4ca2682f763696053dffae8e24e473fa806169c6
+    size: 95764
+    checksum: sha256:9d561f878715df5222bf866cdcac67ff03833a3afd2320d0bb4b11532300c046
     name: libsmartcols
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libstdc++-devel-16.2.1-2.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 6338246
@@ -67,13 +67,13 @@ arches:
     name: libstdc++-devel
     evr: 16.2.1-2.hum1
     sourcerpm: gcc-16.2.1-2.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libuuid-2.42.2-3.1.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libuuid-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 33082
-    checksum: sha256:43eaf4d999318f7440a882806f029a1742013e5bdb8180fa354aee01332006c1
+    size: 32988
+    checksum: sha256:9f4fc90694ae8b0cee888fdb6a4c5a7bda200c67b2be21e05798d11af1207563
     name: libuuid
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-devel-3.5.8-0.1.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 4539579
@@ -102,19 +102,19 @@ arches:
     name: sqlite-libs
     evr: 3.53.4-1.hum1
     sourcerpm: sqlite-3.53.4-1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/u/util-linux-2.42.2-3.1.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/u/util-linux-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 1383423
-    checksum: sha256:b53a5b2e23abb60215cbb16b3f1adb22598885ed92cc355eb5ff59140a9c093c
+    size: 1385681
+    checksum: sha256:bf91a6d502b271aa28b0367ed63e96e225231c269f60e22912fe594424fd19ea
     name: util-linux
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/u/util-linux-core-2.42.2-3.1.hum1.x86_64.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/u/util-linux-core-2.42.2-3.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 615206
-    checksum: sha256:abee81a70545dbfeb527a4e0a7f140e0628a0eacdcaeb4904813877026368862
+    size: 614590
+    checksum: sha256:1bac841f53f57c1c59b531a5567e485de53dfba91bd800e5ea061eaf0c278bc7
     name: util-linux-core
-    evr: 2.42.2-3.1.hum1
-    sourcerpm: util-linux-2.42.2-3.1.hum1.src.rpm
+    evr: 2.42.2-3.4.hum1
+    sourcerpm: util-linux-2.42.2-3.4.hum1.src.rpm
   source: []
   module_metadata: []
