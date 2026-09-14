@@ -129,6 +129,15 @@ func (n *NotificationsBasedJobCompletionNotifier) JobAutoPaused(ctx context.Cont
 	return nil
 }
 
+// formatNextRunAtUTC formats a timestamp as UTC without timezone suffix
+// Returns the time in "2006-01-02T15:04:05" format (ISO 8601, implicitly UTC)
+func formatNextRunAtUTC(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05")
+}
+
 // buildPlatformNotification creates a platform notification message from an export completion notification
 func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(notification *ExportCompletionNotification, messageID string) *NotificationMessage {
 	context := map[string]interface{}{
@@ -149,9 +158,9 @@ func (n *NotificationsBasedJobCompletionNotifier) buildPlatformNotification(noti
 		context["run_id"] = notification.RunID
 	}
 
-	// Add next_run_at as RFC3339 string if present
-	if notification.NextRunAt != nil {
-		context["next_run_at"] = notification.NextRunAt.UTC().Format(time.RFC3339)
+	// Add next_run_at as UTC string without timezone if present
+	if nextRunAt := formatNextRunAtUTC(notification.NextRunAt); nextRunAt != "" {
+		context["next_run_at"] = nextRunAt
 	}
 
 	// Determine event type based on status
@@ -193,9 +202,9 @@ func (n *NotificationsBasedJobCompletionNotifier) buildAutoPausedPlatformNotific
 		context["run_id"] = notification.RunID
 	}
 
-	// Add next_run_at as RFC3339 string if present
-	if notification.NextRunAt != nil {
-		context["next_run_at"] = notification.NextRunAt.UTC().Format(time.RFC3339)
+	// Add next_run_at as UTC string without timezone if present
+	if nextRunAt := formatNextRunAtUTC(notification.NextRunAt); nextRunAt != "" {
+		context["next_run_at"] = nextRunAt
 	}
 
 	return &NotificationMessage{
