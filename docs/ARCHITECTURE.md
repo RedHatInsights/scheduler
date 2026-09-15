@@ -648,14 +648,15 @@ deployments:
 - **Recover from partial failures**: If previous sync only loaded some jobs, this completes the sync
 - **Simple and reliable**: No need to detect "is Redis out of date" - just sync and ensure consistency
 
-**Periodic Sync** (enabled via `ENABLE_PERIODIC_SYNC=true`):
+**Periodic Sync** (enabled by default, disable via `ENABLE_PERIODIC_SYNC=false`):
 - Hourly sync from PostgreSQL → Redis (near-due jobs only)
 - Uses leader election to prevent redundant syncs (only one worker syncs per interval)
 - Uses lookahead window (default 2h) to load only jobs due soon
-- Safety mechanism for Redis failures or missed updates
+- **Critical for resilience**: Ensures Redis eventually contains all near-due jobs even if Redis loses data between worker restarts
+- Without periodic sync: If Redis loses data and workers don't restart, jobs >2h out never re-enter Redis
 - Runs in background goroutine with timer-triggered leader election
 - Performance: 10,000-job system syncs ~100 near-due jobs instead of all 10,000
-- Efficiency: With 20 workers, only 1 worker queries DB per hour (not all 20)
+- Efficiency: With 20 workers, only 1 worker queries DB per hour (minimal overhead: ~1 query/hour total)
 
 ### Lookahead Window Optimization
 
@@ -899,8 +900,9 @@ terminationGracePeriodSeconds: 300
 
 **Environment Variables**:
 ```bash
-# Enable periodic PostgreSQL → Redis sync (hourly)
-ENABLE_PERIODIC_SYNC=true
+# Periodic PostgreSQL → Redis sync (enabled by default, runs hourly)
+# Set to false only if you guarantee frequent worker restarts or Redis persistence
+# ENABLE_PERIODIC_SYNC=false
 
 # Shutdown timeout for workers (5 minutes)
 SHUTDOWN_TIMEOUT=300s

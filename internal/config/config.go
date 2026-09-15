@@ -322,7 +322,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scheduler.redis_poll_interval", 10*time.Second)
 	v.SetDefault("scheduler.db_to_redis_sync_interval", 1*time.Hour)
 	v.SetDefault("scheduler.sync_lookahead_window", 2*time.Hour)
-	v.SetDefault("scheduler.enable_periodic_sync", false)
+	v.SetDefault("scheduler.enable_periodic_sync", true)
 	v.SetDefault("scheduler.job_run_retention_count", 10)
 	v.SetDefault("scheduler.max_consecutive_failures", 3)
 	v.SetDefault("scheduler.export_poll_scan_interval", 10*time.Second)

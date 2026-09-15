@@ -130,10 +130,10 @@ The scheduler uses PostgreSQL as the source of truth and Redis as a fast, distri
 
 **Performance**: With default 2h lookahead, a system with 10,000 jobs typically syncs only ~100 near-due jobs in <1 second.
 
-### Periodic Sync (Optional Background Maintenance)
+### Periodic Sync (Background Maintenance)
 
-**When**: On a configurable interval (default: 1 hour) if `ENABLE_PERIODIC_SYNC=true`  
-**Purpose**: Catch jobs that become near-due between worker restarts, or recover if API pods fail to update Redis  
+**When**: On a configurable interval (default: 1 hour, enabled by default)  
+**Purpose**: Ensure Redis eventually contains all near-due jobs, even if Redis loses data between worker restarts  
 **Mechanism**: Leader election via Redis (same as startup sync) to prevent redundant DB queries
 
 **How it works**:
@@ -145,7 +145,9 @@ The scheduler uses PostgreSQL as the source of truth and Redis as a fast, distri
    - Records metrics with `operation="periodic"` label
 4. Non-leader workers skip and wait for next interval
 
-**When to enable**: If workers restart infrequently (e.g., weekly deploys) or you want extra resilience against missed Redis updates.
+**Why enabled by default**: The lookahead optimization (loading only jobs due within the next 2h at startup) is fast but creates a resilience gap if Redis loses data between worker restarts. Periodic sync closes this gap by refreshing the near-due job set every hour. Overhead is minimal: one DB query per hour across the entire fleet, typically loading ~100 jobs.
+
+**To disable**: Set `ENABLE_PERIODIC_SYNC=false` (not recommended unless you guarantee frequent worker restarts or Redis persistence).
 
 **Tuning recommendation**: Set `SCHEDULER_SYNC_LOOKAHEAD_WINDOW >= 2x SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` to avoid gaps where jobs enter the lookahead window between syncs.
 
@@ -178,7 +180,7 @@ See [Database Sync Metrics Documentation](docs/db-sync-metrics.md) for detailed 
 **Database to Redis Sync Interval**:
 - Variable: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL`
 - Default: `1h`
-- Description: How often workers sync jobs from PostgreSQL to Redis (requires `ENABLE_PERIODIC_SYNC=true`)
+- Description: How often workers sync jobs from PostgreSQL to Redis (periodic sync is enabled by default)
 - Example: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=30m`
 
 **Database to Redis Sync Lookahead Window**:

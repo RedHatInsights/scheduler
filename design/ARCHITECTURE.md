@@ -494,14 +494,14 @@ Redis Data Structures:
    - Records metrics: `scheduler_db_sync_duration_seconds`, `scheduler_db_sync_jobs_loaded`, `scheduler_db_sync_operations_total{operation="startup"}`
    - Performance: 10,000-job system syncs ~100 jobs in <1s vs all 10,000 in ~30s
 
-4. **Periodic Sync** (optional, hourly)
-   - Environment: `ENABLE_PERIODIC_SYNC=true`
+4. **Periodic Sync** (enabled by default, hourly)
+   - Environment: `ENABLE_PERIODIC_SYNC` (default: `true`)
    - Interval: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` (default: 1h)
    - **Uses leader election**: Only one worker syncs per interval (prevents redundant DB queries)
    - Syncs near-due jobs from PostgreSQL → Redis (not all jobs)
-   - Safety mechanism for Redis failures or race conditions
+   - **Critical for resilience**: Ensures Redis eventually contains all near-due jobs even if Redis loses data between worker restarts
    - Self-healing: Refills Redis as lookahead window advances
-   - Efficiency: With 20 workers, only 1 queries DB per hour (not all 20)
+   - Efficiency: With 20 workers, only 1 queries DB per hour (minimal overhead: ~1 query/hour total)
 
 **Benefits:**
 - Horizontal scaling (multiple workers)
@@ -925,8 +925,8 @@ THREESCALE_URL=http://3scale-service:8000
 SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT=30s
 SCHEDULER_REDIS_POLL_INTERVAL=10s
 SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=1h
-MAX_CONSECUTIVE_FAILURES=3  # Set to 0 to disable auto-pause
-ENABLE_PERIODIC_SYNC=true   # Enable hourly DB→Redis sync
+MAX_CONSECUTIVE_FAILURES=3    # Set to 0 to disable auto-pause
+# ENABLE_PERIODIC_SYNC=false  # Enabled by default; disable only with guaranteed worker restarts
 ```
 
 **Logging Configuration:**
