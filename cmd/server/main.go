@@ -694,6 +694,13 @@ func runWorker(cmd *cobra.Command, args []string) {
 	// This ensures Redis has current job state even after worker/Redis restarts
 	// Use leader election to prevent thundering herd (only one worker syncs)
 	// Sync is idempotent and safe to run on every startup
+	//
+	// Note: The leader lock is held for the full 5-minute TTL and not released after
+	// sync completes (typically <1s). This is intentional: workers starting within that
+	// window will skip startup sync, which is acceptable because:
+	// 1. Periodic sync (enabled by default) will catch up within the next hour
+	// 2. Prevents redundant DB queries during rolling deployments when many workers restart
+	// 3. The first worker's sync already loaded the near-due jobs needed for immediate polling
 	log.Println("[WORKER] Attempting to acquire sync leader lock...")
 
 	isLeader, err := redisScheduler.TryAcquireLeader(5 * time.Minute)
@@ -768,6 +775,9 @@ func runWorker(cmd *cobra.Command, args []string) {
 	// Optional: Periodic re-sync from Postgres to catch any missed updates
 	// This is a safety mechanism in case API pods fail to update Redis
 	// Uses leader election to prevent all workers from syncing simultaneously
+	//
+	// Note: Like startup sync, the leader lock is held for the full 5-minute TTL.
+	// Only one worker per interval performs the sync; others skip when they see the lock held.
 	if cfg.Scheduler.EnablePeriodicSync {
 		syncInterval := cfg.Scheduler.DBToRedisSyncInterval
 		log.Printf("[WORKER] Periodic sync enabled (interval: %s)", syncInterval)
