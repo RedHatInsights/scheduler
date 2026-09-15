@@ -679,3 +679,109 @@ func generateSelfSignedClientCert(t *testing.T, dir string) (certPath, keyPath s
 
 	return certPath, keyPath
 }
+
+// TestRedisScheduler_ExecuteJob_UsesDatabaseIdentityNotRedis verifies that the
+// job actually executed (identity + payload) comes from the database, not from
+// the copy stored in the Redis record. The Redis record is deliberately seeded
+// with a DIFFERENT (attacker-style) org/user to prove it is ignored.
+func TestRedisScheduler_ExecuteJob_UsesDatabaseIdentityNotRedis(t *testing.T) {
+	mr, client := setupTestRedis(t)
+	defer mr.Close()
+
+	repo := &mockJobRepository{jobs: make(map[string]domain.Job)}
+	executor := &mockJobExecutor{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheduler := &RedisScheduler{
+		client:       client,
+		executor:     executor,
+		jobRepo:      repo,
+		parser:       getDefaultParser(),
+		ctx:          ctx,
+		cancel:       cancel,
+		pollInterval: 10 * time.Second,
+	}
+
+	// Authoritative job in the database.
+	job := domain.NewJob("Trusted Job", "trusted-org", "trusted-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"body": "real"})
+	repo.jobs[job.ID] = job
+
+	// Redis record for the same job ID but with a forged identity/payload.
+	forged := job
+	forged.OrgID = "attacker-org"
+	forged.UserID = "attacker-user"
+	forged.Payload = map[string]interface{}{"body": "forged"}
+
+	scheduledJob := ScheduledJob{
+		Job:      forged,
+		NextRun:  time.Now().Add(-1 * time.Minute),
+		Schedule: string(job.Schedule),
+	}
+	jobData, err := json.Marshal(scheduledJob)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	jobKey := jobDataKeyPrefix + job.ID
+	if err := client.Set(ctx, jobKey, jobData, 0).Err(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := client.ZAdd(ctx, scheduledJobsKey, &redis.Z{Score: float64(time.Now().Add(-time.Minute).Unix()), Member: job.ID}).Err(); err != nil {
+		t.Fatalf("zadd: %v", err)
+	}
+
+	scheduler.executeJobWithContext(ctx, job.ID)
+
+	if len(executor.executedJobs) != 1 {
+		t.Fatalf("expected exactly 1 execution, got %d", len(executor.executedJobs))
+	}
+	got := executor.executedJobs[0]
+	if got.OrgID != "trusted-org" || got.UserID != "trusted-user" {
+		t.Errorf("execution used identity from Redis, not the database: got org=%s user=%s", got.OrgID, got.UserID)
+	}
+}
+
+// TestRedisScheduler_ExecuteJob_SkipsWhenMissingFromDatabase verifies that a job
+// present in Redis but absent from the database is not executed and is cleaned up,
+// so a stale/forged Redis entry cannot trigger execution.
+func TestRedisScheduler_ExecuteJob_SkipsWhenMissingFromDatabase(t *testing.T) {
+	mr, client := setupTestRedis(t)
+	defer mr.Close()
+
+	repo := &mockJobRepository{jobs: make(map[string]domain.Job)} // empty DB
+	executor := &mockJobExecutor{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheduler := &RedisScheduler{
+		client:       client,
+		executor:     executor,
+		jobRepo:      repo,
+		parser:       getDefaultParser(),
+		ctx:          ctx,
+		cancel:       cancel,
+		pollInterval: 10 * time.Second,
+	}
+
+	orphan := domain.NewJob("Orphan", "org", "user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	scheduledJob := ScheduledJob{Job: orphan, NextRun: time.Now().Add(-time.Minute), Schedule: string(orphan.Schedule)}
+	jobData, _ := json.Marshal(scheduledJob)
+	jobKey := jobDataKeyPrefix + orphan.ID
+	if err := client.Set(ctx, jobKey, jobData, 0).Err(); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if err := client.ZAdd(ctx, scheduledJobsKey, &redis.Z{Score: float64(time.Now().Add(-time.Minute).Unix()), Member: orphan.ID}).Err(); err != nil {
+		t.Fatalf("zadd: %v", err)
+	}
+
+	scheduler.executeJobWithContext(ctx, orphan.ID)
+
+	if len(executor.executedJobs) != 0 {
+		t.Fatalf("job missing from DB must not execute, but executor ran %d job(s)", len(executor.executedJobs))
+	}
+	if exists, _ := client.Exists(ctx, jobKey).Result(); exists != 0 {
+		t.Error("orphaned Redis entry should have been removed")
+	}
+}
