@@ -9,6 +9,32 @@ func newTestNotifier() *NotificationsBasedJobCompletionNotifier {
 	return &NotificationsBasedJobCompletionNotifier{}
 }
 
+func TestFormatNextRunAtUTC_NilInput(t *testing.T) {
+	result := formatNextRunAtUTC(nil)
+	if result != "" {
+		t.Errorf("Expected empty string for nil input, got %q", result)
+	}
+}
+
+func TestFormatNextRunAtUTC_UTCTime(t *testing.T) {
+	timestamp := time.Date(2026, 9, 4, 12, 30, 45, 0, time.UTC)
+	result := formatNextRunAtUTC(&timestamp)
+	expected := "2026-09-04T12:30:45"
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
+	}
+}
+
+func TestFormatNextRunAtUTC_NonUTCTime(t *testing.T) {
+	loc := time.FixedZone("UTC-5", -5*60*60)
+	timestamp := time.Date(2026, 9, 4, 7, 30, 45, 0, loc) // 7:30 UTC-5 = 12:30 UTC
+	result := formatNextRunAtUTC(&timestamp)
+	expected := "2026-09-04T12:30:45"
+	if result != expected {
+		t.Errorf("Expected %q (converted to UTC), got %q", expected, result)
+	}
+}
+
 func TestBuildPlatformNotification_BaseFields(t *testing.T) {
 	n := newTestNotifier()
 	notification := &ExportCompletionNotification{
@@ -75,8 +101,8 @@ func TestBuildPlatformNotification_RunIDAndNextRunAt(t *testing.T) {
 	if msg.Context["run_id"] != "run-123" {
 		t.Errorf("Expected run_id 'run-123', got %v", msg.Context["run_id"])
 	}
-	if msg.Context["next_run_at"] != "2026-09-04T12:30:00Z" {
-		t.Errorf("Expected next_run_at RFC3339 UTC string, got %v", msg.Context["next_run_at"])
+	if msg.Context["next_run_at"] != "2026-09-04T12:30:00" {
+		t.Errorf("Expected next_run_at UTC string without timezone, got %v", msg.Context["next_run_at"])
 	}
 }
 
@@ -92,8 +118,8 @@ func TestBuildPlatformNotification_NextRunAtConvertedToUTC(t *testing.T) {
 
 	msg := n.buildPlatformNotification(notification, "message-4")
 
-	if msg.Context["next_run_at"] != "2026-09-04T12:30:00Z" {
-		t.Errorf("Expected next_run_at normalized to UTC, got %v", msg.Context["next_run_at"])
+	if msg.Context["next_run_at"] != "2026-09-04T12:30:00" {
+		t.Errorf("Expected next_run_at normalized to UTC without timezone, got %v", msg.Context["next_run_at"])
 	}
 }
 
@@ -142,7 +168,7 @@ func TestBuildAutoPausedPlatformNotification_RunIDAndNextRunAt(t *testing.T) {
 	if msg.Context["run_id"] != "run-456" {
 		t.Errorf("Expected run_id 'run-456', got %v", msg.Context["run_id"])
 	}
-	if msg.Context["next_run_at"] != "2026-09-05T00:00:00Z" {
-		t.Errorf("Expected next_run_at RFC3339 UTC string, got %v", msg.Context["next_run_at"])
+	if msg.Context["next_run_at"] != "2026-09-05T00:00:00" {
+		t.Errorf("Expected next_run_at UTC string without timezone, got %v", msg.Context["next_run_at"])
 	}
 }
