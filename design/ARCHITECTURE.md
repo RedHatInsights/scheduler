@@ -486,6 +486,7 @@ Redis Data Structures:
 3. **Startup Sync:**
    - Runs on **every worker startup** (not just when Redis is empty)
    - Attempt leader election via `SETNX scheduler:sync:leader` (5-minute TTL)
+   - **Lock held for full TTL**: Not released after sync completes (~1s); workers starting within 5-minute window skip startup sync (acceptable: periodic sync catches up within next hour; prevents thundering herd during rolling deployments)
    - Leader loads near-due jobs from PostgreSQL → Redis (lookahead window optimization)
    - Uses `FindScheduledNearDue(lookahead)` instead of `FindAll()` for performance
    - Window: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW` (default: 2h)

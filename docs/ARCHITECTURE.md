@@ -634,6 +634,10 @@ deployments:
 1. Attempt leader election (SETNX scheduler:sync:leader, 5-minute TTL)
    - Only one worker becomes sync leader
    - Other workers skip sync and start polling immediately
+   - Lock is held for full 5-minute TTL (not released after sync completes in ~1s)
+   - Workers starting within that 5-minute window skip startup sync (acceptable because
+     periodic sync catches up within the next hour, and prevents thundering herd during
+     rolling deployments)
 2. If elected leader:
    - Load near-due jobs from PostgreSQL (within lookahead window, default 2h)
    - Sync PostgreSQL → Redis via SyncJobsFromDB() (ZADD for each scheduled job)
