@@ -710,6 +710,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 		lookahead := cfg.Scheduler.SyncLookaheadWindow
 		nearDueJobs, err := jobRepo.FindScheduledNearDue(lookahead)
 		if err != nil {
+			syncDuration := time.Since(syncStart).Seconds()
+			scheduler.DBSyncDuration.Observe(syncDuration)
 			log.Printf("[WORKER] WARNING: Failed to load near-due jobs from Postgres: %v", err)
 			scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
 		} else {
@@ -717,12 +719,14 @@ func runWorker(cmd *cobra.Command, args []string) {
 				len(nearDueJobs), lookahead)
 			scheduler.DBSyncJobsLoaded.Observe(float64(len(nearDueJobs)))
 
-			if err := redisScheduler.SyncJobsFromDB(nearDueJobs); err != nil {
-				log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", err)
+			syncErr := redisScheduler.SyncJobsFromDB(nearDueJobs)
+			syncDuration := time.Since(syncStart).Seconds()
+			scheduler.DBSyncDuration.Observe(syncDuration)
+
+			if syncErr != nil {
+				log.Printf("[WORKER] WARNING: Failed to sync jobs to Redis: %v", syncErr)
 				scheduler.DBSyncTotal.WithLabelValues("startup", "error").Inc()
 			} else {
-				syncDuration := time.Since(syncStart).Seconds()
-				scheduler.DBSyncDuration.Observe(syncDuration)
 				scheduler.DBSyncTotal.WithLabelValues("startup", "success").Inc()
 
 				count, _ := redisScheduler.GetScheduledJobCount()
@@ -790,6 +794,8 @@ func runWorker(cmd *cobra.Command, args []string) {
 				log.Printf("[WORKER] Performing periodic sync from Postgres to Redis (lookahead: %s)", lookahead)
 				jobs, err := jobRepo.FindScheduledNearDue(lookahead)
 				if err != nil {
+					syncDuration := time.Since(syncStart).Seconds()
+					scheduler.DBSyncDuration.Observe(syncDuration)
 					log.Printf("[WORKER] Periodic sync failed to load near-due jobs: %v", err)
 					scheduler.DBSyncTotal.WithLabelValues("periodic", "error").Inc()
 					continue
@@ -797,12 +803,14 @@ func runWorker(cmd *cobra.Command, args []string) {
 
 				scheduler.DBSyncJobsLoaded.Observe(float64(len(jobs)))
 
-				if err := redisScheduler.SyncJobsFromDB(jobs); err != nil {
-					log.Printf("[WORKER] Periodic sync failed: %v", err)
+				syncErr := redisScheduler.SyncJobsFromDB(jobs)
+				syncDuration := time.Since(syncStart).Seconds()
+				scheduler.DBSyncDuration.Observe(syncDuration)
+
+				if syncErr != nil {
+					log.Printf("[WORKER] Periodic sync failed: %v", syncErr)
 					scheduler.DBSyncTotal.WithLabelValues("periodic", "error").Inc()
 				} else {
-					syncDuration := time.Since(syncStart).Seconds()
-					scheduler.DBSyncDuration.Observe(syncDuration)
 					scheduler.DBSyncTotal.WithLabelValues("periodic", "success").Inc()
 
 					count, _ := redisScheduler.GetScheduledJobCount()
