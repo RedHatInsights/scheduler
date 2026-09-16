@@ -417,6 +417,7 @@ type JobRepository interface {
     Save(job domain.Job) error
     FindByID(id string) (domain.Job, error)
     FindAll() ([]domain.Job, error)
+    FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error)
     FindByOrgID(orgID string) ([]domain.Job, error)
     FindByUserID(userID string) ([]domain.Job, error)
     Delete(id string) error
@@ -483,16 +484,25 @@ Redis Data Structures:
    - Atomic `SET NX` operation ensures only one worker acquires lock
 
 3. **Startup Sync:**
-   - Worker checks if Redis has jobs: `ZCARD scheduler:jobs:scheduled`
-   - If empty: attempt leader election via `SETNX scheduler:sync:leader`
-   - Leader loads all scheduled jobs from PostgreSQL → Redis
-   - Non-leaders skip sync (leader already populated Redis)
+   - Runs on **every worker startup** (not just when Redis is empty)
+   - Attempt leader election via `SETNX scheduler:sync:leader` (5-minute TTL)
+   - **Lock held for full TTL**: Not released after sync completes (~1s); workers starting within 5-minute window skip startup sync (acceptable: periodic sync catches up within next hour; prevents thundering herd during rolling deployments)
+   - Leader loads near-due jobs from PostgreSQL → Redis (lookahead window optimization)
+   - Uses `FindScheduledNearDue(lookahead)` instead of `FindAll()` for performance
+   - Window: `SCHEDULER_SYNC_LOOKAHEAD_WINDOW` (default: 2h)
+   - Non-leaders skip sync and start polling immediately
+   - **Idempotent**: Safe to run on every startup, refreshes Redis with current DB state
+   - Records metrics: `scheduler_db_sync_duration_seconds`, `scheduler_db_sync_jobs_loaded`, `scheduler_db_sync_operations_total{operation="startup"}`
+   - Performance: 10,000-job system syncs ~100 jobs in <1s vs all 10,000 in ~30s
 
-4. **Periodic Sync** (optional, hourly)
-   - Environment: `ENABLE_PERIODIC_SYNC=true`
+4. **Periodic Sync** (enabled by default, hourly)
+   - Environment: `ENABLE_PERIODIC_SYNC` (default: `true`)
    - Interval: `SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL` (default: 1h)
-   - Syncs PostgreSQL → Redis to catch missed updates
-   - Safety mechanism for Redis failures or race conditions
+   - **Uses leader election**: Only one worker syncs per interval (prevents redundant DB queries)
+   - Syncs near-due jobs from PostgreSQL → Redis (not all jobs)
+   - **Critical for resilience**: Ensures Redis eventually contains all near-due jobs even if Redis loses data between worker restarts
+   - Self-healing: Refills Redis as lookahead window advances
+   - Efficiency: With 20 workers, only 1 queries DB per hour (minimal overhead: ~1 query/hour total)
 
 **Benefits:**
 - Horizontal scaling (multiple workers)
@@ -916,8 +926,8 @@ THREESCALE_URL=http://3scale-service:8000
 SCHEDULER_GRACEFUL_SHUTDOWN_TIMEOUT=30s
 SCHEDULER_REDIS_POLL_INTERVAL=10s
 SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL=1h
-MAX_CONSECUTIVE_FAILURES=3  # Set to 0 to disable auto-pause
-ENABLE_PERIODIC_SYNC=true   # Enable hourly DB→Redis sync
+MAX_CONSECUTIVE_FAILURES=3    # Set to 0 to disable auto-pause
+# ENABLE_PERIODIC_SYNC=false  # Enabled by default; disable only with guaranteed worker restarts
 ```
 
 **Logging Configuration:**

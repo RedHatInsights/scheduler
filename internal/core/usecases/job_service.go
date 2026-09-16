@@ -16,6 +16,7 @@ type JobRepository interface {
 	Save(job domain.Job) error
 	FindByID(id string) (domain.Job, error)
 	FindAll() ([]domain.Job, error)
+	FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error)
 	FindByOrgID(orgID string) ([]domain.Job, error)
 	FindByUserID(userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error)
 	Delete(id string) error

@@ -99,6 +99,10 @@ func (r *mockJobRepo) FindByID(id string) (domain.Job, error) {
 
 func (r *mockJobRepo) FindAll() ([]domain.Job, error) { return nil, nil }
 
+func (r *mockJobRepo) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
+	return nil, nil
+}
+
 func (r *mockJobRepo) FindByOrgID(orgID string) ([]domain.Job, error) { return nil, nil }
 
 func (r *mockJobRepo) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {

@@ -84,8 +84,8 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("Expected default graceful shutdown timeout 30s, got %v", config.Scheduler.GracefulShutdownTimeout)
 	}
 
-	if config.Scheduler.EnablePeriodicSync {
-		t.Error("Expected enable_periodic_sync to be false by default")
+	if !config.Scheduler.EnablePeriodicSync {
+		t.Error("Expected enable_periodic_sync to be true by default")
 	}
 
 	if config.UserValidatorImpl != "bop" {
