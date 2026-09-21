@@ -810,6 +810,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 					scheduler.DBSyncDuration.Observe(syncDuration)
 					log.Printf("[WORKER] Periodic sync failed to load near-due jobs: %v", err)
 					scheduler.DBSyncTotal.WithLabelValues("periodic", "error").Inc()
+					scheduler.DBSyncFailures.WithLabelValues("postgres_load").Inc()
 					continue
 				}
 
@@ -822,6 +823,7 @@ func runWorker(cmd *cobra.Command, args []string) {
 				if syncErr != nil {
 					log.Printf("[WORKER] Periodic sync failed: %v", syncErr)
 					scheduler.DBSyncTotal.WithLabelValues("periodic", "error").Inc()
+					scheduler.DBSyncFailures.WithLabelValues("redis_sync").Inc()
 				} else {
 					scheduler.DBSyncTotal.WithLabelValues("periodic", "success").Inc()
 
