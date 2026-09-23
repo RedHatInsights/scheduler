@@ -21,7 +21,7 @@ RUN if [ -f /cachi2/cachi2.env ]; then source /cachi2/cachi2.env; fi && \
     CGO_ENABLED=1 GOOS=linux go build -o kafka-producer ./cmd/kafka-producer/
 
 # Final stage
-FROM registry.access.redhat.com/hi/go:latest-fips@sha256:77050932e3868effe031b09b0345e32d9338da273bf6caad931586b5a22b7feb
+FROM registry.access.redhat.com/hi/go:latest-fips@sha256:6d79598c913b475cd7046f441bc7c8a1c93a6a6d95b905c1be6528fcfb7ee253
 
 WORKDIR /app
 
