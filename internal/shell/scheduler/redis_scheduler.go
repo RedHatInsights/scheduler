@@ -34,6 +34,42 @@ type RedisScheduler struct {
 	activeJobsWg        sync.WaitGroup // Tracks in-flight jobs for graceful shutdown
 }
 
+// calculateNextRunWithTimezone calculates the next run time for a cron schedule
+// accounting for the job's timezone. The schedule is interpreted in the specified
+// timezone, but the result is always returned in UTC.
+func (s *RedisScheduler) calculateNextRunWithTimezone(scheduleStr string, timezone string, fromTime time.Time) (time.Time, error) {
+	// Default to UTC if not specified
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	// Load the timezone
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid timezone %s: %w", timezone, err)
+	}
+
+	// Parse the cron expression
+	schedule, err := s.parser.Parse(scheduleStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid schedule: %w", err)
+	}
+
+	// Convert fromTime to the specified timezone
+	fromTimeInTz := fromTime.In(loc)
+
+	// Calculate next run in the specified timezone
+	nextInTz := schedule.Next(fromTimeInTz)
+
+	// Convert to UTC for storage and scheduling
+	nextRunUTC := nextInTz.UTC()
+
+	log.Printf("[RedisScheduler] Schedule '%s' in timezone '%s': next run is %s (%s UTC)",
+		scheduleStr, timezone, nextInTz.Format(time.RFC3339), nextRunUTC.Format(time.RFC3339))
+
+	return nextRunUTC, nil
+}
+
 // JobRepository provides access to job storage
 type JobRepository interface {
 	Save(job domain.Job) error
@@ -213,14 +249,24 @@ func (s *RedisScheduler) ScheduleJob(job domain.Job) error {
 		return nil
 	}
 
-	// Parse schedule to get next run time
-	schedule, err := s.parser.Parse(string(job.Schedule))
-	if err != nil {
-		return fmt.Errorf("invalid schedule: %w", err)
-	}
-
+	var nextRun time.Time
 	now := time.Now()
-	nextRun := schedule.Next(now)
+
+	// Use the pre-calculated next_run_at if available (it was calculated with timezone awareness)
+	// We trust the pre-calculated value even if it's in the past - the scheduler will execute it immediately
+	if job.NextRunAt != nil {
+		nextRun = *job.NextRunAt
+		log.Printf("[RedisScheduler] Using pre-calculated next run time for job %s: %s", job.ID, nextRun.Format(time.RFC3339))
+	} else {
+		// Fallback: recalculate next run with timezone awareness
+		// This path should only be hit for legacy jobs without next_run_at or during DB sync
+		var err error
+		nextRun, err = s.calculateNextRunWithTimezone(string(job.Schedule), job.Timezone, now)
+		if err != nil {
+			return fmt.Errorf("failed to calculate next run: %w", err)
+		}
+		log.Printf("[RedisScheduler] Recalculated next run for job %s (next_run_at was nil): %s", job.ID, nextRun.Format(time.RFC3339))
+	}
 
 	// Store job data
 	scheduledJob := ScheduledJob{
@@ -526,14 +572,13 @@ func (s *RedisScheduler) executeJobWithContext(ctx context.Context, jobID string
 		return // Do not reschedule
 	}
 
-	// Calculate next run time and reschedule (only if not paused)
-	schedule, err := s.parser.Parse(scheduledJob.Schedule)
+	// Calculate next run time with timezone awareness and reschedule (only if not paused)
+	nextRun, err := s.calculateNextRunWithTimezone(scheduledJob.Schedule, scheduledJob.Job.Timezone, time.Now())
 	if err != nil {
-		log.Printf("[RedisScheduler] Error parsing schedule for job %s: %v", jobID, err)
+		log.Printf("[RedisScheduler] Error calculating next run for job %s: %v", jobID, err)
 		return
 	}
 
-	nextRun := schedule.Next(time.Now())
 	scheduledJob.NextRun = nextRun
 	scheduledJob.LastUpdate = time.Now()
 	scheduledJob.JobRunID = "" // Clear the job run ID after execution (it was for immediate execution only)
