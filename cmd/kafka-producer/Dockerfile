@@ -1,5 +1,5 @@
 # Multi-stage build for Kafka Producer
-FROM registry.access.redhat.com/hi/go:latest-fips-builder@sha256:25cdbd68140c15365e36539ef9ab9c125409a50af66781f74c9601e883989d71 AS builder
+FROM registry.access.redhat.com/hi/go:latest-fips-builder@sha256:1c833a456031cfbc6531a1e3696a963a2c5ed65c55aa12cef271769d3bb72e3e AS builder
 
 USER 0
 
