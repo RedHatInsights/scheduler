@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/IBM/sarama v1.60.2
-	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/aws/aws-sdk-go-v2 v1.45.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.1
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.84.1
