@@ -1,3 +1,4 @@
+// Set up with the MintMaker Automerge plugin v0.9.0: https://github.com/gwenneg/mintmaker-automerge
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   // Renovate overrides for this repository. MintMaker merges them on top of its
@@ -9,13 +10,18 @@
   // Policy: patch and minor updates of the ecosystems below merge on their own once
   // the required checks pass. Majors stay on manual review unless a rule names them.
   // MintMaker docs: https://konflux-ci.dev/docs/mintmaker/user/
-  // Automerge set up with the MintMaker Automerge plugin: https://github.com/gwenneg/mintmaker-automerge
   // Renovate merges each PR itself, on the first run where GitHub allows the merge:
   // GitHub's auto-merge feature never completes when a bypass actor is what satisfies
   // the approval rule, so it stays off.
   "platformAutomerge": false,
   // Every check on the PR must be green first, required or not.
   "ignoreTests": false,
+  // PRs are rebased only when they conflict, so a PR merges as tested against the
+  // base it was opened on, like a human merge without "Update branch". Two bumps
+  // merged in a row are never tested together: a broken combination shows on the
+  // base branch's build. The label below puts one PR back on rebase-when-behind.
+  "rebaseWhen": "conflicted",
+  "keepUpdatedLabel": "keep-updated",
   "extends": [
     // Pins actions to commit SHAs, so a version bump can be told from a moved tag.
     "helpers:pinGitHubActionDigests"
@@ -34,20 +40,32 @@
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["patch", "minor"],
       "matchDepNames": ["actions/checkout", "actions/setup-go"],
-      "automerge": true
+      "automerge": true,
+      "groupName": "GitHub Actions"
+    },
+    {
+      // A floating tag such as v4 never changes, so its releases arrive as digest PRs that
+      // never automerge. Pinning writes the full version once, in a manual PR, and later
+      // releases are patch or minor.
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action"],
+      "rangeStrategy": "pin"
     },
 
     // --- gomod: patch and minor, indirect dependencies included; majors and the toolchain stay manual
     {
       "matchManagers": ["gomod"],
       "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true
+      "automerge": true,
+      "groupName": "Go modules"
     },
     {
       // The toolchain line is every developer's compiler, not just CI's.
+      // Its own PR: a member that never automerges would hold the group.
       "matchManagers": ["gomod"],
       "matchDepTypes": ["toolchain"],
-      "automerge": false
+      "automerge": false,
+      "groupName": null
     },
 
     // --- dockerfile: digest, patch and minor of the base images; majors stay manual
@@ -56,7 +74,8 @@
       // the same tag; a new RHEL or JDK line is a major and stays on manual review.
       "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["digest", "patch", "minor"],
-      "automerge": true
+      "automerge": true,
+      "groupName": "base images"
     },
     {
       // Pins FROM lines to tag@sha256, so rebuilds of a tag arrive as digest PRs.
