@@ -20,6 +20,10 @@
     // Any day, instead of MintMaker's Saturday batch.
     "schedule": ["at any time"]
   },
+  "rpm-lockfile": {
+    // The Konflux build installs the refreshed RPMs, so a refresh is tested like any PR.
+    "automerge": true
+  },
   "packageRules": [
     {
       // Needed even when SHA-pinned: without it, a v4-style tag gets only digest PRs, which
@@ -50,6 +54,17 @@
       // Keep even when every FROM line is pinned: it pins the next image added.
       "matchManagers": ["dockerfile"],
       "pinDigests": true
+    },
+    {
+      // Refreshes the RPM lockfiles in the base image PR, so the build tests both together.
+      // Don't edit the command: MintMaker runs it only on an exact allow-list match.
+      "matchManagers": ["dockerfile"],
+      "postUpgradeTasks": {
+        "commands": ["refresh-rpm-lockfiles -f \"$RENOVATE_POST_UPGRADE_COMMAND_DATA_FILE\""],
+        "fileFilters": ["**/rpms.lock.yaml"],
+        "executionMode": "branch",
+        "dataFileTemplate": "[{{#each upgrades}}{\"packageFile\": \"{{{packageFile}}}\"}{{#unless @last}},{{/unless}}{{/each}}]"
+      }
     },
 
     {
