@@ -59,6 +59,15 @@
       "groupName": "Go modules"
     },
     {
+      // x/exp is Go's permanently experimental, no-compatibility-promise repo: by design it
+      // never gets tagged releases, so every update is a digest bump (never patch/minor
+      // above). It's only pulled in transitively, never imported by our own code.
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["golang.org/x/exp"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": true
+    },
+    {
       // The toolchain is every developer's compiler, not just CI's.
       // No group: a member that never automerges would hold the whole group.
       "matchManagers": ["gomod"],
