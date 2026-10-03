@@ -74,27 +74,27 @@ arches:
     name: libuuid
     evr: 2.42.4-2.hum1
     sourcerpm: util-linux-2.42.4-2.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-config-fips-3.5.9-0.1.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-config-fips-3.5.9-0.2.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 19272
-    checksum: sha256:ac21b16c64b22b597f512ec6eb7a479b9871ac643616a6eda456f06e9197804f
+    checksum: sha256:2ad23d256068e5e3604be7d16abf200551c62f4153503a8f696ffdc41c0f055a
     name: openssl-config-fips
-    evr: 1:3.5.9-0.1.hum1
-    sourcerpm: openssl-3.5.9-0.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-devel-3.5.9-0.1.hum1.x86_64.rpm
+    evr: 1:3.5.9-0.2.hum1
+    sourcerpm: openssl-3.5.9-0.2.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-devel-3.5.9-0.2.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 4548432
-    checksum: sha256:133d453d18beae7725bab1742d2ce49f537d9d61475f566fe3dbbe40fd93d1d9
+    size: 4548392
+    checksum: sha256:cbb2bf3a799eb44102ca2a05d8dae392b06925407936e3b4995f9a83de2c4a0a
     name: openssl-devel
-    evr: 1:3.5.9-0.1.hum1
-    sourcerpm: openssl-3.5.9-0.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-libs-3.5.9-0.1.hum1.x86_64.rpm
+    evr: 1:3.5.9-0.2.hum1
+    sourcerpm: openssl-3.5.9-0.2.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-libs-3.5.9-0.2.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 2487407
-    checksum: sha256:89574f4414f4d05cb2c2f3942a607a270c364a937a6ca37bd338e96fdc16fa72
+    size: 2485480
+    checksum: sha256:5eba28b39fd5c76eb51cca351fe4f2e0731c32591ac4674c4f78d0bf75e9db70
     name: openssl-libs
-    evr: 1:3.5.9-0.1.hum1
-    sourcerpm: openssl-3.5.9-0.1.hum1.src.rpm
+    evr: 1:3.5.9-0.2.hum1
+    sourcerpm: openssl-3.5.9-0.2.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/r/readline-8.3-6.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 241368
