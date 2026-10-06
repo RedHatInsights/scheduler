@@ -1,5 +1,5 @@
 # Multi-stage build for smaller final image
-FROM registry.access.redhat.com/hi/go:latest-fips-builder@sha256:1c833a456031cfbc6531a1e3696a963a2c5ed65c55aa12cef271769d3bb72e3e AS builder
+FROM registry.access.redhat.com/hi/go:latest-fips-builder@sha256:c6d04f2058576f66e7e6f81b0f951a567cd90189bee60369a5a306bdb1e975b7 AS builder
 
 USER 0
 
@@ -28,7 +28,7 @@ RUN dnf5 install -y ca-certificates sqlite && \
     dnf5 clean all
 
 # Final stage - minimal runtime image
-FROM registry.access.redhat.com/hi/go:latest-fips@sha256:dbac60477680910d2db4f450dafb50a30022a32090c5d1298e8bdf00c67c4612
+FROM registry.access.redhat.com/hi/go:latest-fips@sha256:3ebe242ef539414d016a20736957dc26e553e6896d47eb2ddb60f454f70c886a
 
 # Copy runtime dependencies from builder
 COPY --from=builder /usr/lib64/libsqlite3* /usr/lib64/
