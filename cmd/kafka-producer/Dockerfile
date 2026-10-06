@@ -1,5 +1,5 @@
 # Multi-stage build for Kafka Producer
-FROM registry.access.redhat.com/hi/go:latest-fips-builder@sha256:9cfccd400fccf79809f81fae41b1271709a952ac47d21687e88bfad1e40eb096 AS builder
+FROM registry.access.redhat.com/hi/go:latest-fips-builder@sha256:c6d04f2058576f66e7e6f81b0f951a567cd90189bee60369a5a306bdb1e975b7 AS builder
 
 USER 0
 
@@ -21,7 +21,7 @@ RUN if [ -f /cachi2/cachi2.env ]; then source /cachi2/cachi2.env; fi && \
     CGO_ENABLED=1 GOOS=linux go build -o kafka-producer ./cmd/kafka-producer/
 
 # Final stage
-FROM registry.access.redhat.com/hi/go:latest-fips@sha256:96ed4050081676aa45f16ec0a70e7b6b4883e70966e05e81dfaf2bb25e076913
+FROM registry.access.redhat.com/hi/go:latest-fips@sha256:3ebe242ef539414d016a20736957dc26e553e6896d47eb2ddb60f454f70c886a
 
 WORKDIR /app
 
