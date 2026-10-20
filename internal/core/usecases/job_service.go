@@ -1,0 +1,1089 @@
+package usecases
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/robfig/cron/v3"
+	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/ports"
+)
+
+type JobRepository interface {
+	Save(job domain.Job) error
+	FindByID(id string) (domain.Job, error)
+	FindAll() ([]domain.Job, error)
+	FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error)
+	FindByOrgID(orgID string) ([]domain.Job, error)
+	FindByUserID(userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error)
+	Delete(id string) error
+}
+
+type JobRunRepository interface {
+	Save(run domain.JobRun) error
+	FindByID(id string) (domain.JobRun, error)
+	FindByJobID(jobID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error)
+	FindByJobIDAndOrgID(jobID string, orgID string) ([]domain.JobRun, error)
+	FindByUserID(userID string, sort domain.SortSpec, offset, limit int) ([]domain.JobRun, int, error)
+	FindAll() ([]domain.JobRun, error)
+	FindInFlightExternalRuns(ctx context.Context) ([]domain.JobRun, error)
+	CleanupOldRuns(keepPerJob int) (int64, error)
+}
+
+type SchedulingService interface {
+	ShouldRun(job domain.Job, currentTime time.Time) bool
+}
+
+type CronScheduler interface {
+	ScheduleJob(job domain.Job) error
+	UnscheduleJob(jobID string)
+	ScheduleJobImmediately(job domain.Job, jobRunID string) error
+}
+
+// DefaultJobService is the default implementation of ports.JobService
+type DefaultJobService struct {
+	repo                   JobRepository
+	runRepo                JobRunRepository
+	scheduler              SchedulingService
+	executor               ports.JobExecutor
+	cronScheduler          CronScheduler
+	maxConsecutiveFailures int
+	payloadValidator       ports.PayloadValidator
+}
+
+// Ensure DefaultJobService implements ports.JobService
+var _ ports.JobService = (*DefaultJobService)(nil)
+
+func NewJobService(repo JobRepository, scheduler SchedulingService, executor ports.JobExecutor, maxConsecutiveFailures int, payloadValidator ports.PayloadValidator) *DefaultJobService {
+	return &DefaultJobService{
+		repo:                   repo,
+		scheduler:              scheduler,
+		executor:               executor,
+		maxConsecutiveFailures: maxConsecutiveFailures,
+		payloadValidator:       payloadValidator,
+	}
+}
+
+func (s *DefaultJobService) SetCronScheduler(cronScheduler CronScheduler) {
+	s.cronScheduler = cronScheduler
+}
+
+func (s *DefaultJobService) SetJobRunRepository(runRepo JobRunRepository) {
+	s.runRepo = runRepo
+}
+
+func (s *DefaultJobService) validatePayloadTemplates(payload interface{}) error {
+	if s.payloadValidator == nil {
+		return nil
+	}
+	if err := s.payloadValidator.ValidatePayload(payload); err != nil {
+		return fmt.Errorf("%w: %s", domain.ErrInvalidPayloadTemplate, err.Error())
+	}
+	return nil
+}
+
+// calculateNextRunAt calculates the next run time for a job based on its cron schedule
+// The schedule is interpreted in the specified timezone, but the result is always returned in UTC
+func calculateNextRunAt(schedule string, timezone string) (*time.Time, error) {
+	// Default to UTC if not specified
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	// Load the timezone
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timezone %s: %w", timezone, err)
+	}
+
+	// Parse the cron expression
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	cronSchedule, err := parser.Parse(schedule)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get current time in the specified timezone
+	nowInTz := time.Now().In(loc)
+
+	// Calculate next run in the specified timezone
+	nextInTz := cronSchedule.Next(nowInTz)
+
+	// Convert to UTC for storage
+	nextRunAtUTC := nextInTz.UTC()
+
+	log.Printf("[DEBUG] Schedule '%s' in timezone '%s': next run is %s (%s UTC)",
+		schedule, timezone, nextInTz.Format(time.RFC3339), nextRunAtUTC.Format(time.RFC3339))
+
+	return &nextRunAtUTC, nil
+}
+
+func (s *DefaultJobService) CreateJob(ctx context.Context, name string, orgID string, userID string, schedule string, timezone string, payloadType domain.PayloadType, payload interface{}) (domain.Job, error) {
+	log.Printf("[DEBUG] CreateJob called - name: %s, orgID: %s, userID: %s, schedule: %s, timezone: %s, payload type: %s", name, orgID, userID, schedule, timezone, payloadType)
+
+	// Validate org_id
+	if orgID == "" {
+		log.Printf("[DEBUG] CreateJob failed - missing org_id")
+		return domain.Job{}, domain.ErrInvalidOrgID
+	}
+	log.Printf("[DEBUG] CreateJob - org_id validation passed: %s", orgID)
+
+	// Default to UTC if timezone not specified
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	// Validate timezone
+	if !domain.IsValidTimezone(timezone) {
+		log.Printf("[DEBUG] CreateJob failed - invalid timezone: %s", timezone)
+		return domain.Job{}, domain.ErrInvalidTimezone
+	}
+	log.Printf("[DEBUG] CreateJob - timezone validation passed: %s", timezone)
+
+	if !domain.IsValidSchedule(schedule) {
+		log.Printf("[DEBUG] CreateJob failed - invalid schedule: %s", schedule)
+		return domain.Job{}, domain.ErrInvalidSchedule
+	}
+	log.Printf("[DEBUG] CreateJob - schedule validation passed: %s", schedule)
+
+	if !domain.IsValidPayloadType(string(payloadType)) {
+		log.Printf("[DEBUG] CreateJob failed - invalid payload type: %s", payloadType)
+		return domain.Job{}, domain.ErrInvalidPayload
+	}
+	log.Printf("[DEBUG] CreateJob - payload type validation passed: %s", payloadType)
+
+	// Validate CEL expressions in payload
+	if err := s.validatePayloadTemplates(payload); err != nil {
+		log.Printf("[DEBUG] CreateJob failed - invalid payload template: %v", err)
+		return domain.Job{}, err
+	}
+
+	job := domain.NewJob(name, orgID, userID, domain.Schedule(schedule), timezone, payloadType, payload)
+	log.Printf("[DEBUG] CreateJob - created job with ID: %s, status: %s, timezone: %s", job.ID, job.Status, job.Timezone)
+
+	// Calculate next run time using the job's timezone
+	nextRunAt, err := calculateNextRunAt(schedule, timezone)
+	if err != nil {
+		log.Printf("[DEBUG] CreateJob - failed to calculate next run time: %v", err)
+		// Continue without next_run if calculation fails
+	} else if nextRunAt != nil {
+		job = job.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] CreateJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
+	err = s.repo.Save(job)
+	if err != nil {
+		log.Printf("[DEBUG] CreateJob failed - repository save error: %v", err)
+		return domain.Job{}, err
+	}
+	log.Printf("[DEBUG] CreateJob - job saved to repository successfully: %s", job.ID)
+
+	// Schedule the job in cron scheduler if it's scheduled
+	if s.cronScheduler != nil && job.Status == domain.StatusScheduled {
+		log.Printf("[DEBUG] CreateJob - attempting to schedule job in cron scheduler: %s", job.ID)
+		if err := s.cronScheduler.ScheduleJob(job); err != nil {
+			log.Printf("[DEBUG] CreateJob - cron scheduler error (job still created): %v", err)
+			// Log error but don't fail the creation
+			// The job is saved, it just won't be scheduled until next restart
+		} else {
+			log.Printf("[DEBUG] CreateJob - job successfully scheduled in cron scheduler: %s", job.ID)
+		}
+	} else if s.cronScheduler == nil {
+		log.Printf("[DEBUG] CreateJob - cron scheduler not available, job saved but not scheduled: %s", job.ID)
+	} else {
+		log.Printf("[DEBUG] CreateJob - job not scheduled due to status: %s (status: %s)", job.ID, job.Status)
+	}
+
+	log.Printf("[DEBUG] CreateJob completed successfully - job ID: %s", job.ID)
+	return job, nil
+}
+
+func (s *DefaultJobService) GetJob(ctx context.Context, id string) (domain.Job, error) {
+	return s.repo.FindByID(id)
+}
+
+func (s *DefaultJobService) GetJobWithOrgCheck(ctx context.Context, id string, orgID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.OrgID != orgID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	return job, nil
+}
+
+func (s *DefaultJobService) GetJobWithUserCheck(ctx context.Context, id string, userID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	return job, nil
+}
+
+func (s *DefaultJobService) ListJobs() ([]domain.Job, error) {
+	return s.repo.FindAll()
+}
+
+func (s *DefaultJobService) GetAllJobs(statusFilter, nameFilter string) ([]domain.Job, error) {
+	jobs, err := s.repo.FindAll()
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]domain.Job, 0)
+	for _, job := range jobs {
+		if statusFilter != "" && string(job.Status) != statusFilter {
+			continue
+		}
+		if nameFilter != "" && !strings.Contains(strings.ToLower(job.Name), strings.ToLower(nameFilter)) {
+			continue
+		}
+		filtered = append(filtered, job)
+	}
+
+	return filtered, nil
+}
+
+func (s *DefaultJobService) GetJobsByOrgID(ctx context.Context, orgID string, statusFilter, nameFilter string, offset, limit int) ([]domain.Job, int, error) {
+	jobs, err := s.repo.FindByOrgID(orgID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Apply filters
+	filtered := make([]domain.Job, 0)
+	for _, job := range jobs {
+		if statusFilter != "" && string(job.Status) != statusFilter {
+			continue
+		}
+		if nameFilter != "" && !strings.Contains(strings.ToLower(job.Name), strings.ToLower(nameFilter)) {
+			continue
+		}
+		filtered = append(filtered, job)
+	}
+
+	total := len(filtered)
+
+	// Apply pagination
+	if offset >= len(filtered) {
+		return []domain.Job{}, total, nil
+	}
+
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	return filtered[offset:end], total, nil
+}
+
+func (s *DefaultJobService) GetJobsByUserID(ctx context.Context, userID string, filter domain.JobFilter, sort domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
+	if err := filter.Validate(); err != nil {
+		return nil, 0, err
+	}
+	// Filtering, sorting and pagination are all applied in the repository (SQL) so
+	// that the returned page and its total reflect the filtered result set. Doing
+	// any of these in memory here would only operate on the already-paginated page.
+	return s.repo.FindByUserID(userID, filter, sort, offset, limit)
+}
+
+func (s *DefaultJobService) UpdateJob(ctx context.Context, id string, name string, orgID string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.OrgID != orgID {
+		return domain.Job{}, domain.ErrJobNotFound
+	}
+
+	if orgID == "" {
+		return domain.Job{}, domain.ErrInvalidOrgID
+	}
+
+	return s.applyJobUpdate(job, name, orgID, userID, schedule, payloadType, payload, status)
+}
+
+func (s *DefaultJobService) UpdateJobWithUserCheck(ctx context.Context, id string, name string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound
+	}
+
+	return s.applyJobUpdate(job, name, job.OrgID, userID, schedule, payloadType, payload, status)
+}
+
+func (s *DefaultJobService) applyJobUpdate(job domain.Job, name string, orgID string, userID string, schedule string, payloadType domain.PayloadType, payload interface{}, status string) (domain.Job, error) {
+	if !domain.IsValidSchedule(schedule) {
+		return domain.Job{}, domain.ErrInvalidSchedule
+	}
+
+	if !domain.IsValidPayloadType(string(payloadType)) {
+		return domain.Job{}, domain.ErrInvalidPayload
+	}
+
+	if !domain.IsValidStatus(status) {
+		return domain.Job{}, domain.ErrInvalidStatus
+	}
+
+	statusVal := domain.JobStatus(status)
+	if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+		return domain.Job{}, domain.ErrInvalidStatusTransition
+	}
+
+	// Validate CEL expressions in payload
+	if err := s.validatePayloadTemplates(payload); err != nil {
+		return domain.Job{}, err
+	}
+
+	scheduleVal := domain.Schedule(schedule)
+
+	updatedJob := job.UpdateFields(&name, &orgID, &userID, &scheduleVal, &payloadType, &payload, &statusVal)
+
+	if schedule != string(job.Schedule) {
+		nextRunAt, calcErr := calculateNextRunAt(schedule, updatedJob.Timezone)
+		if calcErr != nil {
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+		}
+	}
+
+	err := s.repo.Save(updatedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(job.ID)
+		if updatedJob.Status == domain.StatusScheduled {
+			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
+				// Log error but don't fail the update
+			}
+		}
+	}
+
+	return updatedJob, nil
+}
+
+func (s *DefaultJobService) PatchJobWithOrgCheck(ctx context.Context, id string, userOrgID string, updates map[string]interface{}) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same organization
+	if job.OrgID != userOrgID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	var name *string
+	var orgID *string
+	var userID *string
+	var schedule *domain.Schedule
+	var payloadType *domain.PayloadType
+	var payload *interface{}
+	var status *domain.JobStatus
+
+	if v, ok := updates["name"]; ok {
+		if nameStr, ok := v.(string); ok {
+			name = &nameStr
+		}
+	}
+
+	if v, ok := updates["org_id"]; ok {
+		if orgIDStr, ok := v.(string); ok {
+			if orgIDStr == "" {
+				return domain.Job{}, domain.ErrInvalidOrgID
+			}
+			// For security, don't allow changing org_id via API
+			// Always use the authenticated user's org_id
+			orgID = &userOrgID
+		}
+	}
+
+	if v, ok := updates["user_id"]; ok {
+		if userIDStr, ok := v.(string); ok {
+			userID = &userIDStr
+		}
+	}
+
+	if v, ok := updates["schedule"]; ok {
+		if schedStr, ok := v.(string); ok {
+			if !domain.IsValidSchedule(schedStr) {
+				return domain.Job{}, domain.ErrInvalidSchedule
+			}
+			schedVal := domain.Schedule(schedStr)
+			schedule = &schedVal
+		}
+	}
+
+	if v, ok := updates["type"]; ok {
+		if typeStr, ok := v.(string); ok {
+			if !domain.IsValidPayloadType(typeStr) {
+				return domain.Job{}, domain.ErrInvalidPayload
+			}
+			pt := domain.PayloadType(typeStr)
+			payloadType = &pt
+		}
+	}
+
+	if v, ok := updates["payload"]; ok {
+		// Payload can be any JSON value (object, array, string, number, etc.)
+		payload = &v
+		// Validate CEL expressions in the new payload
+		if err := s.validatePayloadTemplates(v); err != nil {
+			return domain.Job{}, err
+		}
+	}
+
+	if v, ok := updates["status"]; ok {
+		if statusStr, ok := v.(string); ok {
+			if !domain.IsValidStatus(statusStr) {
+				return domain.Job{}, domain.ErrInvalidStatus
+			}
+			statusVal := domain.JobStatus(statusStr)
+			// Prevent manual setting of system-managed statuses
+			if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+				return domain.Job{}, domain.ErrInvalidStatusTransition
+			}
+			status = &statusVal
+		}
+	}
+
+	updatedJob := job.UpdateFields(name, orgID, userID, schedule, payloadType, payload, status)
+
+	// Recalculate next run time if schedule was updated
+	if schedule != nil {
+		nextRunAt, calcErr := calculateNextRunAt(string(*schedule), updatedJob.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] PatchJobWithOrgCheck - failed to calculate next run time: %v", calcErr)
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] PatchJobWithOrgCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+		}
+	}
+
+	err = s.repo.Save(updatedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Update cron scheduling
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id) // Remove old schedule
+		if updatedJob.Status == domain.StatusScheduled {
+			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
+				// Log error but don't fail the update
+			}
+		}
+	}
+
+	return updatedJob, nil
+}
+
+func (s *DefaultJobService) PatchJobWithUserCheck(ctx context.Context, id string, userUserID string, updates map[string]interface{}) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userUserID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	var name *string
+	var orgID *string
+	var userID *string
+	var schedule *domain.Schedule
+	var payloadType *domain.PayloadType
+	var payload *interface{}
+	var status *domain.JobStatus
+
+	if v, ok := updates["name"]; ok {
+		if nameStr, ok := v.(string); ok {
+			name = &nameStr
+		}
+	}
+
+	if v, ok := updates["org_id"]; ok {
+		if orgIDStr, ok := v.(string); ok {
+			if orgIDStr == "" {
+				return domain.Job{}, domain.ErrInvalidOrgID
+			}
+			// For security, don't allow changing org_id via API
+			// Keep the job's current org_id
+			currentOrgID := job.OrgID
+			orgID = &currentOrgID
+		}
+	}
+
+	if v, ok := updates["user_id"]; ok {
+		if _, ok := v.(string); ok {
+			// For security, don't allow changing user_id via API
+			// Always use the authenticated user's user_id
+			userID = &userUserID
+		}
+	}
+
+	if v, ok := updates["schedule"]; ok {
+		if schedStr, ok := v.(string); ok {
+			if !domain.IsValidSchedule(schedStr) {
+				return domain.Job{}, domain.ErrInvalidSchedule
+			}
+			schedVal := domain.Schedule(schedStr)
+			schedule = &schedVal
+		}
+	}
+
+	if v, ok := updates["type"]; ok {
+		if typeStr, ok := v.(string); ok {
+			if !domain.IsValidPayloadType(typeStr) {
+				return domain.Job{}, domain.ErrInvalidPayload
+			}
+			pt := domain.PayloadType(typeStr)
+			payloadType = &pt
+		}
+	}
+
+	if v, ok := updates["payload"]; ok {
+		// Payload can be any JSON value (object, array, string, number, etc.)
+		payload = &v
+		// Validate CEL expressions in the new payload
+		if err := s.validatePayloadTemplates(v); err != nil {
+			return domain.Job{}, err
+		}
+	}
+
+	if v, ok := updates["status"]; ok {
+		if statusStr, ok := v.(string); ok {
+			if !domain.IsValidStatus(statusStr) {
+				return domain.Job{}, domain.ErrInvalidStatus
+			}
+			statusVal := domain.JobStatus(statusStr)
+			// Prevent manual setting of system-managed statuses
+			if statusVal == domain.StatusRunning || statusVal == domain.StatusFailed {
+				return domain.Job{}, domain.ErrInvalidStatusTransition
+			}
+			status = &statusVal
+		}
+	}
+
+	updatedJob := job.UpdateFields(name, orgID, userID, schedule, payloadType, payload, status)
+
+	// Recalculate next run time if schedule was updated
+	if schedule != nil {
+		nextRunAt, calcErr := calculateNextRunAt(string(*schedule), updatedJob.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] PatchJobWithUserCheck - failed to calculate next run time: %v", calcErr)
+			return domain.Job{}, calcErr
+		}
+		if nextRunAt != nil {
+			updatedJob = updatedJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] PatchJobWithUserCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+		}
+	}
+
+	err = s.repo.Save(updatedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Update cron scheduling
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id) // Remove old schedule
+		if updatedJob.Status == domain.StatusScheduled {
+			if err := s.cronScheduler.ScheduleJob(updatedJob); err != nil {
+				// Log error but don't fail the update
+			}
+		}
+	}
+
+	return updatedJob, nil
+}
+
+func (s *DefaultJobService) DeleteJob(id string) error {
+	_, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return s.repo.Delete(id)
+}
+
+func (s *DefaultJobService) DeleteJobWithOrgCheck(ctx context.Context, id string, orgID string) error {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Check if job belongs to the same organization
+	if job.OrgID != orgID {
+		return domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return s.repo.Delete(id)
+}
+
+func (s *DefaultJobService) DeleteJobWithUserCheck(ctx context.Context, id string, userID string) error {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return s.repo.Delete(id)
+}
+
+func (s *DefaultJobService) RunJob(ctx context.Context, id string) (string, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	// Create job run record synchronously so we can return the ID
+	var jobRunID string
+	if s.runRepo != nil {
+		jobRun := domain.NewJobRun(job.ID)
+		jobRunID = jobRun.ID
+		if err := s.runRepo.Save(jobRun); err != nil {
+			log.Printf("[DEBUG] RunJob - failed to create job run record: %v", err)
+			return "", fmt.Errorf("failed to create job run: %w", err)
+		}
+		log.Printf("[DEBUG] RunJob - created job run %s for job %s", jobRunID, id)
+	}
+
+	// If we have a cron scheduler (Redis or in-memory), use it for immediate execution
+	// This ensures proper distributed locking in Redis mode and consistent execution path
+	if s.cronScheduler != nil {
+		log.Printf("[DEBUG] RunJob - scheduling job %s for immediate execution via scheduler", id)
+		err := s.cronScheduler.ScheduleJobImmediately(job, jobRunID)
+		if err != nil {
+			return "", err
+		}
+		return jobRunID, nil
+	}
+
+	// Fallback to direct execution if no scheduler is configured
+	log.Printf("[DEBUG] RunJob - executing job %s directly (no scheduler configured)", id)
+
+	runningJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(time.Now().UTC())
+	err = s.repo.Save(runningJob)
+	if err != nil {
+		return "", err
+	}
+
+	var execErr error
+	if jobRunID != "" {
+		execErr = s.executor.ExecuteWithJobRun(runningJob, jobRunID)
+	} else {
+		execErr = s.executor.Execute(runningJob)
+	}
+
+	// For manual API-triggered runs, we don't track failures or trigger auto-pause
+	// Only scheduled runs (via FailureTrackingExecutor) count toward consecutive failures
+	// This allows admins to test/debug jobs without accidentally triggering auto-pause
+	var finalStatus domain.JobStatus
+	var finalJob domain.Job
+
+	if execErr != nil {
+		// Manual runs do not count toward consecutive-failure auto-pause, and the job
+		// stays active/scheduled; the failure is captured in the per-run JobRun record.
+		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
+		finalStatus = domain.StatusScheduled
+		finalJob = runningJob.WithStatus(finalStatus)
+	} else {
+		finalStatus = domain.StatusScheduled
+		finalJob = runningJob.WithStatus(finalStatus)
+	}
+
+	// Calculate next run time after execution
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] RunJob - failed to calculate next run time for job %s: %v", id, calcErr)
+	} else if nextRunAt != nil {
+		finalJob = finalJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] RunJob - calculated next run time for job %s: %s", id, nextRunAt.Format(time.RFC3339))
+	}
+
+	err = s.repo.Save(finalJob)
+	if err != nil {
+		return "", err
+	}
+
+	return jobRunID, nil
+}
+
+func (s *DefaultJobService) PauseJob(id string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.Status == domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobAlreadyPaused
+	}
+
+	pausedJob := job.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
+	err = s.repo.Save(pausedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return pausedJob, nil
+}
+
+func (s *DefaultJobService) PauseJobWithOrgCheck(ctx context.Context, id string, orgID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same organization
+	if job.OrgID != orgID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	if job.Status == domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobAlreadyPaused
+	}
+
+	pausedJob := job.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
+	err = s.repo.Save(pausedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return pausedJob, nil
+}
+
+func (s *DefaultJobService) PauseJobWithUserCheck(ctx context.Context, id string, userID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	if job.Status == domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobAlreadyPaused
+	}
+
+	pausedJob := job.WithStatus(domain.StatusPaused).WithNextRunAtCleared()
+	err = s.repo.Save(pausedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Unschedule from cron scheduler
+	if s.cronScheduler != nil {
+		s.cronScheduler.UnscheduleJob(id)
+	}
+
+	return pausedJob, nil
+}
+
+func (s *DefaultJobService) ResumeJob(ctx context.Context, id string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	if job.Status != domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobNotPaused
+	}
+
+	// Reset failure counter when resuming
+	resumedJob := job.WithFailuresReset().WithStatus(domain.StatusScheduled)
+
+	// Recalculate next run time when resuming
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ResumeJob - failed to calculate next run time: %v", calcErr)
+		return domain.Job{}, calcErr
+	}
+	if nextRunAt != nil {
+		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ResumeJob - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
+	err = s.repo.Save(resumedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Reschedule in cron scheduler
+	if s.cronScheduler != nil {
+		if err := s.cronScheduler.ScheduleJob(resumedJob); err != nil {
+			// Log error but don't fail the resume
+		}
+	}
+
+	return resumedJob, nil
+}
+
+func (s *DefaultJobService) ResumeJobWithOrgCheck(ctx context.Context, id string, orgID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same organization
+	if job.OrgID != orgID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	if job.Status != domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobNotPaused
+	}
+
+	// Reset failure counter when resuming
+	resumedJob := job.WithFailuresReset().WithStatus(domain.StatusScheduled)
+
+	// Recalculate next run time when resuming
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ResumeJobWithOrgCheck - failed to calculate next run time: %v", calcErr)
+		return domain.Job{}, calcErr
+	}
+	if nextRunAt != nil {
+		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ResumeJobWithOrgCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
+	err = s.repo.Save(resumedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Reschedule in cron scheduler
+	if s.cronScheduler != nil {
+		if err := s.cronScheduler.ScheduleJob(resumedJob); err != nil {
+			// Log error but don't fail the resume
+		}
+	}
+
+	return resumedJob, nil
+}
+
+func (s *DefaultJobService) ResumeJobWithUserCheck(ctx context.Context, id string, userID string) (domain.Job, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return domain.Job{}, domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	if job.Status != domain.StatusPaused {
+		return domain.Job{}, domain.ErrJobNotPaused
+	}
+
+	// Reset failure counter when resuming
+	resumedJob := job.WithFailuresReset().WithStatus(domain.StatusScheduled)
+
+	// Recalculate next run time when resuming
+	nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+	if calcErr != nil {
+		log.Printf("[DEBUG] ResumeJobWithUserCheck - failed to calculate next run time: %v", calcErr)
+		return domain.Job{}, calcErr
+	}
+	if nextRunAt != nil {
+		resumedJob = resumedJob.WithNextRunAt(*nextRunAt)
+		log.Printf("[DEBUG] ResumeJobWithUserCheck - calculated next run time: %s", nextRunAt.Format(time.RFC3339))
+	}
+
+	err = s.repo.Save(resumedJob)
+	if err != nil {
+		return domain.Job{}, err
+	}
+
+	// Reschedule in cron scheduler
+	if s.cronScheduler != nil {
+		if err := s.cronScheduler.ScheduleJob(resumedJob); err != nil {
+			// Log error but don't fail the resume
+		}
+	}
+
+	return resumedJob, nil
+}
+
+func (s *DefaultJobService) RunJobWithOrgCheck(ctx context.Context, id string, orgID string) (string, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if job belongs to the same organization
+	if job.OrgID != orgID {
+		return "", domain.ErrJobNotFound // Don't reveal existence of job from other orgs
+	}
+
+	return s.RunJob(ctx, id)
+}
+
+func (s *DefaultJobService) RunJobWithUserCheck(ctx context.Context, id string, userID string) (string, error) {
+	job, err := s.repo.FindByID(id)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if job belongs to the same user
+	if job.UserID != userID {
+		return "", domain.ErrJobNotFound // Don't reveal existence of job from other users
+	}
+
+	return s.RunJob(ctx, id)
+}
+
+func (s *DefaultJobService) GetScheduledJobs() ([]domain.Job, error) {
+	jobs, err := s.repo.FindAll()
+	if err != nil {
+		return nil, err
+	}
+
+	scheduled := make([]domain.Job, 0)
+	for _, job := range jobs {
+		if job.Status == domain.StatusScheduled && s.scheduler.ShouldRun(job, time.Now().UTC()) {
+			scheduled = append(scheduled, job)
+		}
+	}
+
+	return scheduled, nil
+}
+
+func (s *DefaultJobService) ExecuteScheduledJob(job domain.Job) error {
+	// Use background context for scheduled job execution
+	_, err := s.RunJob(context.Background(), job.ID)
+	return err
+}
+
+// ExecuteScheduledJobWithJobRun executes a job with a pre-created job run ID.
+// This method is only used by CronScheduler (server mode).
+//
+// TODO: Server mode is deprecated (marked "legacy" in CLI help). When server mode is removed,
+// this method can be deleted entirely. This will also resolve the inconsistency where server
+// mode tracks failures for manual API runs (via RunJob → ScheduleJobImmediately → this method),
+// while API+Worker mode correctly does not track failures for manual runs.
+func (s *DefaultJobService) ExecuteScheduledJobWithJobRun(job domain.Job, jobRunID string) error {
+	// Execute job directly with pre-created job run ID
+	log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - job: %s, job run: %s", job.ID, jobRunID)
+
+	runningJob := job.WithStatus(domain.StatusRunning).WithLastRunAt(time.Now().UTC())
+	err := s.repo.Save(runningJob)
+	if err != nil {
+		return err
+	}
+
+	// Execute with the pre-created job run
+	execErr := s.executor.ExecuteWithJobRun(runningJob, jobRunID)
+
+	var finalStatus domain.JobStatus
+	var finalJob domain.Job
+
+	if execErr != nil {
+		log.Printf("Job execution failed for job %s: %v", job.ID, execErr)
+
+		// Increment failure counter
+		finalJob = runningJob.WithFailuresIncremented(time.Now().UTC())
+
+		// Check if we should auto-pause due to consecutive failures
+		if s.maxConsecutiveFailures > 0 && finalJob.ConsecutiveFailures >= s.maxConsecutiveFailures {
+			log.Printf("[JobService] Job %s exceeded failure threshold (%d consecutive failures), auto-pausing",
+				job.ID, s.maxConsecutiveFailures)
+			finalStatus = domain.StatusPaused
+
+			// Unschedule from cron scheduler
+			if s.cronScheduler != nil {
+				s.cronScheduler.UnscheduleJob(job.ID)
+			}
+		} else {
+			// Below the auto-pause threshold the job stays active and retries on its
+			// next tick. The failure is recorded via ConsecutiveFailures/LastFailedAt
+			// and the per-run JobRun record, not by flipping the job status to "failed".
+			finalStatus = domain.StatusScheduled
+		}
+
+		finalJob = finalJob.WithStatus(finalStatus)
+	} else if job.Type == domain.PayloadExport {
+		// Export success only means kick-off succeeded; the ExportPollerService
+		// handles failure tracking when the export actually completes.
+		finalJob = runningJob
+		finalStatus = domain.StatusScheduled
+		finalJob = finalJob.WithStatus(finalStatus)
+	} else {
+		// Success - reset failure counter
+		finalJob = runningJob.WithFailuresReset()
+		finalStatus = domain.StatusScheduled
+		finalJob = finalJob.WithStatus(finalStatus)
+	}
+
+	// Calculate next run time after execution (unless paused)
+	if finalStatus != domain.StatusPaused {
+		nextRunAt, calcErr := calculateNextRunAt(string(job.Schedule), job.Timezone)
+		if calcErr != nil {
+			log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - failed to calculate next run time for job %s: %v", job.ID, calcErr)
+		} else if nextRunAt != nil {
+			finalJob = finalJob.WithNextRunAt(*nextRunAt)
+			log.Printf("[DEBUG] ExecuteScheduledJobWithJobRun - calculated next run time for job %s: %s", job.ID, nextRunAt.Format(time.RFC3339))
+		}
+	} else {
+		// Clear next_run_at when job is paused
+		finalJob = finalJob.WithNextRunAtCleared()
+	}
+
+	return s.repo.Save(finalJob)
+}

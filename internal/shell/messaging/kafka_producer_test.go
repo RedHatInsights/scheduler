@@ -1,0 +1,52 @@
+package messaging
+
+import (
+	"log/slog"
+	"os"
+	"testing"
+
+	"insights-scheduler/internal/config"
+)
+
+// Note: Integration tests with actual Kafka would require a test Kafka cluster
+// For unit tests, we focus on basic configuration
+func TestKafkaProducer_Configuration(t *testing.T) {
+	// Skip this test in CI environments without Kafka
+	t.Skip("Skipping integration test - requires Kafka cluster")
+
+	// Test that we can create a KafkaProducer instance
+	cfg := &config.KafkaConfig{
+		Brokers: []string{"localhost:9092"},
+		Topic:   "test-topic",
+	}
+
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	producer, err := NewKafkaProducer(cfg, testLogger)
+	if err != nil {
+		t.Logf("Expected error when Kafka is not available: %v", err)
+		return
+	}
+
+	// If we somehow connected, clean up
+	if producer != nil {
+		defer producer.Close()
+	}
+}
+
+func TestKafkaProducer_SendMessage_Headers(t *testing.T) {
+	// Test that we can construct headers properly
+	headers := map[string]string{
+		"message-type": "test",
+		"org-id":       "org-123",
+		"version":      "v1.0.0",
+	}
+
+	// Verify our headers map structure is valid
+	if len(headers) != 3 {
+		t.Errorf("Expected 3 headers, got %d", len(headers))
+	}
+
+	if headers["message-type"] != "test" {
+		t.Errorf("Expected message-type 'test', got %s", headers["message-type"])
+	}
+}

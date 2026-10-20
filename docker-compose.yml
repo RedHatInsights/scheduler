@@ -1,0 +1,109 @@
+version: '3.8'
+
+# Insights Scheduler - Docker Compose Configuration
+#
+# This compose file runs the distributed multi-pod architecture locally:
+# - postgres: Source of truth for job metadata and run history
+# - redis: Distributed scheduling coordinator (sorted sets)
+# - api: REST API server (handles CRUD, writes to Postgres + Redis)
+# - worker: Job executor (polls Redis, executes jobs, writes results to Postgres)
+# - kafka/zookeeper/kafka-ui: Optional messaging infrastructure
+#
+# Quick Start:
+#   docker-compose up -d postgres redis    # Start databases only
+#   docker-compose up -d                    # Start everything (api + worker)
+#   docker-compose logs -f api worker       # View logs
+#
+# Access:
+#   API:       http://localhost:5000/api/v1/jobs
+#   Metrics:   http://localhost:8080/metrics
+#   Kafka UI:  http://localhost:8090
+#
+# To use the legacy single-process server instead:
+#   1. Comment out the 'api' and 'worker' services
+#   2. Uncomment the 'scheduler' service
+#   3. docker-compose up -d
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: scheduler-postgres
+    environment:
+      POSTGRES_USER: insights
+      POSTGRES_PASSWORD: insights
+      POSTGRES_DB: scheduler
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insights -d scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis (distributed scheduling coordinator)
+  redis:
+    image: redis:7-alpine
+    container_name: scheduler-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Zookeeper (required by Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: scheduler-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: scheduler-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Kafka UI (optional - for debugging)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: scheduler-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+volumes:
+  postgres_data:
+  redis_data:

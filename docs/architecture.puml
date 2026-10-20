@@ -1,0 +1,82 @@
+@startuml
+left to right direction
+
+' External actors
+actor User
+
+' API Layer
+package "Scheduler Service" {
+    component "API Server Pods" as API {
+    }
+
+    component "Worker Pods" as Worker {
+    }
+}
+
+' Storage Layer
+database "PostgreSQL" as DB {
+}
+
+database "Redis" as Cache {
+}
+
+component "User Validation Service" as BOP {
+}
+
+component "Export Service" as Export {
+}
+
+queue "Kafka" as Kafka {
+}
+
+component "Notifications" as Notif {
+}
+
+component "Email Service" as Email {
+  [SMTP]
+}
+
+' User interactions
+User --> API : REST API\n(Create/List Jobs)
+User --> Export : Download exports
+
+' API Server connections
+API --> DB : Store jobs &\njob runs
+API --> Cache : Schedule jobs
+API ..> BOP : Validate identity\n(X-Rh-Identity)
+
+' Worker connections
+Worker --> Cache : Poll scheduled jobs
+Worker --> DB : Update job runs
+Worker --> BOP : Validate users
+Worker --> Export : Create export &\nPoll status
+Worker --> Kafka : Send message to notifications
+
+' External service flow
+Kafka --> Notif : Event stream
+Notif --> Email : Send emails
+Email ..> User : Email delivery
+
+'note right of Worker
+'  Multiple worker pods
+'  run concurrently with
+'  leader election and
+'  distributed locking
+'end note
+
+note right of Cache
+  Used for:
+  • Job scheduling (ZSET)
+  • Job definitions (Hash)
+  • Distributed locks (SETNX)
+  • Leader election
+end note
+
+note right of DB
+  Stores:
+  • Job definitions
+  • Job run history
+  • Execution results
+end note
+
+@enduml

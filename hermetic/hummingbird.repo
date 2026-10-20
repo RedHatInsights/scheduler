@@ -1,0 +1,7 @@
+[public-hummingbird-x86_64-rpms]
+name = public-hummingbird-x86_64-rpms
+baseurl = https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/$arch/
+gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-hummingbird-release
+gpgcheck = 1
+enabled = 1
+sslverify = 1

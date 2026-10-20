@@ -1,0 +1,114 @@
+@startuml Export Job Data Flow
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+actor User
+participant "API Server" as API
+database PostgreSQL
+database Redis
+participant "Worker Pod" as Worker
+participant "BOP\n(User Validation)" as BOP
+participant "Export Service" as Export
+queue "Kafka" as Kafka
+participant "Notifications\nService" as Notifications
+participant "Email Service" as Email
+
+== Job Creation ==
+User -> API: POST /api/scheduler/v1/jobs\n{schedule: "0 9 * * *", type: "export", ...}
+activate API
+API -> API: Validate cron schedule
+API -> PostgreSQL: INSERT INTO jobs\n(org_id, user_id, schedule, payload)
+activate PostgreSQL
+PostgreSQL --> API: Job created ✓
+deactivate PostgreSQL
+API -> Redis: Schedule job for execution
+activate Redis
+Redis --> API: Scheduled ✓
+deactivate Redis
+API --> User: 201 Created\n{job_id, next_run_at}
+deactivate API
+
+== Job Execution (Next Day at 9:00 AM) ==
+Worker -> Redis: Get scheduled jobs
+activate Worker
+activate Redis
+Redis --> Worker: [job-123]
+deactivate Redis
+
+Worker -> Redis: Acquire job lock
+activate Redis
+Redis --> Worker: Lock acquired ✓
+deactivate Redis
+
+Worker -> Redis: Get job definition
+activate Redis
+Redis --> Worker: Job details
+deactivate Redis
+
+== User Validation ==
+Worker -> BOP: POST /api/users/validate\n{users: ["jdoe"]}
+activate BOP
+BOP --> Worker: {valid: true, org_id: "123", user_id: "456"}
+deactivate BOP
+
+== Export Execution ==
+Worker -> Export: POST /api/export/v1/exports\n{name: "report.csv", format: "csv", filters: {...}}
+activate Export
+Export --> Worker: {export_id: "uuid-789",\nstatus: "pending"}
+deactivate Export
+
+loop Poll every 5 seconds (up to 60 times)
+    Worker -> Export: GET /api/export/v1/exports/{uuid-789}
+    activate Export
+    Export --> Worker: {status: "processing"}
+    deactivate Export
+    Worker -> Worker: Sleep 5 seconds
+end
+
+Worker -> Export: GET /api/export/v1/exports/{uuid-789}
+activate Export
+Export --> Worker: {status: "complete",\nurl: "https://console.redhat.com/api/exports/v1/uuid/download"}
+deactivate Export
+
+== Save Results & Notify ==
+Worker -> PostgreSQL: INSERT INTO job_runs\n(job_id, status: "success",\nresult: {export_url: "https://console.redhat.com/api/exports/v1/uuid/download"})
+activate PostgreSQL
+PostgreSQL --> Worker: Saved ✓
+deactivate PostgreSQL
+
+Worker -> Kafka: PRODUCE platform.notifications.ingress\n{bundle: "console",\nevent_type: "export-complete",\ncontext: {export_url, job_name}}
+activate Kafka
+Kafka --> Worker: Message sent ✓
+deactivate Kafka
+
+Worker -> Redis: Reschedule for next run
+activate Redis
+Redis --> Worker: Rescheduled ✓
+deactivate Redis
+Worker -> Redis: Release job lock
+activate Redis
+Redis --> Worker: Lock released ✓
+deactivate Redis
+deactivate Worker
+
+== Notification Delivery ==
+Kafka -> Notifications: Consume message\n{event: "export-complete", ...}
+activate Notifications
+Notifications -> Notifications: Look up user preferences
+Notifications -> Email: Send email\nTo: user@example.com\nSubject: "Your export is ready"
+activate Email
+Email --> Notifications: Email queued ✓
+deactivate Email
+deactivate Notifications
+
+== User Downloads Export ==
+Email -> User: 📧 Email received\n"Your scheduled export 'Daily Report' is ready.\nClick to download: [Download Link]"
+activate User
+User -> Export: Click download link\nGET https://console.redhat.com/api/exports/v1/uuid/download
+activate Export
+Export --> User: report.csv\n(File downloaded) ✓
+deactivate Export
+deactivate User
+
+@enduml

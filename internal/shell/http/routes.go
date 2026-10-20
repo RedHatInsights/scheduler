@@ -1,0 +1,59 @@
+package http
+
+import (
+	"log/slog"
+	"strings"
+
+	"github.com/gorilla/mux"
+	"github.com/redhatinsights/platform-go-middlewares/v2/identity"
+
+	"insights-scheduler/internal/config"
+	"insights-scheduler/internal/core/ports"
+	"insights-scheduler/internal/core/usecases"
+)
+
+func SetupRoutes(jobService ports.AuthorizedJobService, jobRunService *usecases.JobRunService, baseLogger *slog.Logger, orgIDGuardCfg config.OrgIDGuardConfig) *mux.Router {
+	router := mux.NewRouter()
+	handler := NewJobHandler(jobService)
+	runHandler := NewJobRunHandler(jobRunService)
+
+	// Apply logging middleware to all routes
+	router.Use(LoggingMiddleware(baseLogger))
+
+	// OpenAPI spec (no identity required)
+	router.HandleFunc("/api/scheduler/v1/openapi.json", OpenAPIHandler).Methods("GET")
+
+	// Apply identity middleware to all API routes
+	api := router.PathPrefix("/api/scheduler/v1").Subrouter()
+	api.Use(identity.EnforceIdentity)
+
+	// Require that all API calls are made by human users (not service accounts
+	// or certificates/systems). Must run after EnforceIdentity, which decodes
+	// and validates the x-rh-identity header into the request context.
+	api.Use(EnforceUserIdentity)
+
+	if orgIDGuardCfg.Enabled {
+		api.Use(OrgIDGuardMiddleware(orgIDGuardCfg))
+		baseLogger.Info("Org ID guard enabled", slog.String("allowed_org_ids", strings.Join(orgIDGuardCfg.AllowedOrgIDs, ", ")))
+	}
+
+	// Job CRUD operations
+	api.HandleFunc("/jobs", handler.CreateJob).Methods("POST")
+	api.HandleFunc("/jobs", handler.GetAllJobs).Methods("GET")
+	api.HandleFunc("/jobs/{id}", handler.GetJob).Methods("GET")
+	api.HandleFunc("/jobs/{id}", handler.UpdateJob).Methods("PUT")
+	api.HandleFunc("/jobs/{id}", handler.PatchJob).Methods("PATCH")
+	api.HandleFunc("/jobs/{id}", handler.DeleteJob).Methods("DELETE")
+
+	// Job control operations
+	api.HandleFunc("/jobs/{id}/run", handler.RunJob).Methods("POST")
+	api.HandleFunc("/jobs/{id}/pause", handler.PauseJob).Methods("POST")
+	api.HandleFunc("/jobs/{id}/resume", handler.ResumeJob).Methods("POST")
+
+	// Job run operations
+	api.HandleFunc("/jobs/{id}/runs", runHandler.GetJobRuns).Methods("GET")
+	api.HandleFunc("/jobs/{id}/runs/{run_id}", runHandler.GetJobRun).Methods("GET")
+	api.HandleFunc("/runs", runHandler.GetAllRuns).Methods("GET")
+
+	return router
+}

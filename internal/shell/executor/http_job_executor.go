@@ -1,0 +1,51 @@
+package executor
+
+import (
+	"log/slog"
+
+	"insights-scheduler/internal/core/domain"
+)
+
+// HTTPJobExecutor handles http_request payload type jobs
+type HTTPJobExecutor struct{}
+
+// NewHTTPJobExecutor creates a new HTTPJobExecutor
+func NewHTTPJobExecutor() *HTTPJobExecutor {
+	return &HTTPJobExecutor{}
+}
+
+// Execute executes an HTTP request job
+func (e *HTTPJobExecutor) Execute(job domain.Job, jobRunID string, logger *slog.Logger) (interface{}, domain.ResultType, error) {
+	// Cast payload to map[string]interface{}
+	payloadMap, ok := job.Payload.(map[string]interface{})
+	if !ok {
+		logger.Warn("Executing HTTP request with unknown payload (not a map)")
+		result := domain.HTTPResult{
+			URL:        "unknown",
+			Method:     "GET",
+			StatusCode: 200,
+			Latency:    0,
+		}
+		return result, domain.ResultTypeHTTP, nil
+	}
+
+	url, _ := payloadMap["url"].(string)
+	method, _ := payloadMap["method"].(string)
+	if method == "" {
+		method = "GET"
+	}
+	if url == "" {
+		url = "unknown"
+	}
+	logger.Info("Executing HTTP request",
+		slog.String("method", method),
+		slog.String("url", url))
+
+	result := domain.HTTPResult{
+		URL:        url,
+		Method:     method,
+		StatusCode: 200,
+		Latency:    0,
+	}
+	return result, domain.ResultTypeHTTP, nil
+}

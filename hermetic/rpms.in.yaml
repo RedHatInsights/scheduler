@@ -1,0 +1,17 @@
+contentOrigin:
+  repofiles:
+    - ./hummingbird.repo
+
+packages:
+  - gcc
+  - gcc-c++
+  - make
+  - openssl-devel
+  - cyrus-sasl-devel
+  - sqlite
+
+arches:
+  - x86_64
+
+context:
+  containerfile: ../Dockerfile

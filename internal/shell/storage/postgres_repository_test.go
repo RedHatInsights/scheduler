@@ -1,0 +1,1644 @@
+//go:build sql
+// +build sql
+
+package storage
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"testing"
+	"time"
+
+	"insights-scheduler/internal/config"
+	"insights-scheduler/internal/core/domain"
+)
+
+// These tests require a running PostgreSQL instance
+// Run with: go test -v ./internal/shell/storage -run TestPostgres
+
+func setupPostgresJobRepo(t *testing.T) *PostgresJobRepository {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("PostgreSQL test: configuration error: %v", err)
+	}
+
+	// Create test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	repo, err := NewPostgresJobRepository(cfg, testLogger)
+	if err != nil {
+		t.Fatalf("PostgreSQL test: database not available: %v", err)
+	}
+
+	// Clean up any existing test data
+	repo.db.Exec("DELETE FROM job_runs WHERE job_id::text LIKE '00000000-0000-0000-%'")
+	repo.db.Exec("DELETE FROM jobs WHERE id::text LIKE '00000000-0000-0000-%'")
+
+	return repo
+}
+
+func setupPostgresJobRunRepo(t *testing.T) *PostgresJobRunRepository {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("PostgreSQL test: configuration error: %v", err)
+	}
+
+	// Create test logger (suppress output during tests)
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	repo, err := NewPostgresJobRunRepository(cfg, testLogger)
+	if err != nil {
+		t.Fatalf("PostgreSQL test: database not available: %v", err)
+	}
+
+	return repo
+}
+
+func TestPostgresJobRepository_BasicCRUD(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create test job
+	payload := map[string]interface{}{
+		"message": "Postgres test job",
+		"count":   42,
+	}
+
+	job := domain.NewJob(
+		"Postgres Test Job",
+		"test-org-123",
+		"test-user-123",
+		"*/15 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		payload,
+	)
+	job.ID = "00000000-0000-0000-0000-000000000001"
+
+	// Test Save
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Test FindByID
+	retrievedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job by ID: %v", err)
+	}
+
+	// Verify all fields
+	if retrievedJob.ID != job.ID {
+		t.Errorf("Expected job ID %s, got %s", job.ID, retrievedJob.ID)
+	}
+	if retrievedJob.Name != job.Name {
+		t.Errorf("Expected job name %s, got %s", job.Name, retrievedJob.Name)
+	}
+	if retrievedJob.OrgID != job.OrgID {
+		t.Errorf("Expected org_id %s, got %s", job.OrgID, retrievedJob.OrgID)
+	}
+	if retrievedJob.UserID != job.UserID {
+		t.Errorf("Expected user_id %s, got %s", job.UserID, retrievedJob.UserID)
+	}
+	if retrievedJob.Schedule != job.Schedule {
+		t.Errorf("Expected schedule %s, got %s", job.Schedule, retrievedJob.Schedule)
+	}
+	if retrievedJob.Type != job.Type {
+		t.Errorf("Expected type %s, got %s", job.Type, retrievedJob.Type)
+	}
+	if retrievedJob.Status != job.Status {
+		t.Errorf("Expected status %s, got %s", job.Status, retrievedJob.Status)
+	}
+
+	// Test Update with LastRunAt and NextRunAt
+	now := time.Now().UTC()
+	nextRunAt := time.Now().UTC().Add(1 * time.Hour)
+	updatedJob := retrievedJob.WithStatus(domain.StatusRunning).WithLastRunAt(now).WithNextRunAt(nextRunAt)
+
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	retrievedUpdated, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find updated job: %v", err)
+	}
+
+	if retrievedUpdated.Status != domain.StatusRunning {
+		t.Errorf("Expected status %s, got %s", domain.StatusRunning, retrievedUpdated.Status)
+	}
+
+	if retrievedUpdated.LastRunAt == nil {
+		t.Error("Expected LastRunAt to be set")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedUpdated.LastRunAt.Sub(now).Abs() > time.Second {
+			t.Errorf("Expected LastRunAt near %v, got %v", now, *retrievedUpdated.LastRunAt)
+		}
+	}
+
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedUpdated.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt near %v, got %v", nextRunAt, *retrievedUpdated.NextRunAt)
+		}
+	}
+
+	// Test Delete
+	err = repo.Delete(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to delete job: %v", err)
+	}
+
+	// Verify deletion
+	_, err = repo.FindByID(job.ID)
+	if err != domain.ErrJobNotFound {
+		t.Errorf("Expected ErrJobNotFound, got %v", err)
+	}
+}
+
+func TestPostgresJobRepository_OrgIsolation(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create jobs for different orgs
+	orgAJob1 := domain.NewJob("Org A Job 1", "org-a", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob1.ID = "00000000-0000-0000-000a-000000000001"
+
+	orgAJob2 := domain.NewJob("Org A Job 2", "org-a", "user-a-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob2.ID = "00000000-0000-0000-000a-000000000002"
+
+	orgBJob1 := domain.NewJob("Org B Job 1", "org-b", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob1.ID = "00000000-0000-0000-000b-000000000001"
+
+	orgBJob2 := domain.NewJob("Org B Job 2", "org-b", "user-b-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob2.ID = "00000000-0000-0000-000b-000000000002"
+
+	// Save all jobs
+	jobs := []domain.Job{orgAJob1, orgAJob2, orgBJob1, orgBJob2}
+	for _, job := range jobs {
+		if err := repo.Save(job); err != nil {
+			t.Fatalf("Failed to save job %s: %v", job.ID, err)
+		}
+	}
+
+	// Test: Org A should only see its own jobs
+	orgAJobs, err := repo.FindByOrgID("org-a")
+	if err != nil {
+		t.Fatalf("Failed to find jobs for org-a: %v", err)
+	}
+
+	if len(orgAJobs) != 2 {
+		t.Errorf("Expected 2 jobs for org-a, got %d", len(orgAJobs))
+	}
+
+	for _, job := range orgAJobs {
+		if job.OrgID != "org-a" {
+			t.Errorf("Expected org_id 'org-a', got '%s' for job %s", job.OrgID, job.ID)
+		}
+	}
+
+	// Test: Org B should only see its own jobs
+	orgBJobs, err := repo.FindByOrgID("org-b")
+	if err != nil {
+		t.Fatalf("Failed to find jobs for org-b: %v", err)
+	}
+
+	if len(orgBJobs) != 2 {
+		t.Errorf("Expected 2 jobs for org-b, got %d", len(orgBJobs))
+	}
+
+	for _, job := range orgBJobs {
+		if job.OrgID != "org-b" {
+			t.Errorf("Expected org_id 'org-b', got '%s' for job %s", job.OrgID, job.ID)
+		}
+	}
+
+	// Test: Org C should see no jobs
+	orgCJobs, err := repo.FindByOrgID("org-c")
+	if err != nil {
+		t.Fatalf("Failed to find jobs for org-c: %v", err)
+	}
+
+	if len(orgCJobs) != 0 {
+		t.Errorf("Expected 0 jobs for org-c, got %d", len(orgCJobs))
+	}
+
+	// Cleanup
+	for _, job := range jobs {
+		repo.Delete(job.ID)
+	}
+}
+
+func TestPostgresJobRepository_UserIsolation(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create jobs for different users (same org)
+	user1Job1 := domain.NewJob("User 1 Job 1", "shared-org", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user1Job1.ID = "00000000-0000-0000-0001-000000000001"
+
+	user1Job2 := domain.NewJob("User 1 Job 2", "shared-org", "user-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user1Job2.ID = "00000000-0000-0000-0001-000000000002"
+
+	user2Job1 := domain.NewJob("User 2 Job 1", "shared-org", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user2Job1.ID = "00000000-0000-0000-0002-000000000001"
+
+	user2Job2 := domain.NewJob("User 2 Job 2", "shared-org", "user-2", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	user2Job2.ID = "00000000-0000-0000-0002-000000000002"
+
+	// Save all jobs
+	jobs := []domain.Job{user1Job1, user1Job2, user2Job1, user2Job2}
+	for _, job := range jobs {
+		if err := repo.Save(job); err != nil {
+			t.Fatalf("Failed to save job %s: %v", job.ID, err)
+		}
+	}
+
+	// Test: User 1 should only see their own jobs
+	user1Jobs, total1, err := repo.FindByUserID("user-1", domain.JobFilter{}, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("Failed to find jobs for user-1: %v", err)
+	}
+
+	if len(user1Jobs) != 2 {
+		t.Errorf("Expected 2 jobs for user-1, got %d", len(user1Jobs))
+	}
+
+	if total1 != 2 {
+		t.Errorf("Expected total count 2 for user-1, got %d", total1)
+	}
+
+	for _, job := range user1Jobs {
+		if job.UserID != "user-1" {
+			t.Errorf("Expected user_id 'user-1', got '%s' for job %s", job.UserID, job.ID)
+		}
+	}
+
+	// Test: User 2 should only see their own jobs
+	user2Jobs, total2, err := repo.FindByUserID("user-2", domain.JobFilter{}, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("Failed to find jobs for user-2: %v", err)
+	}
+
+	if len(user2Jobs) != 2 {
+		t.Errorf("Expected 2 jobs for user-2, got %d", len(user2Jobs))
+	}
+
+	if total2 != 2 {
+		t.Errorf("Expected total count 2 for user-2, got %d", total2)
+	}
+
+	for _, job := range user2Jobs {
+		if job.UserID != "user-2" {
+			t.Errorf("Expected user_id 'user-2', got '%s' for job %s", job.UserID, job.ID)
+		}
+	}
+
+	// Test: User 3 should see no jobs
+	user3Jobs, total3, err := repo.FindByUserID("user-3", domain.JobFilter{}, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("Failed to find jobs for user-3: %v", err)
+	}
+
+	if len(user3Jobs) != 0 {
+		t.Errorf("Expected 0 jobs for user-3, got %d", len(user3Jobs))
+	}
+
+	if total3 != 0 {
+		t.Errorf("Expected total count 0 for user-3, got %d", total3)
+	}
+
+	// Cleanup
+	for _, job := range jobs {
+		repo.Delete(job.ID)
+	}
+}
+
+func TestPostgresJobRepository_CrossOrgAccess(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create job for org-sensitive
+	sensitiveJob := domain.NewJob(
+		"Sensitive Job",
+		"org-sensitive",
+		"admin-123",
+		"0 0 * * *",
+		"UTC",
+		domain.PayloadExport,
+		map[string]interface{}{"data": "confidential"},
+	)
+	sensitiveJob.ID = "00000000-0000-0000-5e05-000000000001"
+
+	err := repo.Save(sensitiveJob)
+	if err != nil {
+		t.Fatalf("Failed to save sensitive job: %v", err)
+	}
+
+	// Test: Job can be found by ID (no org check in FindByID)
+	foundJob, err := repo.FindByID(sensitiveJob.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job by ID: %v", err)
+	}
+
+	if foundJob.OrgID != "org-sensitive" {
+		t.Errorf("Expected org_id 'org-sensitive', got '%s'", foundJob.OrgID)
+	}
+
+	// Test: Job should NOT appear in different org's job list
+	otherOrgJobs, err := repo.FindByOrgID("org-attacker")
+	if err != nil {
+		t.Fatalf("Failed to find jobs for org-attacker: %v", err)
+	}
+
+	for _, job := range otherOrgJobs {
+		if job.ID == sensitiveJob.ID {
+			t.Errorf("SECURITY VIOLATION: Sensitive job leaked to different org!")
+		}
+	}
+
+	// Test: Job should only appear in correct org's job list
+	correctOrgJobs, err := repo.FindByOrgID("org-sensitive")
+	if err != nil {
+		t.Fatalf("Failed to find jobs for org-sensitive: %v", err)
+	}
+
+	found := false
+	for _, job := range correctOrgJobs {
+		if job.ID == sensitiveJob.ID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Sensitive job not found in correct org's job list")
+	}
+
+	// Cleanup
+	repo.Delete(sensitiveJob.ID)
+}
+
+func TestPostgresJobRunRepository_BasicCRUD(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create a job first
+	job := domain.NewJob("Test Job for Runs", "test-org", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	job.ID = "00000000-0000-0000-0000-000000000002"
+
+	err := jobRepo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Create job run
+	startTime := time.Now().UTC()
+	run := domain.JobRun{
+		ID:        "10000000-0000-0000-0000-000000000001",
+		JobID:     job.ID,
+		Status:    domain.RunStatusRunning,
+		StartTime: startTime,
+	}
+
+	// Test Save
+	err = runRepo.Save(run)
+	if err != nil {
+		t.Fatalf("Failed to save job run: %v", err)
+	}
+
+	// Test FindByID
+	retrievedRun, err := runRepo.FindByID(run.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job run by ID: %v", err)
+	}
+
+	if retrievedRun.ID != run.ID {
+		t.Errorf("Expected run ID %s, got %s", run.ID, retrievedRun.ID)
+	}
+	if retrievedRun.JobID != run.JobID {
+		t.Errorf("Expected job ID %s, got %s", run.JobID, retrievedRun.JobID)
+	}
+	if retrievedRun.Status != run.Status {
+		t.Errorf("Expected status %s, got %s", run.Status, retrievedRun.Status)
+	}
+
+	// Test Update (complete the run)
+	commandResult := domain.CommandResult{
+		Command:  "test-command",
+		ExitCode: 0,
+		Duration: 100.5,
+	}
+	run = run.WithCompleted(domain.ResultTypeCommand, commandResult)
+
+	err = runRepo.Save(run)
+	if err != nil {
+		t.Fatalf("Failed to update job run: %v", err)
+	}
+
+	retrievedUpdated, err := runRepo.FindByID(run.ID)
+	if err != nil {
+		t.Fatalf("Failed to find updated job run: %v", err)
+	}
+
+	if retrievedUpdated.Status != domain.RunStatusCompleted {
+		t.Errorf("Expected status %s, got %s", domain.RunStatusCompleted, retrievedUpdated.Status)
+	}
+	if retrievedUpdated.EndTime == nil {
+		t.Error("Expected EndTime to be set")
+	}
+	if retrievedUpdated.ResultType == nil {
+		t.Error("Expected ResultType to be set")
+	} else if *retrievedUpdated.ResultType != domain.ResultTypeCommand {
+		t.Errorf("Expected ResultType %s, got %s", domain.ResultTypeCommand, *retrievedUpdated.ResultType)
+	}
+	if retrievedUpdated.Result == nil {
+		t.Error("Expected Result to be set")
+	}
+
+	// Cleanup
+	jobRepo.Delete(job.ID)
+}
+
+func TestPostgresJobRunRepository_OrgIsolation(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create jobs for different orgs
+	orgAJob := domain.NewJob("Org A Job", "org-a", "user-a-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgAJob.ID = "00000000-0000-0000-000a-000000000003"
+
+	orgBJob := domain.NewJob("Org B Job", "org-b", "user-b-1", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	orgBJob.ID = "00000000-0000-0000-000b-000000000003"
+
+	jobRepo.Save(orgAJob)
+	jobRepo.Save(orgBJob)
+
+	// Create runs for each job
+	orgARun := domain.JobRun{
+		ID:        "10000000-0000-0000-000a-000000000001",
+		JobID:     orgAJob.ID,
+		Status:    domain.RunStatusCompleted,
+		StartTime: time.Now().UTC(),
+	}
+
+	orgBRun := domain.JobRun{
+		ID:        "10000000-0000-0000-000b-000000000001",
+		JobID:     orgBJob.ID,
+		Status:    domain.RunStatusCompleted,
+		StartTime: time.Now().UTC(),
+	}
+
+	runRepo.Save(orgARun)
+	runRepo.Save(orgBRun)
+
+	// Test: Org A should only see runs for their jobs
+	orgARuns, err := runRepo.FindByJobIDAndOrgID(orgAJob.ID, "org-a")
+	if err != nil {
+		t.Fatalf("Failed to find runs for org-a: %v", err)
+	}
+
+	if len(orgARuns) != 1 {
+		t.Errorf("Expected 1 run for org-a, got %d", len(orgARuns))
+	}
+
+	if len(orgARuns) > 0 && orgARuns[0].JobID != orgAJob.ID {
+		t.Errorf("Expected job ID %s, got %s", orgAJob.ID, orgARuns[0].JobID)
+	}
+
+	// Test: Org A should NOT see Org B's runs
+	orgACantSeeBRuns, err := runRepo.FindByJobIDAndOrgID(orgBJob.ID, "org-a")
+	if err != nil {
+		t.Fatalf("Failed to query runs: %v", err)
+	}
+
+	if len(orgACantSeeBRuns) != 0 {
+		t.Errorf("SECURITY VIOLATION: Org A can see Org B's runs! Got %d runs", len(orgACantSeeBRuns))
+	}
+
+	// Test: Org B should only see runs for their jobs
+	orgBRuns, err := runRepo.FindByJobIDAndOrgID(orgBJob.ID, "org-b")
+	if err != nil {
+		t.Fatalf("Failed to find runs for org-b: %v", err)
+	}
+
+	if len(orgBRuns) != 1 {
+		t.Errorf("Expected 1 run for org-b, got %d", len(orgBRuns))
+	}
+
+	// Cleanup
+	jobRepo.Delete(orgAJob.ID)
+	jobRepo.Delete(orgBJob.ID)
+}
+
+func TestPostgresJobRunRepository_MultipleRunsPerJob(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create a job
+	job := domain.NewJob("Multi-Run Job", "test-org", "test-user", "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+	job.ID = "00000000-0000-0000-0000-000000000003"
+
+	err := jobRepo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Create multiple runs
+	runs := []domain.JobRun{
+		{
+			ID:        "10000000-0000-0000-0000-000000000002",
+			JobID:     job.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: time.Now().UTC().Add(-2 * time.Hour),
+		},
+		{
+			ID:        "10000000-0000-0000-0000-000000000003",
+			JobID:     job.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: time.Now().UTC().Add(-1 * time.Hour),
+		},
+		{
+			ID:        "10000000-0000-0000-0000-000000000004",
+			JobID:     job.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: time.Now().UTC(),
+		},
+	}
+
+	for _, run := range runs {
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run %s: %v", run.ID, err)
+		}
+	}
+
+	// Test: FindByJobID should return all runs for the job
+	jobRuns, total, err := runRepo.FindByJobID(job.ID, domain.DefaultJobRunSort, 0, 100)
+	if err != nil {
+		t.Fatalf("Failed to find runs by job ID: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total count 3, got %d", total)
+	}
+
+	if len(jobRuns) != 3 {
+		t.Errorf("Expected 3 runs, got %d", len(jobRuns))
+	}
+
+	// Verify runs are sorted by start_time DESC (newest first)
+	if len(jobRuns) == 3 {
+		if jobRuns[0].ID != "10000000-0000-0000-0000-000000000004" {
+			t.Errorf("Expected newest run first, got %s", jobRuns[0].ID)
+		}
+		if jobRuns[2].ID != "10000000-0000-0000-0000-000000000002" {
+			t.Errorf("Expected oldest run last, got %s", jobRuns[2].ID)
+		}
+	}
+
+	// Every run should carry the parent job's name (populated via the jobs join).
+	for _, run := range jobRuns {
+		if run.JobName != job.Name {
+			t.Errorf("Expected run %s job_name %q, got %q", run.ID, job.Name, run.JobName)
+		}
+	}
+
+	// Cleanup
+	jobRepo.Delete(job.ID)
+}
+func TestPostgresJobRepository_UpdatedAtColumn(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a test job
+	payload := map[string]interface{}{
+		"message": "Test updated_at tracking",
+	}
+
+	job := domain.NewJob(
+		"Updated At Test Job",
+		"test-org-updated-at",
+		"test-user-updated-at",
+		"*/30 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		payload,
+	)
+	job.ID = "00000000-0000-0000-0000-000000000004"
+
+	// Save the job initially
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Query the initial created_at and updated_at timestamps
+	var initialCreatedAt, initialUpdatedAt time.Time
+	query := `SELECT created_at, updated_at FROM jobs WHERE id = $1`
+	err = repo.db.QueryRow(query, job.ID).Scan(&initialCreatedAt, &initialUpdatedAt)
+	if err != nil {
+		t.Fatalf("Failed to query timestamps: %v", err)
+	}
+
+	// Verify created_at and updated_at are set
+	if initialCreatedAt.IsZero() {
+		t.Error("created_at should not be zero")
+	}
+	if initialUpdatedAt.IsZero() {
+		t.Error("updated_at should not be zero")
+	}
+
+	// On initial insert, created_at and updated_at should be approximately equal
+	timeDiff := initialUpdatedAt.Sub(initialCreatedAt).Abs()
+	if timeDiff > time.Second {
+		t.Errorf("created_at and updated_at should be nearly equal on insert, diff: %v", timeDiff)
+	}
+
+	// Wait to ensure timestamp difference
+	time.Sleep(2 * time.Second)
+
+	// Update the job
+	updatedJob := job.WithStatus(domain.StatusPaused)
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	// Query the timestamps again
+	var finalCreatedAt, finalUpdatedAt time.Time
+	err = repo.db.QueryRow(query, job.ID).Scan(&finalCreatedAt, &finalUpdatedAt)
+	if err != nil {
+		t.Fatalf("Failed to query updated timestamps: %v", err)
+	}
+
+	// Verify created_at hasn't changed
+	if !finalCreatedAt.Equal(initialCreatedAt) {
+		t.Errorf("created_at should not change on update. Initial: %v, Final: %v",
+			initialCreatedAt, finalCreatedAt)
+	}
+
+	// Verify updated_at has changed and is after the initial value
+	if !finalUpdatedAt.After(initialUpdatedAt) {
+		t.Errorf("updated_at should be after initial value. Initial: %v, Final: %v",
+			initialUpdatedAt, finalUpdatedAt)
+	}
+
+	// Verify updated_at changed by at least 1 second (we waited 2 seconds)
+	updateDiff := finalUpdatedAt.Sub(initialUpdatedAt)
+	if updateDiff < time.Second {
+		t.Errorf("updated_at should have changed by at least 1 second, got: %v", updateDiff)
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRepository_UpdatedAtMultipleUpdates(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a test job
+	job := domain.NewJob(
+		"Multi Update Test",
+		"test-org",
+		"test-user",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"test": "data"},
+	)
+	job.ID = "00000000-0000-0000-0000-000000000005"
+
+	// Save initial job
+	if err := repo.Save(job); err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	query := `SELECT updated_at FROM jobs WHERE id = $1`
+	timestamps := make([]time.Time, 0, 3)
+
+	// Capture initial updated_at
+	var ts time.Time
+	repo.db.QueryRow(query, job.ID).Scan(&ts)
+	timestamps = append(timestamps, ts)
+
+	// Perform multiple updates with delays
+	for i := 0; i < 2; i++ {
+		time.Sleep(time.Second)
+
+		// Update job with different status
+		var newStatus domain.JobStatus
+		if i == 0 {
+			newStatus = domain.StatusRunning
+		} else {
+			newStatus = domain.StatusScheduled
+		}
+
+		updatedJob := job.WithStatus(newStatus)
+		if err := repo.Save(updatedJob); err != nil {
+			t.Fatalf("Failed to update job on iteration %d: %v", i, err)
+		}
+
+		// Capture updated_at
+		repo.db.QueryRow(query, job.ID).Scan(&ts)
+		timestamps = append(timestamps, ts)
+	}
+
+	// Verify all timestamps are different and monotonically increasing
+	for i := 1; i < len(timestamps); i++ {
+		if !timestamps[i].After(timestamps[i-1]) {
+			t.Errorf("Timestamp %d should be after timestamp %d. Got %v <= %v",
+				i, i-1, timestamps[i], timestamps[i-1])
+		}
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRepository_TimezoneAndTimestamps(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a job with a non-UTC timezone
+	payload := map[string]interface{}{
+		"message": "Test timezone and timestamps",
+	}
+
+	job := domain.NewJob(
+		"Timezone Test Job",
+		"test-org-tz",
+		"test-user-tz",
+		"0 9 * * *",
+		"America/New_York",
+		domain.PayloadMessage,
+		payload,
+	)
+	job.ID = "00000000-0000-0000-0000-000000000006"
+
+	// Set last_run_at and next_run_at
+	lastRunAt := time.Date(2026, 2, 20, 14, 0, 0, 0, time.UTC) // 9 AM EST
+	nextRunAt := time.Date(2026, 2, 21, 14, 0, 0, 0, time.UTC) // 9 AM EST next day
+	job = job.WithLastRunAt(lastRunAt).WithNextRunAt(nextRunAt)
+
+	// Save the job
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Retrieve the job
+	retrievedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job by ID: %v", err)
+	}
+
+	// Verify timezone is preserved
+	if retrievedJob.Timezone != "America/New_York" {
+		t.Errorf("Expected timezone 'America/New_York', got '%s'", retrievedJob.Timezone)
+	}
+
+	// Verify last_run_at is preserved
+	if retrievedJob.LastRunAt == nil {
+		t.Error("Expected LastRunAt to be set, got nil")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedJob.LastRunAt.Sub(lastRunAt).Abs() > time.Second {
+			t.Errorf("Expected LastRunAt %v, got %v", lastRunAt, *retrievedJob.LastRunAt)
+		}
+	}
+
+	// Verify next_run_at is preserved
+	if retrievedJob.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set, got nil")
+	} else {
+		// Allow 1 second difference due to precision
+		if retrievedJob.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt %v, got %v", nextRunAt, *retrievedJob.NextRunAt)
+		}
+	}
+
+	// Update only next_run_at (simulating job execution scheduling)
+	newNextRunAt := time.Date(2026, 2, 22, 14, 0, 0, 0, time.UTC)
+	updatedJob := retrievedJob.WithNextRunAt(newNextRunAt)
+
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	// Retrieve and verify update
+	retrievedUpdated, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find updated job: %v", err)
+	}
+
+	// Verify timezone unchanged
+	if retrievedUpdated.Timezone != "America/New_York" {
+		t.Errorf("Timezone should not change on update, got '%s'", retrievedUpdated.Timezone)
+	}
+
+	// Verify last_run_at unchanged
+	if retrievedUpdated.LastRunAt == nil {
+		t.Error("LastRunAt should still be set after update")
+	} else {
+		if retrievedUpdated.LastRunAt.Sub(lastRunAt).Abs() > time.Second {
+			t.Errorf("LastRunAt should not change, expected %v, got %v", lastRunAt, *retrievedUpdated.LastRunAt)
+		}
+	}
+
+	// Verify next_run_at updated
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("NextRunAt should be set after update")
+	} else {
+		if retrievedUpdated.NextRunAt.Sub(newNextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt %v, got %v", newNextRunAt, *retrievedUpdated.NextRunAt)
+		}
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRepository_NullTimestamps(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	// Create a job without setting last_run_at or next_run_at
+	job := domain.NewJob(
+		"Null Timestamps Test",
+		"test-org",
+		"test-user",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"test": "data"},
+	)
+	job.ID = "00000000-0000-0000-0000-000000000007"
+
+	// Save the job
+	err := repo.Save(job)
+	if err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	// Retrieve the job
+	retrievedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find job by ID: %v", err)
+	}
+
+	// Verify both timestamps are nil
+	if retrievedJob.LastRunAt != nil {
+		t.Errorf("Expected LastRunAt to be nil, got %v", *retrievedJob.LastRunAt)
+	}
+
+	if retrievedJob.NextRunAt != nil {
+		t.Errorf("Expected NextRunAt to be nil, got %v", *retrievedJob.NextRunAt)
+	}
+
+	// Now set only next_run_at
+	nextRunAt := time.Now().UTC().Add(1 * time.Hour)
+	updatedJob := retrievedJob.WithNextRunAt(nextRunAt)
+
+	err = repo.Save(updatedJob)
+	if err != nil {
+		t.Fatalf("Failed to update job: %v", err)
+	}
+
+	// Retrieve and verify
+	retrievedUpdated, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("Failed to find updated job: %v", err)
+	}
+
+	// Verify last_run_at is still nil
+	if retrievedUpdated.LastRunAt != nil {
+		t.Errorf("Expected LastRunAt to still be nil, got %v", *retrievedUpdated.LastRunAt)
+	}
+
+	// Verify next_run_at is now set
+	if retrievedUpdated.NextRunAt == nil {
+		t.Error("Expected NextRunAt to be set")
+	} else {
+		if retrievedUpdated.NextRunAt.Sub(nextRunAt).Abs() > time.Second {
+			t.Errorf("Expected NextRunAt %v, got %v", nextRunAt, *retrievedUpdated.NextRunAt)
+		}
+	}
+
+	// Cleanup
+	repo.Delete(job.ID)
+}
+
+func TestPostgresJobRunRepository_CleanupOldRuns(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create two jobs
+	job1 := domain.NewJob("Prune Job 1", "org-prune", "user-prune", "*/5 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"msg": "test"})
+	job1.ID = "00000000-0000-0000-0000-000000000010"
+	job2 := domain.NewJob("Prune Job 2", "org-prune", "user-prune", "*/10 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"msg": "test"})
+	job2.ID = "00000000-0000-0000-0000-000000000011"
+
+	if err := jobRepo.Save(job1); err != nil {
+		t.Fatalf("Failed to save job1: %v", err)
+	}
+	if err := jobRepo.Save(job2); err != nil {
+		t.Fatalf("Failed to save job2: %v", err)
+	}
+
+	// Create 5 runs for job1 with distinct start times
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		run := domain.JobRun{
+			ID:        fmt.Sprintf("10000000-0000-0000-0010-%012d", i),
+			JobID:     job1.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: baseTime.Add(time.Duration(i) * time.Hour),
+		}
+		endTime := run.StartTime.Add(5 * time.Minute)
+		run.EndTime = &endTime
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run for job1: %v", err)
+		}
+	}
+
+	// Create 3 runs for job2
+	for i := 0; i < 3; i++ {
+		run := domain.JobRun{
+			ID:        fmt.Sprintf("10000000-0000-0000-0011-%012d", i),
+			JobID:     job2.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: baseTime.Add(time.Duration(i) * time.Hour),
+		}
+		endTime := run.StartTime.Add(10 * time.Minute)
+		run.EndTime = &endTime
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run for job2: %v", err)
+		}
+	}
+
+	// Cleanup keeping 2 per job
+	deleted, err := runRepo.CleanupOldRuns(2)
+	if err != nil {
+		t.Fatalf("CleanupOldRuns failed: %v", err)
+	}
+
+	// job1: 5 runs - keep 2 = delete 3
+	// job2: 3 runs - keep 2 = delete 1
+	// total deleted = 4
+	if deleted != 4 {
+		t.Errorf("Expected 4 deleted, got %d", deleted)
+	}
+
+	// Verify remaining runs for job1
+	job1Runs, _, err := runRepo.FindByJobID(job1.ID, domain.DefaultJobRunSort, 0, 10)
+	if err != nil {
+		t.Fatalf("Failed to find job1 runs: %v", err)
+	}
+	if len(job1Runs) != 2 {
+		t.Errorf("Expected 2 runs for job1, got %d", len(job1Runs))
+	}
+	// Runs ordered by start_time DESC — most recent first
+	if len(job1Runs) == 2 {
+		if job1Runs[0].ID != fmt.Sprintf("10000000-0000-0000-0010-%012d", 4) {
+			t.Errorf("Expected most recent run (idx 4), got %s", job1Runs[0].ID)
+		}
+		if job1Runs[1].ID != fmt.Sprintf("10000000-0000-0000-0010-%012d", 3) {
+			t.Errorf("Expected second most recent run (idx 3), got %s", job1Runs[1].ID)
+		}
+	}
+
+	// Verify remaining runs for job2
+	job2Runs, _, err := runRepo.FindByJobID(job2.ID, domain.DefaultJobRunSort, 0, 10)
+	if err != nil {
+		t.Fatalf("Failed to find job2 runs: %v", err)
+	}
+	if len(job2Runs) != 2 {
+		t.Errorf("Expected 2 runs for job2, got %d", len(job2Runs))
+	}
+
+	// Cleanup test data
+	jobRepo.Delete(job1.ID)
+	jobRepo.Delete(job2.ID)
+}
+
+func TestPostgresJobRunRepository_CleanupOldRuns_NoRunsToDelete(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create a job with 2 runs
+	job := domain.NewJob("Prune NoOp Job", "org-prune", "user-prune", "*/5 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"msg": "test"})
+	job.ID = "00000000-0000-0000-0000-000000000012"
+	if err := jobRepo.Save(job); err != nil {
+		t.Fatalf("Failed to save job: %v", err)
+	}
+
+	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 2; i++ {
+		run := domain.JobRun{
+			ID:        fmt.Sprintf("10000000-0000-0000-0012-%012d", i),
+			JobID:     job.ID,
+			Status:    domain.RunStatusCompleted,
+			StartTime: baseTime.Add(time.Duration(i) * time.Hour),
+		}
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("Failed to save run: %v", err)
+		}
+	}
+
+	// Cleanup keeping 10 (more than exist)
+	deleted, err := runRepo.CleanupOldRuns(10)
+	if err != nil {
+		t.Fatalf("CleanupOldRuns failed: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Expected 0 deleted, got %d", deleted)
+	}
+
+	// Verify all runs still exist
+	runs, _, err := runRepo.FindByJobID(job.ID, domain.DefaultJobRunSort, 0, 10)
+	if err != nil {
+		t.Fatalf("Failed to find runs: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Errorf("Expected 2 runs, got %d", len(runs))
+	}
+
+	// Cleanup test data
+	jobRepo.Delete(job.ID)
+}
+
+func TestPostgresJobRunRepository_CleanupOldRuns_EmptyTable(t *testing.T) {
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Cleanup on table with no test-specific data should not error
+	deleted, err := runRepo.CleanupOldRuns(10)
+	if err != nil {
+		t.Fatalf("CleanupOldRuns failed: %v", err)
+	}
+	_ = deleted
+}
+
+func TestPostgresJobRunRepository_FindByUserID(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	// Create jobs for different users
+	job1 := domain.NewJob("User1 Job A", "org-123", "user-001", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{"test": "data"})
+	job1.ID = "00000000-0000-0000-0001-000000000001"
+
+	job2 := domain.NewJob("User1 Job B", "org-123", "user-001", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{"test": "data"})
+	job2.ID = "00000000-0000-0000-0001-000000000002"
+
+	job3 := domain.NewJob("User2 Job A", "org-123", "user-002", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{"test": "data"})
+	job3.ID = "00000000-0000-0000-0002-000000000001"
+
+	// Save jobs
+	if err := jobRepo.Save(job1); err != nil {
+		t.Fatalf("Failed to save job1: %v", err)
+	}
+	if err := jobRepo.Save(job2); err != nil {
+		t.Fatalf("Failed to save job2: %v", err)
+	}
+	if err := jobRepo.Save(job3); err != nil {
+		t.Fatalf("Failed to save job3: %v", err)
+	}
+
+	// Create runs for user-001's jobs
+	run1 := domain.NewJobRun(job1.ID)
+	run1.ID = "00000000-0000-0000-0001-100000000001"
+	run1.Status = domain.RunStatusCompleted
+
+	run2 := domain.NewJobRun(job1.ID)
+	run2.ID = "00000000-0000-0000-0001-100000000002"
+	run2.Status = domain.RunStatusFailed
+
+	run3 := domain.NewJobRun(job2.ID)
+	run3.ID = "00000000-0000-0000-0001-100000000003"
+	run3.Status = domain.RunStatusCompleted
+
+	// Create run for user-002's job
+	run4 := domain.NewJobRun(job3.ID)
+	run4.ID = "00000000-0000-0000-0002-100000000001"
+	run4.Status = domain.RunStatusCompleted
+
+	// Save all runs
+	if err := runRepo.Save(run1); err != nil {
+		t.Fatalf("Failed to save run1: %v", err)
+	}
+	if err := runRepo.Save(run2); err != nil {
+		t.Fatalf("Failed to save run2: %v", err)
+	}
+	if err := runRepo.Save(run3); err != nil {
+		t.Fatalf("Failed to save run3: %v", err)
+	}
+	if err := runRepo.Save(run4); err != nil {
+		t.Fatalf("Failed to save run4: %v", err)
+	}
+
+	// Test: Get all runs for user-001 (should return 3 runs)
+	user1Runs, total1, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for user-001: %v", err)
+	}
+
+	if total1 != 3 {
+		t.Errorf("Expected 3 total runs for user-001, got %d", total1)
+	}
+
+	if len(user1Runs) != 3 {
+		t.Errorf("Expected 3 runs for user-001, got %d", len(user1Runs))
+	}
+
+	// Verify all runs belong to user-001's jobs, and carry the parent job name
+	// resolved via the jobs join.
+	expectedJobIDs := map[string]bool{job1.ID: true, job2.ID: true}
+	expectedJobNames := map[string]string{job1.ID: job1.Name, job2.ID: job2.Name}
+	for _, run := range user1Runs {
+		if !expectedJobIDs[run.JobID] {
+			t.Errorf("Run %s has unexpected job_id %s for user-001", run.ID, run.JobID)
+		}
+		if run.JobName != expectedJobNames[run.JobID] {
+			t.Errorf("Run %s expected job_name %q, got %q", run.ID, expectedJobNames[run.JobID], run.JobName)
+		}
+	}
+
+	// Test: Get all runs for user-002 (should return 1 run)
+	user2Runs, total2, err := runRepo.FindByUserID("user-002", domain.DefaultJobRunSort, 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for user-002: %v", err)
+	}
+
+	if total2 != 1 {
+		t.Errorf("Expected 1 total run for user-002, got %d", total2)
+	}
+
+	if len(user2Runs) != 1 {
+		t.Errorf("Expected 1 run for user-002, got %d", len(user2Runs))
+	}
+
+	if user2Runs[0].JobID != job3.ID {
+		t.Errorf("Expected run to have job_id %s, got %s", job3.ID, user2Runs[0].JobID)
+	}
+
+	// Test: Pagination - get first page (limit 2)
+	page1Runs, total, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 0, 2)
+	if err != nil {
+		t.Fatalf("FindByUserID pagination failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total 3 for pagination, got %d", total)
+	}
+
+	if len(page1Runs) != 2 {
+		t.Errorf("Expected 2 runs in first page, got %d", len(page1Runs))
+	}
+
+	// Test: Pagination - get second page (offset 2, limit 2)
+	page2Runs, total, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 2, 2)
+	if err != nil {
+		t.Fatalf("FindByUserID pagination page 2 failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Errorf("Expected total 3 for pagination page 2, got %d", total)
+	}
+
+	if len(page2Runs) != 1 {
+		t.Errorf("Expected 1 run in second page, got %d", len(page2Runs))
+	}
+
+	// Test: User with no runs
+	noRunsUsers, total, err := runRepo.FindByUserID("user-999", domain.DefaultJobRunSort, 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for user with no runs: %v", err)
+	}
+
+	if total != 0 {
+		t.Errorf("Expected 0 total runs for user-999, got %d", total)
+	}
+
+	if len(noRunsUsers) != 0 {
+		t.Errorf("Expected 0 runs for user-999, got %d", len(noRunsUsers))
+	}
+
+	// Test: Runs are ordered by start_time DESC (most recent first)
+	// The runs should be in reverse order of creation
+	allRuns, _, err := runRepo.FindByUserID("user-001", domain.DefaultJobRunSort, 0, 100)
+	if err != nil {
+		t.Fatalf("FindByUserID failed for ordering test: %v", err)
+	}
+
+	if len(allRuns) >= 2 {
+		// Verify runs are ordered by start_time descending
+		for i := 0; i < len(allRuns)-1; i++ {
+			if allRuns[i].StartTime.Before(allRuns[i+1].StartTime) {
+				t.Errorf("Runs not ordered by start_time DESC: run[%d] %s is before run[%d] %s",
+					i, allRuns[i].StartTime, i+1, allRuns[i+1].StartTime)
+			}
+		}
+	}
+
+	// Cleanup
+	jobRepo.db.Exec("DELETE FROM job_runs WHERE id::text LIKE '00000000-0000-0000-%'")
+	jobRepo.db.Exec("DELETE FROM jobs WHERE id::text LIKE '00000000-0000-0000-%'")
+}
+
+func TestPostgresJobRepository_FindByUserID_Filtering(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	userID := "user-filter-test"
+
+	mk := func(suffix, name string, status domain.JobStatus) domain.Job {
+		j := domain.NewJob(name, "org-filter", userID, "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+		j.ID = "00000000-0000-0000-0f00-" + suffix
+		j.Status = status
+		return j
+	}
+
+	// 5 scheduled + 3 paused jobs. "report" (case-insensitive) appears in 4 names.
+	jobs := []domain.Job{
+		mk("000000000001", "Daily report", domain.StatusScheduled),
+		mk("000000000002", "Weekly Report", domain.StatusScheduled),
+		mk("000000000003", "Monthly summary", domain.StatusScheduled),
+		mk("000000000004", "Ad-hoc export", domain.StatusScheduled),
+		mk("000000000005", "Nightly report", domain.StatusScheduled),
+		mk("000000000006", "Paused report", domain.StatusPaused),
+		mk("000000000007", "Paused export", domain.StatusPaused),
+		mk("000000000008", "Paused summary", domain.StatusPaused),
+	}
+	for _, j := range jobs {
+		if err := repo.Save(j); err != nil {
+			t.Fatalf("save %s: %v", j.ID, err)
+		}
+	}
+	defer func() {
+		for _, j := range jobs {
+			repo.Delete(j.ID)
+		}
+	}()
+
+	// Status filter must be applied in SQL: total reflects the filtered set and a
+	// small page is still filled from it (regression — filtering used to run in
+	// memory AFTER pagination, which truncated/emptied pages and reported the
+	// unfiltered total).
+	paused := domain.JobFilter{Status: "paused"}
+	page1, total, err := repo.FindByUserID(userID, paused, domain.DefaultJobSort, 0, 2)
+	if err != nil {
+		t.Fatalf("status filter page 1: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("expected filtered total 3, got %d", total)
+	}
+	if len(page1) != 2 {
+		t.Errorf("expected a full page of 2 paused jobs, got %d", len(page1))
+	}
+	for _, j := range page1 {
+		if j.Status != domain.StatusPaused {
+			t.Errorf("job %s has status %s, expected paused", j.ID, j.Status)
+		}
+	}
+
+	page2, total2, err := repo.FindByUserID(userID, paused, domain.DefaultJobSort, 2, 2)
+	if err != nil {
+		t.Fatalf("status filter page 2: %v", err)
+	}
+	if total2 != 3 {
+		t.Errorf("expected filtered total 3 on page 2, got %d", total2)
+	}
+	if len(page2) != 1 {
+		t.Errorf("expected 1 remaining paused job on page 2, got %d", len(page2))
+	}
+
+	// Name filter is a case-insensitive substring match.
+	byName := domain.JobFilter{NameContains: "report"}
+	_, nameTotal, err := repo.FindByUserID(userID, byName, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("name filter: %v", err)
+	}
+	if nameTotal != 4 {
+		t.Errorf("expected 4 jobs matching 'report', got %d", nameTotal)
+	}
+
+	// Combined status + name filters are ANDed.
+	combined := domain.JobFilter{Status: "paused", NameContains: "report"}
+	_, combinedTotal, err := repo.FindByUserID(userID, combined, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("combined filter: %v", err)
+	}
+	if combinedTotal != 1 {
+		t.Errorf("expected 1 paused job matching 'report', got %d", combinedTotal)
+	}
+}
+
+func TestPostgresJobRepository_FindByUserID_NameFilterEscapesWildcards(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	userID := "user-like-escape"
+
+	mk := func(suffix, name string) domain.Job {
+		j := domain.NewJob(name, "org-escape", userID, "0 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{})
+		j.ID = "00000000-0000-0000-0e00-" + suffix
+		return j
+	}
+	jobs := []domain.Job{
+		mk("000000000001", "50% off"),
+		mk("000000000002", "500 items"),
+	}
+	for _, j := range jobs {
+		if err := repo.Save(j); err != nil {
+			t.Fatalf("save %s: %v", j.ID, err)
+		}
+	}
+	defer func() {
+		for _, j := range jobs {
+			repo.Delete(j.ID)
+		}
+	}()
+
+	// "50%" must be treated literally. With correct escaping only "50% off"
+	// matches; without it the '%' would act as a wildcard and also match
+	// "500 items".
+	filter := domain.JobFilter{NameContains: "50%"}
+	results, total, err := repo.FindByUserID(userID, filter, domain.DefaultJobSort, 0, 100)
+	if err != nil {
+		t.Fatalf("name filter with wildcard char: %v", err)
+	}
+	if total != 1 || len(results) != 1 {
+		t.Fatalf("expected exactly 1 literal match for '50%%', got total=%d len=%d", total, len(results))
+	}
+	if results[0].Name != "50% off" {
+		t.Errorf("expected '50%% off', got %q", results[0].Name)
+	}
+}
+
+func TestPostgresJobRunRepository_FindInFlightExternalRuns(t *testing.T) {
+	jobRepo := setupPostgresJobRepo(t)
+	defer jobRepo.Close()
+	runRepo := setupPostgresJobRunRepo(t)
+	defer runRepo.Close()
+
+	job := domain.NewJob("Poller Job", "org-poll", "user-poll", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job.ID = "00000000-0000-0000-0abc-000000000001"
+	if err := jobRepo.Save(job); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+	defer jobRepo.Delete(job.ID)
+
+	extID := "ext-abc-123"
+	extSvc := "export-service"
+
+	// In-flight external run — should be returned.
+	inflight := domain.NewJobRun(job.ID)
+	inflight.ID = "00000000-0000-0000-0abc-1a0000000001"
+	inflight.Status = domain.RunStatusRunning
+	inflight.ExternalJobID = &extID
+	inflight.ExternalService = &extSvc
+
+	// Running but not external — excluded (no external_job_id).
+	runningLocal := domain.NewJobRun(job.ID)
+	runningLocal.ID = "00000000-0000-0000-0abc-1a0000000002"
+	runningLocal.Status = domain.RunStatusRunning
+
+	// External but already completed — excluded (status != running).
+	doneExternal := domain.NewJobRun(job.ID)
+	doneExternal.ID = "00000000-0000-0000-0abc-1a0000000003"
+	doneExternal.Status = domain.RunStatusCompleted
+	doneExternal.ExternalJobID = &extID
+	doneExternal.ExternalService = &extSvc
+
+	for _, run := range []domain.JobRun{inflight, runningLocal, doneExternal} {
+		if err := runRepo.Save(run); err != nil {
+			t.Fatalf("save run %s: %v", run.ID, err)
+		}
+	}
+
+	runs, err := runRepo.FindInFlightExternalRuns(context.Background())
+	if err != nil {
+		t.Fatalf("FindInFlightExternalRuns: %v", err)
+	}
+
+	// Global query, so assert on membership rather than exact count.
+	found := map[string]domain.JobRun{}
+	for _, r := range runs {
+		found[r.ID] = r
+	}
+
+	got, ok := found[inflight.ID]
+	if !ok {
+		t.Fatalf("expected in-flight external run %s to be returned", inflight.ID)
+	}
+	if got.ExternalJobID == nil || *got.ExternalJobID != extID {
+		t.Errorf("expected external_job_id %q, got %v", extID, got.ExternalJobID)
+	}
+	if got.ExternalService == nil || *got.ExternalService != extSvc {
+		t.Errorf("expected external_service %q, got %v", extSvc, got.ExternalService)
+	}
+	// This path uses the job_name-free scanner (no jobs join), so JobName is empty
+	// even though the parent job has a name.
+	if got.JobName != "" {
+		t.Errorf("expected empty JobName from the join-free poller query, got %q", got.JobName)
+	}
+
+	if _, ok := found[runningLocal.ID]; ok {
+		t.Errorf("running non-external run %s must not be returned", runningLocal.ID)
+	}
+	if _, ok := found[doneExternal.ID]; ok {
+		t.Errorf("completed external run %s must not be returned", doneExternal.ID)
+	}
+}
+
+func TestPostgresJobRepository_FindScheduledNearDue(t *testing.T) {
+	repo := setupPostgresJobRepo(t)
+	defer repo.Close()
+
+	now := time.Now().UTC()
+	lookahead := 2 * time.Hour
+
+	// Test data:
+	// 1. Job due in 30 minutes (within lookahead) - SHOULD BE INCLUDED
+	job1 := domain.NewJob(
+		"Job due in 30 min",
+		"test-org-123",
+		"test-user-123",
+		"*/15 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job1.ID = "00000000-0000-0000-0000-000000000101"
+	nextRun1 := now.Add(30 * time.Minute)
+	job1 = job1.WithNextRunAt(nextRun1).WithStatus(domain.StatusScheduled)
+
+	// 2. Job due in 1 hour (within lookahead) - SHOULD BE INCLUDED
+	job2 := domain.NewJob(
+		"Job due in 1 hour",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job2.ID = "00000000-0000-0000-0000-000000000102"
+	nextRun2 := now.Add(1 * time.Hour)
+	job2 = job2.WithNextRunAt(nextRun2).WithStatus(domain.StatusScheduled)
+
+	// 3. Job due in 3 hours (outside lookahead) - SHOULD BE EXCLUDED
+	job3 := domain.NewJob(
+		"Job due in 3 hours",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job3.ID = "00000000-0000-0000-0000-000000000103"
+	nextRun3 := now.Add(3 * time.Hour)
+	job3 = job3.WithNextRunAt(nextRun3).WithStatus(domain.StatusScheduled)
+
+	// 4. Job with NULL next_run_at - SHOULD BE EXCLUDED
+	job4 := domain.NewJob(
+		"Job with no next run",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job4.ID = "00000000-0000-0000-0000-000000000104"
+	job4 = job4.WithStatus(domain.StatusScheduled)
+
+	// 5. Job that is paused (not scheduled) - SHOULD BE EXCLUDED
+	job5 := domain.NewJob(
+		"Paused job",
+		"test-org-123",
+		"test-user-123",
+		"0 * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job5.ID = "00000000-0000-0000-0000-000000000105"
+	nextRun5 := now.Add(30 * time.Minute)
+	job5 = job5.WithNextRunAt(nextRun5).WithStatus(domain.StatusPaused)
+
+	// 6. Job due NOW (edge case, within lookahead) - SHOULD BE INCLUDED
+	job6 := domain.NewJob(
+		"Job due now",
+		"test-org-123",
+		"test-user-123",
+		"* * * * *",
+		"UTC",
+		domain.PayloadMessage,
+		map[string]interface{}{"message": "test"},
+	)
+	job6.ID = "00000000-0000-0000-0000-000000000106"
+	job6 = job6.WithNextRunAt(now).WithStatus(domain.StatusScheduled)
+
+	// Save all test jobs
+	for _, job := range []domain.Job{job1, job2, job3, job4, job5, job6} {
+		if err := repo.Save(job); err != nil {
+			t.Fatalf("Failed to save test job %s: %v", job.ID, err)
+		}
+	}
+
+	// Execute the query
+	nearDueJobs, err := repo.FindScheduledNearDue(lookahead)
+	if err != nil {
+		t.Fatalf("FindScheduledNearDue failed: %v", err)
+	}
+
+	// Verify results
+	// Should return jobs 1, 2, and 6 (due within 2 hours and scheduled)
+	expectedCount := 3
+	if len(nearDueJobs) != expectedCount {
+		t.Errorf("Expected %d near-due jobs, got %d", expectedCount, len(nearDueJobs))
+		for i, job := range nearDueJobs {
+			t.Logf("  [%d] %s - next_run_at: %v", i, job.ID, job.NextRunAt)
+		}
+	}
+
+	// Verify the jobs are the correct ones
+	foundIDs := make(map[string]bool)
+	for _, job := range nearDueJobs {
+		foundIDs[job.ID] = true
+	}
+
+	if !foundIDs[job1.ID] {
+		t.Errorf("Expected job1 (due in 30 min) to be included")
+	}
+	if !foundIDs[job2.ID] {
+		t.Errorf("Expected job2 (due in 1 hour) to be included")
+	}
+	if !foundIDs[job6.ID] {
+		t.Errorf("Expected job6 (due now) to be included")
+	}
+
+	// Verify exclusions
+	if foundIDs[job3.ID] {
+		t.Errorf("Job3 (due in 3 hours) should NOT be included")
+	}
+	if foundIDs[job4.ID] {
+		t.Errorf("Job4 (NULL next_run_at) should NOT be included")
+	}
+	if foundIDs[job5.ID] {
+		t.Errorf("Job5 (paused) should NOT be included")
+	}
+
+	// Verify sort order (next_run_at ASC - earliest due first)
+	if len(nearDueJobs) >= 2 {
+		for i := 0; i < len(nearDueJobs)-1; i++ {
+			if nearDueJobs[i].NextRunAt == nil || nearDueJobs[i+1].NextRunAt == nil {
+				t.Errorf("Jobs should have next_run_at set")
+				continue
+			}
+			if nearDueJobs[i].NextRunAt.After(*nearDueJobs[i+1].NextRunAt) {
+				t.Errorf("Jobs not sorted by next_run_at ASC: job[%d] (%v) > job[%d] (%v)",
+					i, nearDueJobs[i].NextRunAt,
+					i+1, nearDueJobs[i+1].NextRunAt)
+			}
+		}
+
+		// The first job should be job6 (due now)
+		if nearDueJobs[0].ID != job6.ID {
+			t.Errorf("First job should be job6 (due now), got %s", nearDueJobs[0].ID)
+		}
+	}
+
+	// Clean up test data
+	for _, job := range []domain.Job{job1, job2, job3, job4, job5, job6} {
+		repo.db.Exec("DELETE FROM jobs WHERE id = $1", job.ID)
+	}
+}

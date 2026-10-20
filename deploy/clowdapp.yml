@@ -1,0 +1,390 @@
+---
+apiVersion: v1
+kind: Template
+metadata:
+  name: scheduler
+objects:
+
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdApp
+  metadata:
+    name: scheduler
+  spec:
+    envName: ${ENV_NAME}
+    optionalDependencies:
+      - ingress
+      - export-service
+      - rbac
+    testing:
+      iqePlugin: scheduler
+    database:
+      name: scheduler
+      version: 16
+    inMemoryDb: true
+    kafkaTopics:
+    - replicas: 3
+      partitions: 16
+      topicName: platform.notifications.events
+    deployments:
+    - name: api
+      webServices:
+        private:
+          enabled: False
+        public:
+          apiPath: scheduler
+          enabled: True
+        metrics:
+          enabled: False
+      minReplicas: ${{API_REPLICAS}}
+      deploymentStrategy:
+        rollingParams:
+          maxSurge: 25%
+          maxUnavailable: 25%
+      podSpec:
+        minReadySeconds: 15
+        progressDeadlineSeconds: 600
+        image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+        - name: db-migration
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - ./scheduler
+            - db_migration
+            - up
+          env:
+          - name: LOG_LEVEL
+            value: DEBUG
+          - name: DB_MAX_OPEN_CONNECTIONS
+            value: "25"
+          - name: DB_MAX_IDLE_CONNECTIONS
+            value: "5"
+          - name: DB_CONNECTION_MAX_LIFETIME
+            value: 5m
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+        command:
+          - ./scheduler
+          - api
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: ${API_CPU_LIMIT}
+            memory: ${API_MEMORY_LIMIT}
+          requests:
+            cpu: ${API_CPU_REQUEST}
+            memory: ${API_MEMORY_REQUEST}
+        env:
+        - name: LOG_LEVEL
+          value: INFO
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "25"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "5"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 5m
+        - name: KAFKA_CLIENT_ID
+          value: scheduler-api
+        - name: KAFKA_TIMEOUT
+          value: 30s
+        - name: KAFKA_RETRIES
+          value: "5"
+        - name: KAFKA_COMPRESSION
+          value: snappy
+        - name: KAFKA_REQUIRED_ACKS
+          value: "-1"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: METRICS_NAMESPACE
+          value: insights
+        - name: METRICS_SUBSYSTEM
+          value: scheduler
+        - name: READ_TIMEOUT
+          value: 30s
+        - name: WRITE_TIMEOUT
+          value: 30s
+        - name: SHUTDOWN_TIMEOUT
+          value: 30s
+        - name: USER_VALIDATOR_IMPL
+          value: ${USER_VALIDATOR_IMPL}
+        - name: JOB_COMPLETION_NOTIFIER_IMPL
+          value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: REDIS_ENABLED
+          value: "true"
+        - name: ORG_ID_GUARD_ENABLED
+          value: ${ORG_ID_GUARD_ENABLED}
+        - name: ORG_ID_GUARD_ALLOWED_ORG_IDS
+          value: ${ORG_ID_GUARD_ALLOWED_ORG_IDS}
+
+    - name: worker
+      webServices:
+        private:
+          enabled: False
+        public:
+          enabled: False
+        metrics:
+          enabled: True
+      minReplicas: ${{WORKER_REPLICAS}}
+      deploymentStrategy:
+        rollingParams:
+          maxSurge: 1
+          maxUnavailable: 1
+      podSpec:
+        minReadySeconds: 15
+        progressDeadlineSeconds: 600
+        image: ${IMAGE}:${IMAGE_TAG}
+        command:
+          - ./scheduler
+          - worker
+        terminationGracePeriodSeconds: 300
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - sleep 15
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /metrics
+            port: 9000
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: ${WORKER_CPU_LIMIT}
+            memory: ${WORKER_MEMORY_LIMIT}
+          requests:
+            cpu: ${WORKER_CPU_REQUEST}
+            memory: ${WORKER_MEMORY_REQUEST}
+        env:
+        - name: LOG_LEVEL
+          value: INFO
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "25"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "5"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 5m
+        - name: REDIS_ENABLED
+          value: "true"
+        - name: ENABLE_PERIODIC_SYNC
+          value: "true"
+        - name: SCHEDULER_DB_TO_REDIS_SYNC_INTERVAL
+          value: "10m"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: METRICS_NAMESPACE
+          value: insights
+        - name: METRICS_SUBSYSTEM
+          value: scheduler_worker
+        - name: USER_VALIDATOR_IMPL
+          value: ${USER_VALIDATOR_IMPL}
+        - name: JOB_COMPLETION_NOTIFIER_IMPL
+          value: ${JOB_COMPLETION_NOTIFIER_IMPL}
+        - name: EXPORT_SERVICE_URL
+          value: ${EXPORT_SERVICE_URL}
+        - name: EXPORT_SERVICE_PUBLIC_URL
+          value: ${EXPORT_SERVICE_PUBLIC_URL}
+        - name: EXPORT_SERVICE_TIMEOUT
+          value: 5m
+        - name: EXPORT_SERVICE_MAX_RETRIES
+          value: "3"
+        - name: EXPORT_SERVICE_POLL_INTERVAL
+          value: 5s
+        - name: EXPORT_SERVICE_POLL_MAX_RETRIES
+          value: "60"
+        - name: SHUTDOWN_TIMEOUT
+          value: 300s
+        - name: KAFKA_CLIENT_ID
+          value: scheduler-worker
+        - name: KAFKA_TIMEOUT
+          value: 30s
+        - name: KAFKA_RETRIES
+          value: "5"
+        - name: KAFKA_COMPRESSION
+          value: snappy
+        - name: KAFKA_REQUIRED_ACKS
+          value: "-1"
+        - name: THREESCALE_URL
+          value: ${THREESCALE_URL}
+        - name: PARSEC_URL
+          value: ${PARSEC_URL}
+        - name: SCHEDULER_DENYLIST_JOB_IDS
+          value: ${SCHEDULER_DENYLIST_JOB_IDS}
+
+    jobs:
+    - name: job-run-cleanup
+      schedule: ${CLEANUP_SCHEDULE}
+      suspend: ${{CLEANUP_SUSPEND}}
+      concurrencyPolicy: Forbid
+      successfulJobsHistoryLimit: 3
+      failedJobsHistoryLimit: 3
+      podSpec:
+        image: ${IMAGE}:${IMAGE_TAG}
+        command:
+          - ./scheduler
+          - prune-job-runs
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        env:
+        - name: JOB_RUN_RETENTION_COUNT
+          value: ${JOB_RUN_RETENTION_COUNT}
+        - name: DB_MAX_OPEN_CONNECTIONS
+          value: "5"
+        - name: DB_MAX_IDLE_CONNECTIONS
+          value: "2"
+        - name: DB_CONNECTION_MAX_LIFETIME
+          value: 1m
+
+parameters:
+- description: Initial amount of memory the scheduler api container will request.
+  displayName: Memory Request
+  name: API_MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the scheduler api.
+  displayName: Memory Limit
+  name: API_MEMORY_LIMIT
+  required: true
+  value: 512Mi
+- description: Initial amount of cpu the scheduler api container will request.
+  displayName: CPU Request
+  name: API_CPU_REQUEST
+  required: true
+  value: 200m
+- description: Maximum amount of cpu the scheduler api container can use.
+  displayName: CPU Limit
+  name: API_CPU_LIMIT
+  required: true
+  value: 500m
+
+- description: Initial amount of memory the scheduler worker container will request.
+  displayName: Worker Memory Request
+  name: WORKER_MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the scheduler worker.
+  displayName: Worker Memory Limit
+  name: WORKER_MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: Initial amount of cpu the scheduler worker container will request.
+  displayName: Worker CPU Request
+  name: WORKER_CPU_REQUEST
+  required: true
+  value: 200m
+- description: Maximum amount of cpu the scheduler worker container can use.
+  displayName: Worker CPU Limit
+  name: WORKER_CPU_LIMIT
+  required: true
+  value: 1000m
+
+- description: The log level to use for logging
+  displayName: The log level to use for logging
+  name: LOG_LEVEL
+  required: true
+  value: DEBUG
+- name: LOG_FORMAT
+  value: logstash
+- description: The number of replicas to use for the scheduler api
+  name: API_REPLICAS
+  value: '1'
+- description: The number of replicas to use for the scheduler worker
+  name: WORKER_REPLICAS
+  value: '3'
+- description: Image
+  name: IMAGE
+  required: true
+  value: quay.io/redhat-user-workloads/hcc-integrations-tenant/scheduler/scheduler
+- description: Image tag
+  name: IMAGE_TAG
+  required: true
+- description : ClowdEnvironment name
+  name: ENV_NAME
+  required: true
+
+- name: USER_VALIDATOR_IMPL
+  value: "3scale"
+  required: true
+- name: THREESCALE_URL
+  value: http://env-ephemeral-bqr8fd-mbop.ephemeral-bqr8fd.svc.cluster.local:8090
+- name: PARSEC_URL
+  description: parsec token-exchange service URL (used when USER_VALIDATOR_IMPL=parsec)
+  value: http://parsec-service:8080
+
+- name: JOB_COMPLETION_NOTIFIER_IMPL
+  value: "notifications"
+  required: true
+
+- name: EXPORT_SERVICE_URL
+  value: http://export-service-service:8000/api/export/v1
+  required: true
+- name: EXPORT_SERVICE_PUBLIC_URL
+  description: Public-facing URL for export service download links
+  value: https://console.redhat.com/api/export/v1
+  required: true
+
+- name: ORG_ID_GUARD_ENABLED
+  description: Enable the org ID guard middleware to restrict API access to allowed org IDs
+  value: "false"
+- name: ORG_ID_GUARD_ALLOWED_ORG_IDS
+  description: Comma-separated list of org IDs allowed to access the API (only used when ORG_ID_GUARD_ENABLED is true)
+  value: ""
+
+- name: CLEANUP_SCHEDULE
+  description: Cron schedule for job run cleanup (default daily at 2 AM UTC)
+  value: "0 2 * * *"
+- name: CLEANUP_SUSPEND
+  description: Whether to suspend the cleanup CronJob
+  value: "false"
+- name: JOB_RUN_RETENTION_COUNT
+  description: Number of recent job runs to retain per job during cleanup
+  value: "10"
+- name: SCHEDULER_DENYLIST_JOB_IDS
+  description: Comma-separated list of job IDs to deny execution (jobs will be logged but not run)
+  value: ""

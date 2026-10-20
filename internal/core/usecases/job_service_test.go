@@ -1,0 +1,977 @@
+package usecases
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"insights-scheduler/internal/core/domain"
+	"insights-scheduler/internal/core/template"
+)
+
+func TestCalculateNextRunAt(t *testing.T) {
+	tests := []struct {
+		name     string
+		schedule string
+		wantErr  bool
+	}{
+		{
+			name:     "Valid every 10 minutes",
+			schedule: "*/10 * * * *",
+			wantErr:  false,
+		},
+		{
+			name:     "Valid hourly",
+			schedule: "0 * * * *",
+			wantErr:  false,
+		},
+		{
+			name:     "Valid daily at midnight",
+			schedule: "0 0 * * *",
+			wantErr:  false,
+		},
+		{
+			name:     "Valid monthly",
+			schedule: "0 0 1 * *",
+			wantErr:  false,
+		},
+		{
+			name:     "Valid weekdays at 9am",
+			schedule: "0 9 * * MON-FRI",
+			wantErr:  false,
+		},
+		{
+			name:     "Invalid cron expression",
+			schedule: "invalid",
+			wantErr:  true,
+		},
+		{
+			name:     "Invalid 6-field cron (with seconds)",
+			schedule: "0 */10 * * * *",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nextRunAt, err := calculateNextRunAt(tt.schedule, "UTC")
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("calculateNextRunAt() expected error, got nil")
+				}
+				if nextRunAt != nil {
+					t.Errorf("calculateNextRunAt() expected nil result on error, got %v", nextRunAt)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("calculateNextRunAt() unexpected error: %v", err)
+				}
+				if nextRunAt == nil {
+					t.Error("calculateNextRunAt() expected non-nil result, got nil")
+				} else {
+					// Verify next run is in the future
+					if !nextRunAt.After(time.Now()) {
+						t.Errorf("calculateNextRunAt() expected future time, got %v", nextRunAt)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestCalculateNextRunAtTimings(t *testing.T) {
+	// Test specific timing expectations
+	tests := []struct {
+		name            string
+		schedule        string
+		maxDuration     time.Duration
+		minDuration     time.Duration
+		descriptionHint string
+	}{
+		{
+			name:            "Every 10 minutes should be within 10 minutes",
+			schedule:        "*/10 * * * *",
+			maxDuration:     10 * time.Minute,
+			minDuration:     0,
+			descriptionHint: "should be less than 10 minutes in the future",
+		},
+		{
+			name:            "Hourly should be within 1 hour",
+			schedule:        "0 * * * *",
+			maxDuration:     60 * time.Minute,
+			minDuration:     0,
+			descriptionHint: "should be less than 1 hour in the future",
+		},
+		{
+			name:            "Daily should be within 24 hours",
+			schedule:        "0 0 * * *",
+			maxDuration:     24 * time.Hour,
+			minDuration:     0,
+			descriptionHint: "should be less than 24 hours in the future",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			nextRunAt, err := calculateNextRunAt(tt.schedule, "UTC")
+
+			if err != nil {
+				t.Fatalf("calculateNextRunAt() unexpected error: %v", err)
+			}
+
+			duration := nextRunAt.Sub(now)
+
+			if duration < tt.minDuration {
+				t.Errorf("Next run %v too soon (duration: %v, min: %v)", nextRunAt, duration, tt.minDuration)
+			}
+
+			if duration > tt.maxDuration {
+				t.Errorf("Next run %v too far (duration: %v, max: %v) - %s", nextRunAt, duration, tt.maxDuration, tt.descriptionHint)
+			}
+		})
+	}
+}
+
+// Mock implementations for testing
+
+type mockJobRepository struct {
+	jobs      map[string]domain.Job
+	saveFunc  func(job domain.Job) error
+	findFunc  func(id string) (domain.Job, error)
+	deleteErr error
+}
+
+func newMockJobRepository() *mockJobRepository {
+	return &mockJobRepository{
+		jobs: make(map[string]domain.Job),
+	}
+}
+
+func (m *mockJobRepository) Save(job domain.Job) error {
+	if m.saveFunc != nil {
+		return m.saveFunc(job)
+	}
+	m.jobs[job.ID] = job
+	return nil
+}
+
+func (m *mockJobRepository) FindByID(id string) (domain.Job, error) {
+	if m.findFunc != nil {
+		return m.findFunc(id)
+	}
+	job, ok := m.jobs[id]
+	if !ok {
+		return domain.Job{}, domain.ErrJobNotFound
+	}
+	return job, nil
+}
+
+func (m *mockJobRepository) FindAll() ([]domain.Job, error) {
+	jobs := make([]domain.Job, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func (m *mockJobRepository) FindScheduledNearDue(lookahead time.Duration) ([]domain.Job, error) {
+	return nil, nil
+}
+
+func (m *mockJobRepository) FindByOrgID(orgID string) ([]domain.Job, error) {
+	jobs := make([]domain.Job, 0)
+	for _, job := range m.jobs {
+		if job.OrgID == orgID {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs, nil
+}
+
+func (m *mockJobRepository) FindByUserID(userID string, _ domain.JobFilter, _ domain.SortSpec, offset, limit int) ([]domain.Job, int, error) {
+	jobs := make([]domain.Job, 0)
+	for _, job := range m.jobs {
+		if job.UserID == userID {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs, len(jobs), nil
+}
+
+func (m *mockJobRepository) Delete(id string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	delete(m.jobs, id)
+	return nil
+}
+
+type mockSchedulingService struct{}
+
+func (m *mockSchedulingService) ShouldRun(job domain.Job, currentTime time.Time) bool {
+	return false
+}
+
+type mockJobExecutor struct {
+	executeFunc           func(job domain.Job) error
+	executeWithJobRunFunc func(job domain.Job, jobRunID string) error
+}
+
+func (m *mockJobExecutor) Execute(job domain.Job) error {
+	if m.executeFunc != nil {
+		return m.executeFunc(job)
+	}
+	return nil
+}
+
+func (m *mockJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) error {
+	if m.executeWithJobRunFunc != nil {
+		return m.executeWithJobRunFunc(job, jobRunID)
+	}
+	return nil
+}
+
+func (m *mockJobExecutor) Wait() {
+	// No-op for tests
+}
+
+func TestCreateJobSetsNextRunAt(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	schedule := "0 * * * *" // Every hour
+	job, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", schedule, "UTC", domain.PayloadExport, map[string]interface{}{})
+
+	if err != nil {
+		t.Fatalf("CreateJob() unexpected error: %v", err)
+	}
+
+	if job.NextRunAt == nil {
+		t.Error("CreateJob() expected NextRunAt to be set, got nil")
+	} else {
+		// Verify next run is in the future
+		if !job.NextRunAt.After(time.Now()) {
+			t.Errorf("CreateJob() NextRunAt should be in the future, got %v", job.NextRunAt)
+		}
+
+		// Verify next run is within 1 hour (for hourly schedule)
+		if job.NextRunAt.Sub(time.Now()) > time.Hour {
+			t.Errorf("CreateJob() NextRunAt too far in future for hourly schedule: %v", job.NextRunAt)
+		}
+	}
+
+	// Verify it was saved to repository
+	savedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+
+	if savedJob.NextRunAt == nil {
+		t.Error("Saved job should have NextRunAt set")
+	}
+}
+
+func TestRunJobUpdatesLastRunAndNextRunAt(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "*/10 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	timeBefore := time.Now()
+
+	// Run the job
+	_, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	timeAfter := time.Now()
+
+	// Retrieve the updated job
+	updatedJob, err := repo.FindByID(job.ID)
+	if err != nil {
+		t.Fatalf("FindByID() unexpected error: %v", err)
+	}
+
+	// Verify LastRunAt was set
+	if updatedJob.LastRunAt == nil {
+		t.Error("RunJob() expected LastRunAt to be set, got nil")
+	} else {
+		if updatedJob.LastRunAt.Before(timeBefore) || updatedJob.LastRunAt.After(timeAfter) {
+			t.Errorf("RunJob() LastRunAt %v not within expected range [%v, %v]", updatedJob.LastRunAt, timeBefore, timeAfter)
+		}
+	}
+
+	// Verify NextRunAt was recalculated
+	if updatedJob.NextRunAt == nil {
+		t.Error("RunJob() expected NextRunAt to be recalculated, got nil")
+	} else {
+		// For */10 schedule, next run should be within 10 minutes
+		if updatedJob.NextRunAt.Sub(timeAfter) > 10*time.Minute {
+			t.Errorf("RunJob() NextRunAt too far in future for 10-minute schedule: %v", updatedJob.NextRunAt)
+		}
+	}
+}
+
+func TestUpdateJobRecalculatesNextRunAtWhenScheduleChanges(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a job with hourly schedule
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+
+	// Set a next_run
+	now := time.Now()
+	nextRunAtBefore := now.Add(30 * time.Minute)
+	job = job.WithNextRunAt(nextRunAtBefore)
+	repo.Save(job)
+
+	// Update to daily schedule
+	newSchedule := "0 0 * * *" // Daily at midnight
+	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", newSchedule, domain.PayloadExport, map[string]interface{}{}, "scheduled")
+
+	if err != nil {
+		t.Fatalf("UpdateJob() unexpected error: %v", err)
+	}
+
+	// Verify NextRunAt was recalculated
+	if updatedJob.NextRunAt == nil {
+		t.Error("UpdateJob() expected NextRunAt to be recalculated, got nil")
+	} else {
+		// NextRunAt should have changed (daily schedule will have different next run than hourly)
+		// For daily schedule at midnight, next run should be within 24 hours
+		if updatedJob.NextRunAt.Sub(now) > 24*time.Hour {
+			t.Errorf("UpdateJob() NextRunAt too far in future for daily schedule: %v", updatedJob.NextRunAt)
+		}
+	}
+}
+
+func TestResumeJobRecalculatesNextRunAt(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a paused job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job = job.WithStatus(domain.StatusPaused)
+
+	// Set an old next_run
+	oldNextRunAt := time.Now().Add(-1 * time.Hour)
+	job = job.WithNextRunAt(oldNextRunAt)
+	repo.Save(job)
+
+	// Resume the job
+	resumedJob, err := service.ResumeJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("ResumeJob() unexpected error: %v", err)
+	}
+
+	// Verify NextRunAt was recalculated
+	if resumedJob.NextRunAt == nil {
+		t.Error("ResumeJob() expected NextRunAt to be recalculated, got nil")
+	} else {
+		// NextRunAt should be in the future (not the old past value)
+		if !resumedJob.NextRunAt.After(time.Now()) {
+			t.Errorf("ResumeJob() NextRunAt should be in future, got %v", resumedJob.NextRunAt)
+		}
+
+		// For hourly schedule, should be within 1 hour
+		if resumedJob.NextRunAt.Sub(time.Now()) > time.Hour {
+			t.Errorf("ResumeJob() NextRunAt too far in future for hourly schedule: %v", resumedJob.NextRunAt)
+		}
+	}
+}
+
+func TestCreateJobWithInvalidScheduleDoesNotSetNextRunAt(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Try to create a job with invalid schedule
+	_, err := service.CreateJob(context.Background(), "Test Job", "org-123", "user-123", "invalid", "UTC", domain.PayloadExport, map[string]interface{}{})
+
+	if err != domain.ErrInvalidSchedule {
+		t.Errorf("CreateJob() expected ErrInvalidSchedule, got %v", err)
+	}
+}
+
+func TestUpdateJob_CannotSetStatusToRunning(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to update status to "running"
+	_, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "running")
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("UpdateJob() expected ErrInvalidStatusTransition when setting status to 'running', got %v", err)
+	}
+}
+
+func TestUpdateJob_CannotSetStatusToFailed(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to update status to "failed"
+	_, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "failed")
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("UpdateJob() expected ErrInvalidStatusTransition when setting status to 'failed', got %v", err)
+	}
+}
+
+func TestUpdateJob_CanSetStatusToScheduled(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a paused job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job = job.WithStatus(domain.StatusPaused)
+	repo.Save(job)
+
+	// Update status to "scheduled" should work
+	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+
+	if err != nil {
+		t.Errorf("UpdateJob() unexpected error when setting status to 'scheduled': %v", err)
+	}
+
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("UpdateJob() expected status to be 'scheduled', got %v", updatedJob.Status)
+	}
+}
+
+func TestUpdateJob_CanSetStatusToPaused(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a scheduled job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Update status to "paused" should work
+	updatedJob, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "paused")
+
+	if err != nil {
+		t.Errorf("UpdateJob() unexpected error when setting status to 'paused': %v", err)
+	}
+
+	if updatedJob.Status != domain.StatusPaused {
+		t.Errorf("UpdateJob() expected status to be 'paused', got %v", updatedJob.Status)
+	}
+}
+
+func TestUpdateJobWithUserCheck_AllowsOwner(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	updatedJob, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Updated Job", "user-123", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+	if err != nil {
+		t.Fatalf("UpdateJobWithUserCheck() unexpected error for owner: %v", err)
+	}
+
+	if updatedJob.Name != "Updated Job" {
+		t.Errorf("UpdateJobWithUserCheck() expected name 'Updated Job', got %q", updatedJob.Name)
+	}
+}
+
+func TestUpdateJobWithUserCheck_RejectsDifferentUser(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	_, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Hijacked Job", "user-456", "0 * * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+	if err != domain.ErrJobNotFound {
+		t.Errorf("UpdateJobWithUserCheck() expected ErrJobNotFound for different user, got %v", err)
+	}
+
+	savedJob, _ := repo.FindByID(job.ID)
+	if savedJob.Name != "Test Job" {
+		t.Errorf("job should not have been modified, but name is %q", savedJob.Name)
+	}
+	if savedJob.UserID != "user-123" {
+		t.Errorf("job UserID should remain 'user-123', got %q", savedJob.UserID)
+	}
+}
+
+func TestUpdateJobWithUserCheck_PreservesOrgID(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	updatedJob, err := service.UpdateJobWithUserCheck(context.Background(), job.ID, "Updated Job", "user-123", "0 0 * * *", domain.PayloadExport, map[string]interface{}{}, "scheduled")
+
+	if err != nil {
+		t.Fatalf("UpdateJobWithUserCheck() unexpected error: %v", err)
+	}
+
+	if updatedJob.OrgID != "org-123" {
+		t.Errorf("expected OrgID to remain 'org-123', got %q", updatedJob.OrgID)
+	}
+}
+
+func TestPatchJobWithUserCheck_CannotSetStatusToRunning(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to patch status to "running"
+	updates := map[string]interface{}{
+		"status": "running",
+	}
+
+	_, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("PatchJobWithUserCheck() expected ErrInvalidStatusTransition when setting status to 'running', got %v", err)
+	}
+}
+
+func TestPatchJobWithUserCheck_CannotSetStatusToFailed(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to patch status to "failed"
+	updates := map[string]interface{}{
+		"status": "failed",
+	}
+
+	_, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+
+	if err != domain.ErrInvalidStatusTransition {
+		t.Errorf("PatchJobWithUserCheck() expected ErrInvalidStatusTransition when setting status to 'failed', got %v", err)
+	}
+}
+
+func TestPatchJobWithUserCheck_CanSetStatusToScheduled(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, nil)
+
+	// Create a paused job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	job = job.WithStatus(domain.StatusPaused)
+	repo.Save(job)
+
+	// Patch status to "scheduled" should work
+	updates := map[string]interface{}{
+		"status": "scheduled",
+	}
+
+	updatedJob, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+
+	if err != nil {
+		t.Errorf("PatchJobWithUserCheck() unexpected error when setting status to 'scheduled': %v", err)
+	}
+
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("PatchJobWithUserCheck() expected status to be 'scheduled', got %v", updatedJob.Status)
+	}
+}
+
+// Mock CronScheduler for testing
+
+type mockCronScheduler struct {
+	scheduleJobFunc            func(job domain.Job) error
+	unscheduleJobFunc          func(jobID string)
+	scheduleJobImmediatelyFunc func(job domain.Job, jobRunID string) error
+	scheduledJobs              map[string]domain.Job
+	immediateJobs              []domain.Job
+	immediateJobRunIDs         []string
+}
+
+func newMockCronScheduler() *mockCronScheduler {
+	return &mockCronScheduler{
+		scheduledJobs:      make(map[string]domain.Job),
+		immediateJobs:      make([]domain.Job, 0),
+		immediateJobRunIDs: make([]string, 0),
+	}
+}
+
+func (m *mockCronScheduler) ScheduleJob(job domain.Job) error {
+	if m.scheduleJobFunc != nil {
+		return m.scheduleJobFunc(job)
+	}
+	m.scheduledJobs[job.ID] = job
+	return nil
+}
+
+func (m *mockCronScheduler) UnscheduleJob(jobID string) {
+	if m.unscheduleJobFunc != nil {
+		m.unscheduleJobFunc(jobID)
+		return
+	}
+	delete(m.scheduledJobs, jobID)
+}
+
+func (m *mockCronScheduler) ScheduleJobImmediately(job domain.Job, jobRunID string) error {
+	if m.scheduleJobImmediatelyFunc != nil {
+		return m.scheduleJobImmediatelyFunc(job, jobRunID)
+	}
+	m.immediateJobs = append(m.immediateJobs, job)
+	m.immediateJobRunIDs = append(m.immediateJobRunIDs, jobRunID)
+	return nil
+}
+
+// Tests for RunJob with scheduler
+
+func TestRunJob_WithScheduler_CallsScheduleJobImmediately(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+	cronScheduler := newMockCronScheduler()
+
+	service := NewJobService(repo, schedulingSvc, executor, 3, nil)
+	service.SetCronScheduler(cronScheduler)
+	// Note: Not setting runRepo, so job run ID will be empty but that's OK for this test
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Run the job
+	jobRunID, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	// Verify job run ID is returned (will be empty since no runRepo set, but should not error)
+	if jobRunID != "" {
+		t.Logf("RunJob() returned job run ID: %s", jobRunID)
+	}
+
+	// Verify ScheduleJobImmediately was called
+	if len(cronScheduler.immediateJobs) != 1 {
+		t.Errorf("RunJob() expected ScheduleJobImmediately to be called once, got %d calls", len(cronScheduler.immediateJobs))
+	}
+
+	if len(cronScheduler.immediateJobs) > 0 && cronScheduler.immediateJobs[0].ID != job.ID {
+		t.Errorf("RunJob() called ScheduleJobImmediately with wrong job ID: got %s, want %s", cronScheduler.immediateJobs[0].ID, job.ID)
+	}
+}
+
+func TestRunJob_WithoutScheduler_ExecutesDirectly(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, schedulingSvc, executor, 3, nil)
+	// Don't set a cron scheduler
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Run the job
+	jobRunID, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	// Without runRepo set, jobRunID should be empty but execution should still work
+	if jobRunID != "" {
+		t.Logf("RunJob() returned job run ID: %s", jobRunID)
+	}
+
+	// Verify job status was updated
+	updatedJob, _ := repo.FindByID(job.ID)
+	if updatedJob.Status != domain.StatusScheduled {
+		t.Errorf("RunJob() expected status to be 'scheduled' after execution, got %s", updatedJob.Status)
+	}
+}
+
+func TestRunJob_WithScheduler_DoesNotExecuteDirectly(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+
+	executeCalled := false
+	executor := &mockJobExecutor{
+		executeFunc: func(job domain.Job) error {
+			executeCalled = true
+			return nil
+		},
+		executeWithJobRunFunc: func(job domain.Job, jobRunID string) error {
+			executeCalled = true
+			return nil
+		},
+	}
+	cronScheduler := newMockCronScheduler()
+
+	service := NewJobService(repo, schedulingSvc, executor, 3, nil)
+	service.SetCronScheduler(cronScheduler)
+
+	// Create a job
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Run the job
+	_, err := service.RunJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("RunJob() unexpected error: %v", err)
+	}
+
+	// Verify executor was NOT called directly (scheduler handles it)
+	if executeCalled {
+		t.Error("RunJob() with scheduler should not call executor directly, but it did")
+	}
+
+	// Verify ScheduleJobImmediately was called instead
+	if len(cronScheduler.immediateJobs) != 1 {
+		t.Errorf("RunJob() expected ScheduleJobImmediately to be called, but got %d calls", len(cronScheduler.immediateJobs))
+	}
+}
+
+func TestRunJob_JobNotFound_ReturnsError(t *testing.T) {
+	repo := newMockJobRepository()
+	schedulingSvc := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, schedulingSvc, executor, 3, nil)
+
+	// Try to run a non-existent job
+	_, err := service.RunJob(context.Background(), "non-existent-id")
+	if err != domain.ErrJobNotFound {
+		t.Errorf("RunJob() expected ErrJobNotFound, got %v", err)
+	}
+}
+
+// CEL payload template validation tests
+
+func mustEvaluatorForService(t *testing.T) *template.Evaluator {
+	t.Helper()
+	e, err := template.NewEvaluator()
+	if err != nil {
+		t.Fatalf("NewEvaluator() error: %v", err)
+	}
+	return e
+}
+
+func TestCreateJob_WithValidCELPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	payload := map[string]interface{}{
+		"start_date": "scheduler_cel:now.start_of_day().format_date(\"2006-01-02\")",
+		"end_date":   "scheduler_cel:now.add_days(-1).end_of_day().format_date(\"2006-01-02\")",
+		"name":       "plain string value",
+	}
+
+	job, err := service.CreateJob(context.Background(), "CEL Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, payload)
+	if err != nil {
+		t.Fatalf("CreateJob() with valid CEL payload unexpected error: %v", err)
+	}
+
+	if job.ID == "" {
+		t.Error("CreateJob() expected a job ID, got empty string")
+	}
+}
+
+func TestCreateJob_WithInvalidCELPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	payload := map[string]interface{}{
+		"start_date": "scheduler_cel:invalid_func()",
+	}
+
+	_, err := service.CreateJob(context.Background(), "Bad CEL Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, payload)
+	if !errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+		t.Errorf("CreateJob() with invalid CEL payload expected ErrInvalidPayloadTemplate, got %v", err)
+	}
+}
+
+func TestCreateJob_WithPlainPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	payload := map[string]interface{}{
+		"format":     "csv",
+		"start_date": "2024-01-01",
+		"end_date":   "2024-12-31",
+	}
+
+	job, err := service.CreateJob(context.Background(), "Plain Job", "org-123", "user-123", "0 0 * * *", "UTC", domain.PayloadExport, payload)
+	if err != nil {
+		t.Fatalf("CreateJob() with plain payload unexpected error: %v", err)
+	}
+
+	if job.ID == "" {
+		t.Error("CreateJob() expected a job ID, got empty string")
+	}
+}
+
+func TestUpdateJob_WithInvalidCELPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	// Create a valid job first
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to update with an invalid CEL expression
+	badPayload := map[string]interface{}{
+		"start_date": "scheduler_cel:undefined_var + broken",
+	}
+
+	_, err := service.UpdateJob(context.Background(), job.ID, "Test Job", "org-123", "user-123", "0 * * * *", domain.PayloadExport, badPayload, "scheduled")
+	if !errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+		t.Errorf("UpdateJob() with invalid CEL payload expected ErrInvalidPayloadTemplate, got %v", err)
+	}
+}
+
+func TestPatchJobWithOrgCheck_WithInvalidCELPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	// Create a valid job first
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to patch with an invalid CEL expression in the payload
+	updates := map[string]interface{}{
+		"payload": map[string]interface{}{
+			"start_date": "scheduler_cel:!!!syntax_error",
+		},
+	}
+
+	_, err := service.PatchJobWithOrgCheck(context.Background(), job.ID, "org-123", updates)
+	if !errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+		t.Errorf("PatchJobWithOrgCheck() with invalid CEL payload expected ErrInvalidPayloadTemplate, got %v", err)
+	}
+}
+
+func TestPatchJobWithUserCheck_WithInvalidCELPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	// Create a valid job first
+	job := domain.NewJob("Test Job", "org-123", "user-123", "0 * * * *", "UTC", domain.PayloadExport, map[string]interface{}{})
+	repo.Save(job)
+
+	// Try to patch with an invalid CEL expression in the payload
+	updates := map[string]interface{}{
+		"payload": map[string]interface{}{
+			"start_date": "scheduler_cel:!!!syntax_error",
+		},
+	}
+
+	_, err := service.PatchJobWithUserCheck(context.Background(), job.ID, "user-123", updates)
+	if !errors.Is(err, domain.ErrInvalidPayloadTemplate) {
+		t.Errorf("PatchJobWithUserCheck() with invalid CEL payload expected ErrInvalidPayloadTemplate, got %v", err)
+	}
+}
+
+func TestCreateJob_WithNestedValidCELPayload(t *testing.T) {
+	repo := newMockJobRepository()
+	scheduler := &mockSchedulingService{}
+	executor := &mockJobExecutor{}
+
+	service := NewJobService(repo, scheduler, executor, 3, mustEvaluatorForService(t))
+
+	// Nested payload with CEL expressions at multiple levels
+	payload := map[string]interface{}{
+		"filters": map[string]interface{}{
+			"date_range": map[string]interface{}{
+				"start": "scheduler_cel:now.add_days(-30).start_of_day().format_date(\"2006-01-02\")",
+				"end":   "scheduler_cel:now.end_of_day().format_date(\"2006-01-02\")",
+			},
+		},
+		"format": "csv",
+	}
+
+	job, err := service.CreateJob(context.Background(), "Nested CEL Job", "org-123", "user-123", "0 0 * * *", "UTC", domain.PayloadExport, payload)
+	if err != nil {
+		t.Fatalf("CreateJob() with nested valid CEL payload unexpected error: %v", err)
+	}
+
+	if job.ID == "" {
+		t.Error("CreateJob() expected a job ID, got empty string")
+	}
+}
