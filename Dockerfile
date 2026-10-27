@@ -28,7 +28,7 @@ RUN dnf5 install -y ca-certificates sqlite && \
     dnf5 clean all
 
 # Final stage - minimal runtime image
-FROM registry.access.redhat.com/hi/go:latest-fips@sha256:46e15fdbacae74a2f44e251fadf404ff8dd8ff93aed1911634fb9444d91b27e2
+FROM registry.access.redhat.com/hi/go:latest-fips@sha256:193259e98aef6bfebf5528261f035eb8b7c95a6ec4a5b339320161b3cf7c1c00
 
 # Copy runtime dependencies from builder
 COPY --from=builder /usr/lib64/libsqlite3* /usr/lib64/
