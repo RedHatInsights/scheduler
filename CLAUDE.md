@@ -273,6 +273,8 @@ See [Database Sync Metrics Documentation](docs/db-sync-metrics.md) for detailed 
 ### Export Service Configuration
 
 - `EXPORT_SERVICE_URL`: Internal export service API URL (default: `http://export-service-service:8000/api/export/v1`)
+  - In a Clowder environment this value is overridden by Clowder's V2 private dependency endpoint for `export-service`
+    (`privateDependencyEndpoints.v2.export-service.service.uri`); the configured value is the fallback used outside Clowder
 - `EXPORT_SERVICE_PUBLIC_URL`: Public-facing export service URL for download links (default: same as `EXPORT_SERVICE_URL`)
   - In production, this should be set to the publicly accessible endpoint (e.g., `https://console.redhat.com/api/export/v1`)
   - Used to generate download URLs sent to users in notifications

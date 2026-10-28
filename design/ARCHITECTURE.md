@@ -861,6 +861,10 @@ type KafkaConfig struct {
 1. **Clowder** (OpenShift/Kubernetes)
    - Auto-detected via `clowder.IsClowderEnabled()`
    - Provides database, Kafka, metrics configuration
+   - Provides the export service URL from the Clowder V2 private dependency endpoint
+     (`privateDependencyEndpoints.v2.export-service.service.uri`). The scheduler appends
+     `/api/export/v1` unless Clowder already supplies a base path. No fallback to Clowder V1
+     endpoint arrays: if the V2 entry is missing, the configured `EXPORT_SERVICE_URL` is kept.
    - Environment variable: `ACG_CONFIG` (JSON file path)
 
 2. **Environment Variables** (Fallback)
