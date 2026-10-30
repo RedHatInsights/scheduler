@@ -362,6 +362,10 @@ parameters:
   required: true
 
 - name: EXPORT_SERVICE_URL
+  description: >-
+    Fallback export service base URL. In a Clowder environment the URL is
+    resolved from the V2 private dependency endpoint for export-service and
+    this value is ignored.
   value: http://export-service-service:8000/api/export/v1
   required: true
 - name: EXPORT_SERVICE_PUBLIC_URL

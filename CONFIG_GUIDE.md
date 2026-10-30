@@ -88,7 +88,7 @@ Controls Red Hat Export Service integration:
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
-| `EXPORT_SERVICE_URL` | Export service base URL | `http://localhost:9000/api/export/v1` | `https://api.redhat.com/export/v1` |
+| `EXPORT_SERVICE_URL` | Export service base URL (overridden by Clowder V2 when running in Clowder) | `http://localhost:9000/api/export/v1` | `https://api.redhat.com/export/v1` |
 | `EXPORT_SERVICE_ACCOUNT` | Account number | `000002` | `123456` |
 | `EXPORT_SERVICE_ORG_ID` | Organization ID | `000001` | `org-789` |
 | `EXPORT_SERVICE_TIMEOUT` | Request timeout | `5m` | `10m` |
@@ -216,6 +216,10 @@ When running in a Red Hat OpenShift environment with Clowder enabled, the applic
 - **Database**: Automatically configures PostgreSQL connection from Clowder database config
 - **Kafka**: Uses broker addresses, topics, and SASL authentication from Clowder
 - **Metrics**: Uses `MetricsPort` and `MetricsPath` from Clowder
+- **Export service**: Uses the V2 private dependency endpoint for `export-service`
+  (`privateDependencyEndpoints.v2.export-service.service.uri`). The scheduler appends `/api/export/v1`
+  unless Clowder already provides a base path. If Clowder has no usable V2 entry, the configured
+  `EXPORT_SERVICE_URL` is kept. There is no fallback to Clowder V1 endpoint arrays.
 
 Environment variables still work as overrides for settings not provided by Clowder.
 
