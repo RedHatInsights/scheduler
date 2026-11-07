@@ -2,12 +2,22 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 
 	clowder "github.com/redhatinsights/app-common-go/pkg/api/v1"
+)
+
+// Clowder V2 lookup keys for the export service and the API path the scheduler
+// appends to the URI Clowder provides.
+const (
+	exportServiceClowderApp        = "export-service"
+	exportServiceClowderDeployment = "service"
+	defaultExportAPIPath           = "/api/export/v1"
 )
 
 // Config holds all application configuration.
@@ -122,6 +132,12 @@ type ExportServiceConfig struct {
 	MaxRetries     int           `mapstructure:"max_retries" json:"max_retries"`
 	PollMaxRetries int           `mapstructure:"poll_max_retries" json:"poll_max_retries"`
 	PollInterval   time.Duration `mapstructure:"poll_interval" json:"poll_interval"`
+
+	// Authenticated and CACertificate mirror the Clowder V2 endpoint metadata
+	// when BaseURL is resolved from Clowder. They are informational for now:
+	// the export client does not consume them yet.
+	Authenticated bool   `mapstructure:"authenticated" json:"authenticated"`
+	CACertificate string `mapstructure:"ca_certificate" json:"ca_certificate"`
 }
 
 // BopConfig contains BOP (Back Office Portal) service settings
@@ -599,6 +615,9 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 	config.Metrics.Port = clowderConfig.MetricsPort
 	config.Metrics.Path = clowderConfig.MetricsPath
 
+	// Export Service URL (Clowder V2 private dependency endpoint)
+	applyClowderExportEndpoint(config)
+
 	// CloudWatch Logging
 	// Clowder provides CloudWatch configuration through the Logging section
 	if clowderConfig.Logging.Cloudwatch != nil && clowderConfig.Logging.Cloudwatch.AccessKeyId != "" {
@@ -622,6 +641,43 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 		fmt.Printf("CloudWatch logging enabled via Clowder: group=%s, stream=%s, region=%s\n",
 			config.CloudWatch.LogGroupName, config.CloudWatch.LogStreamName, config.CloudWatch.Region)
 	}
+}
+
+// applyClowderExportEndpoint resolves the export service base URL from Clowder's
+// V2 private dependency endpoint. When Clowder has no usable V2 entry for the
+// export service, the viper-managed value (defaults, config file, or
+// EXPORT_SERVICE_URL) is kept. There is deliberately no fallback to the V1
+// endpoint arrays: Clowder V2 never mixes metadata with V1.
+func applyClowderExportEndpoint(config *Config) {
+	endpoint, ok := clowder.GetV2PrivateDependencyEndpoint(exportServiceClowderApp, exportServiceClowderDeployment)
+	if !ok || strings.TrimSpace(endpoint.Uri) == "" {
+		fmt.Printf("Export service URL not provided by Clowder V2 (%s/%s); falling back to the configured export service URL\n",
+			exportServiceClowderApp, exportServiceClowderDeployment)
+		return
+	}
+
+	config.ExportService.BaseURL = buildExportBaseURL(endpoint.Uri)
+	config.ExportService.Authenticated = endpoint.Authenticated
+	if endpoint.CaCertificate != nil {
+		config.ExportService.CACertificate = *endpoint.CaCertificate
+	}
+
+	fmt.Printf("Export service URL resolved from Clowder V2 private dependency endpoint (%s/%s)\n",
+		exportServiceClowderApp, exportServiceClowderDeployment)
+}
+
+// buildExportBaseURL turns the Clowder endpoint URI into the base URL used by
+// the export client. Clowder emits a complete URI up to the port, so the export
+// API path is appended unless Clowder already supplied a base path.
+func buildExportBaseURL(uri string) string {
+	base := strings.TrimRight(strings.TrimSpace(uri), "/")
+
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Path == "" || parsed.Path == "/" {
+		return base + defaultExportAPIPath
+	}
+
+	return base
 }
 
 // applyDerivedValues computes values that depend on other config fields.
