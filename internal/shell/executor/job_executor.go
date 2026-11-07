@@ -115,6 +115,16 @@ func (e *DefaultJobExecutor) ExecuteWithJobRun(job domain.Job, jobRunID string) 
 			if saveErr := e.runRepo.Save(jobRun); saveErr != nil {
 				logger.Error("Failed to create fallback job run", slog.Any("error", saveErr))
 			}
+		} else if jobRun.JobID != job.ID {
+			// Defense in depth: the pre-created run ID is supplied by the caller
+			// (e.g. read from Redis). If it belongs to a different job, do not attach
+			// this job's execution to another job's run record — create a fresh run.
+			logger.Warn("Pre-created job run belongs to a different job, creating a new run instead",
+				slog.String("run_job_id", jobRun.JobID))
+			jobRun = domain.NewJobRun(job.ID)
+			if saveErr := e.runRepo.Save(jobRun); saveErr != nil {
+				logger.Error("Failed to create replacement job run", slog.Any("error", saveErr))
+			}
 		} else {
 			logger.Debug("Using pre-created job run")
 		}

@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -82,5 +83,66 @@ func TestExportCompletionNotificationStructure(t *testing.T) {
 
 	if notification.DownloadURL != "https://example.com/exports/export-123" {
 		t.Errorf("Expected DownloadURL 'https://example.com/exports/export-123', got %s", notification.DownloadURL)
+	}
+}
+
+// capturingRunRepo is a minimal usecases.JobRunRepository that records saved runs
+// and lets a test control FindByID.
+type capturingRunRepo struct {
+	findByID func(id string) (domain.JobRun, error)
+	saved    []domain.JobRun
+}
+
+func (m *capturingRunRepo) Save(run domain.JobRun) error { m.saved = append(m.saved, run); return nil }
+func (m *capturingRunRepo) FindByID(id string) (domain.JobRun, error) {
+	return m.findByID(id)
+}
+func (m *capturingRunRepo) FindByJobID(string, int, int) ([]domain.JobRun, int, error) {
+	return nil, 0, nil
+}
+func (m *capturingRunRepo) FindByJobIDAndOrgID(string, string) ([]domain.JobRun, error) {
+	return nil, nil
+}
+func (m *capturingRunRepo) FindByUserID(string, int, int) ([]domain.JobRun, int, error) {
+	return nil, 0, nil
+}
+func (m *capturingRunRepo) FindAll() ([]domain.JobRun, error) { return nil, nil }
+func (m *capturingRunRepo) FindInFlightExternalRuns(context.Context) ([]domain.JobRun, error) {
+	return nil, nil
+}
+func (m *capturingRunRepo) CleanupOldRuns(int) (int64, error) { return 0, nil }
+
+// TestExecuteWithJobRun_RejectsMismatchedRunID verifies the defense-in-depth guard:
+// if the supplied pre-created run ID resolves to a run belonging to a DIFFERENT
+// job, the executor must not attach this job's execution to that run — it creates
+// a fresh run for the executing job instead.
+func TestExecuteWithJobRun_RejectsMismatchedRunID(t *testing.T) {
+	testLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	runners := map[domain.PayloadType]JobRunner{domain.PayloadMessage: NewMessageJobExecutor()}
+
+	job := domain.NewJob("Job A", "org-a", "user-a", "*/15 * * * *", "UTC", domain.PayloadMessage, map[string]interface{}{"message": "x"})
+
+	// The pre-created run ID resolves to a run owned by a different job.
+	foreignRun := domain.NewJobRun("some-other-job-id")
+	repo := &capturingRunRepo{
+		findByID: func(id string) (domain.JobRun, error) { return foreignRun, nil },
+	}
+
+	executor := NewJobExecutor(runners, repo, testLogger)
+	if err := executor.ExecuteWithJobRun(job, foreignRun.ID); err != nil {
+		t.Fatalf("ExecuteWithJobRun: %v", err)
+	}
+
+	freshForJob := false
+	for _, r := range repo.saved {
+		if r.ID == foreignRun.ID {
+			t.Errorf("execution must not reuse the foreign run %s (belongs to another job)", foreignRun.ID)
+		}
+		if r.JobID == job.ID {
+			freshForJob = true
+		}
+	}
+	if !freshForJob {
+		t.Error("expected a fresh run to be created for the executing job")
 	}
 }
