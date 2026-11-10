@@ -216,8 +216,8 @@ When running in a Red Hat OpenShift environment with Clowder enabled, the applic
 - **Database**: Automatically configures PostgreSQL connection from Clowder database config
 - **Kafka**: Uses broker addresses, topics, and SASL authentication from Clowder
 - **Metrics**: Uses `MetricsPort` and `MetricsPath` from Clowder
-- **Export service**: Uses the V2 private dependency endpoint for `export-service`
-  (`privateDependencyEndpoints.v2.export-service.service.uri`). The scheduler appends `/api/export/v1`
+- **Export service**: Uses the V2 dependency endpoint for `export-service`
+  (`dependencyEndpoints.v2.export-service.service.uri`). The scheduler appends `/api/export/v1`
   unless Clowder already provides a base path. If Clowder has no usable V2 entry, the configured
   `EXPORT_SERVICE_URL` is kept. There is no fallback to Clowder V1 endpoint arrays.
 
