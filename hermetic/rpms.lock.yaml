@@ -74,13 +74,13 @@ arches:
     name: libuuid
     evr: 2.42.4-2.1.hum1
     sourcerpm: util-linux-2.42.4-2.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-devel-3.5.9-0.3.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/o/openssl-devel-3.5.9-0.4.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 4559208
-    checksum: sha256:62fe740f97f47b0ebe61d5b9bf82f32ecb251b359ecff73fe2da4550be785516
+    size: 4548452
+    checksum: sha256:2f182936bf2b076b3971e3d5ee342cfa920fa1d3dfb338a0100555fc7ed6259d
     name: openssl-devel
-    evr: 1:3.5.9-0.3.hum1
-    sourcerpm: openssl-3.5.9-0.3.hum1.src.rpm
+    evr: 1:3.5.9-0.4.hum1
+    sourcerpm: openssl-3.5.9-0.4.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/r/readline-8.3-7.1.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 241235
