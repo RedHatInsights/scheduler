@@ -615,7 +615,7 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 	config.Metrics.Port = clowderConfig.MetricsPort
 	config.Metrics.Path = clowderConfig.MetricsPath
 
-	// Export Service URL (Clowder V2 private dependency endpoint)
+	// Export Service URL (Clowder V2 public dependency endpoint)
 	applyClowderExportEndpoint(config)
 
 	// CloudWatch Logging
@@ -644,12 +644,12 @@ func applyClowderOverrides(config *Config, clowderConfig *clowder.AppConfig) {
 }
 
 // applyClowderExportEndpoint resolves the export service base URL from Clowder's
-// V2 private dependency endpoint. When Clowder has no usable V2 entry for the
+// V2 public dependency endpoint. When Clowder has no usable V2 entry for the
 // export service, the viper-managed value (defaults, config file, or
 // EXPORT_SERVICE_URL) is kept. There is deliberately no fallback to the V1
 // endpoint arrays: Clowder V2 never mixes metadata with V1.
 func applyClowderExportEndpoint(config *Config) {
-	endpoint, ok := clowder.GetV2PrivateDependencyEndpoint(exportServiceClowderApp, exportServiceClowderDeployment)
+	endpoint, ok := clowder.GetV2DependencyEndpoint(exportServiceClowderApp, exportServiceClowderDeployment)
 	if !ok || strings.TrimSpace(endpoint.Uri) == "" {
 		fmt.Printf("Export service URL not provided by Clowder V2 (%s/%s); falling back to the configured export service URL\n",
 			exportServiceClowderApp, exportServiceClowderDeployment)
@@ -662,7 +662,7 @@ func applyClowderExportEndpoint(config *Config) {
 		config.ExportService.CACertificate = *endpoint.CaCertificate
 	}
 
-	fmt.Printf("Export service URL resolved from Clowder V2 private dependency endpoint (%s/%s)\n",
+	fmt.Printf("Export service URL resolved from Clowder V2 public dependency endpoint (%s/%s)\n",
 		exportServiceClowderApp, exportServiceClowderDeployment)
 }
 

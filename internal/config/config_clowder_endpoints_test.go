@@ -8,16 +8,16 @@ import (
 
 const testDefaultExportBaseURL = "http://localhost:9000/api/export/v1"
 
-// setPrivateEndpointsV2 replaces the Clowder V2 private endpoint globals for the
-// duration of a test. app-common-go populates these globals from ACG_CONFIG at
-// package init, so they are never set in unit tests.
-func setPrivateEndpointsV2(t *testing.T, endpoints map[string]map[string]clowder.DependencyEndpointV2) {
+// setDependencyEndpointsV2 replaces the Clowder V2 public endpoint globals for
+// the duration of a test. app-common-go populates these globals from ACG_CONFIG
+// at package init, so they are never set in unit tests.
+func setDependencyEndpointsV2(t *testing.T, endpoints map[string]map[string]clowder.DependencyEndpointV2) {
 	t.Helper()
 
-	previous := clowder.PrivateDependencyEndpointsV2
-	clowder.PrivateDependencyEndpointsV2 = endpoints
+	previous := clowder.DependencyEndpointsV2
+	clowder.DependencyEndpointsV2 = endpoints
 	t.Cleanup(func() {
-		clowder.PrivateDependencyEndpointsV2 = previous
+		clowder.DependencyEndpointsV2 = previous
 	})
 }
 
@@ -40,8 +40,8 @@ func exportServiceV2(uri string, authenticated bool) map[string]map[string]clowd
 	}
 }
 
-func TestApplyClowderExportEndpointUsesV2PrivateEndpoint(t *testing.T) {
-	setPrivateEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
+func TestApplyClowderExportEndpointUsesV2PublicEndpoint(t *testing.T) {
+	setDependencyEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
 
 	config := exportServiceWithDefaults()
 	applyClowderExportEndpoint(config)
@@ -82,7 +82,7 @@ func TestApplyClowderExportEndpointHandlesURIPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			setPrivateEndpointsV2(t, exportServiceV2(tc.uri, false))
+			setDependencyEndpointsV2(t, exportServiceV2(tc.uri, false))
 
 			config := exportServiceWithDefaults()
 			applyClowderExportEndpoint(config)
@@ -100,7 +100,7 @@ func TestApplyClowderExportEndpointRecordsV2Metadata(t *testing.T) {
 	endpoint := endpoints["export-service"]["service"]
 	endpoint.CaCertificate = &caPath
 	endpoints["export-service"]["service"] = endpoint
-	setPrivateEndpointsV2(t, endpoints)
+	setDependencyEndpointsV2(t, endpoints)
 
 	config := exportServiceWithDefaults()
 	applyClowderExportEndpoint(config)
@@ -145,7 +145,7 @@ func TestApplyClowderExportEndpointKeepsConfiguredURLWithoutV2Data(t *testing.T)
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			setPrivateEndpointsV2(t, tc.endpoints)
+			setDependencyEndpointsV2(t, tc.endpoints)
 
 			config := exportServiceWithDefaults()
 			applyClowderExportEndpoint(config)
@@ -158,7 +158,7 @@ func TestApplyClowderExportEndpointKeepsConfiguredURLWithoutV2Data(t *testing.T)
 }
 
 func TestApplyClowderOverridesWiresExportEndpoint(t *testing.T) {
-	setPrivateEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
+	setDependencyEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
 
 	config := exportServiceWithDefaults()
 	applyClowderOverrides(config, &clowder.AppConfig{})
@@ -169,7 +169,7 @@ func TestApplyClowderOverridesWiresExportEndpoint(t *testing.T) {
 }
 
 func TestApplyDerivedValuesPublicBaseURLFollowsClowderURL(t *testing.T) {
-	setPrivateEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
+	setDependencyEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
 
 	config := exportServiceWithDefaults()
 	applyClowderExportEndpoint(config)
@@ -182,7 +182,7 @@ func TestApplyDerivedValuesPublicBaseURLFollowsClowderURL(t *testing.T) {
 }
 
 func TestApplyDerivedValuesKeepsExplicitPublicBaseURL(t *testing.T) {
-	setPrivateEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
+	setDependencyEndpointsV2(t, exportServiceV2("http://export-service-service:8000", false))
 
 	const publicURL = "https://console.redhat.com/api/export/v1"
 	config := exportServiceWithDefaults()
