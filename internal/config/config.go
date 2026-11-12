@@ -669,6 +669,13 @@ func applyClowderExportEndpoint(config *Config) {
 // buildExportBaseURL turns the Clowder endpoint URI into the base URL used by
 // the export client. Clowder emits a complete URI up to the port, so the export
 // API path is appended unless Clowder already supplied a base path.
+//
+// The "already supplied" check is deliberately simple: any path other than
+// empty or "/" is treated as a base path and kept verbatim. Clowder only emits a
+// path when the deployment declares one, so this preserves it without
+// double-appending. An unexpected path (for example "/healthz") would likewise
+// be used as-is rather than corrected, because the scheduler cannot distinguish
+// it from a real API base path.
 func buildExportBaseURL(uri string) string {
 	base := strings.TrimRight(strings.TrimSpace(uri), "/")
 

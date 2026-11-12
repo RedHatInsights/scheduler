@@ -78,6 +78,16 @@ func TestApplyClowderExportEndpointHandlesURIPaths(t *testing.T) {
 			uri:      "https://export.example.com/export/v2",
 			expected: "https://export.example.com/export/v2",
 		},
+		{
+			name:     "does not append when Clowder already supplies the API path",
+			uri:      "http://export-service-service:8000/api/export/v1",
+			expected: "http://export-service-service:8000/api/export/v1",
+		},
+		{
+			name:     "trims trailing slash without duplicating the API path",
+			uri:      "http://export-service-service:8000/api/export/v1/",
+			expected: "http://export-service-service:8000/api/export/v1",
+		},
 	}
 
 	for _, tc := range tests {
