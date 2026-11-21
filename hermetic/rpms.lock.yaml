@@ -18,13 +18,13 @@ arches:
     name: cyrus-sasl-devel
     evr: 2.1.28-37.2.hum1
     sourcerpm: cyrus-sasl-2.1.28-37.2.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/g/gcc-c++-16.2.1-3.2.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/g/gcc-c++-16.2.1-3.3.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 18232921
-    checksum: sha256:4f5544038db69fa9e0e544f4a87be59e42ae7274a86b7dcf0a0822098504ec17
+    size: 18235591
+    checksum: sha256:009f2cde6a77680dd83888eb609e048c06078cd2e35c8d0cc9fa0bbeb4702c1a
     name: gcc-c++
-    evr: 16.2.1-3.2.hum1
-    sourcerpm: gcc-16.2.1-3.2.hum1.src.rpm
+    evr: 16.2.1-3.3.hum1
+    sourcerpm: gcc-16.2.1-3.3.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libblkid-2.42.4-2.1.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 142463
@@ -60,13 +60,13 @@ arches:
     name: libsmartcols
     evr: 2.42.4-2.1.hum1
     sourcerpm: util-linux-2.42.4-2.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libstdc++-devel-16.2.1-3.2.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libstdc++-devel-16.2.1-3.3.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 6364172
-    checksum: sha256:bf488b75a3e93602444c3bd563560107596dd370a0efc0d3dc19c3c21952c5f9
+    size: 6363272
+    checksum: sha256:f292cab6a20db8989898b88af60fd3c1be71b0e47f9d064b0617f8e22510822b
     name: libstdc++-devel
-    evr: 16.2.1-3.2.hum1
-    sourcerpm: gcc-16.2.1-3.2.hum1.src.rpm
+    evr: 16.2.1-3.3.hum1
+    sourcerpm: gcc-16.2.1-3.3.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/l/libuuid-2.42.4-2.1.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 32985
