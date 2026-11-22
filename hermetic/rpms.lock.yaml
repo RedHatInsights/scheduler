@@ -88,20 +88,20 @@ arches:
     name: readline
     evr: 8.3-7.1.hum1
     sourcerpm: readline-8.3-7.1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/s/sqlite-3.54.1-1.hum1.x86_64.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/s/sqlite-3.54.1-2.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 1044927
-    checksum: sha256:49114cabe4eebc3f8783eddd0507bf9fb296361158d3ccdc7a7e02d318627123
+    size: 1045614
+    checksum: sha256:88078870c002d3b0f6cd56b410b1cb36aafeec0ba09da8520607f25c0d376b5e
     name: sqlite
-    evr: 3.54.1-1.hum1
-    sourcerpm: sqlite-3.54.1-1.hum1.src.rpm
-  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/s/sqlite-libs-3.54.1-1.hum1.x86_64.rpm
+    evr: 3.54.1-2.hum1
+    sourcerpm: sqlite-3.54.1-2.hum1.src.rpm
+  - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/s/sqlite-libs-3.54.1-2.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
-    size: 850478
-    checksum: sha256:d746023d97d0be78360f54ef3737c4e7b62a65a7811ecb523ee9494f00783980
+    size: 850784
+    checksum: sha256:5b66654df483982986e99bba626704af9f58f182ab25b5ccd232af7a53d1a7eb
     name: sqlite-libs
-    evr: 3.54.1-1.hum1
-    sourcerpm: sqlite-3.54.1-1.hum1.src.rpm
+    evr: 3.54.1-2.hum1
+    sourcerpm: sqlite-3.54.1-2.hum1.src.rpm
   - url: https://koji-s3-cache.hummingbird-project.io/packages.redhat.com/api/pulp-content/public-hummingbird/x86_64/Packages/u/util-linux-2.42.4-2.1.hum1.x86_64.rpm
     repoid: public-hummingbird-x86_64-rpms
     size: 1384908
