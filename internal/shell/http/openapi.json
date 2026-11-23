@@ -777,7 +777,7 @@
           },
           "timezone": {
             "type": "string",
-            "description": "IANA timezone for interpreting the schedule (e.g., \"America/New_York\", \"Europe/London\", \"UTC\").\nThe schedule is interpreted in this timezone, but next_run_at is always returned in UTC.\n",
+            "description": "IANA timezone for interpreting the schedule (e.g., \"America/New_York\", \"Europe/London\", \"UTC\").\nThe schedule is interpreted in this timezone, and next_run_at/last_run_at are returned in this timezone with the appropriate offset.\n",
             "example": "America/New_York",
             "default": "UTC"
           },
@@ -846,7 +846,7 @@
           },
           "timezone": {
             "type": "string",
-            "description": "IANA timezone for interpreting the schedule (e.g., \"America/New_York\", \"Europe/London\", \"UTC\").\nDefaults to \"UTC\" if not specified. The schedule will be interpreted in this timezone,\nbut next_run_at is always returned in UTC.\n",
+            "description": "IANA timezone for interpreting the schedule (e.g., \"America/New_York\", \"Europe/London\", \"UTC\").\nDefaults to \"UTC\" if not specified. The schedule will be interpreted in this timezone,\nand next_run_at/last_run_at will be returned in this timezone with the appropriate offset.\n",
             "example": "America/New_York",
             "default": "UTC"
           },
